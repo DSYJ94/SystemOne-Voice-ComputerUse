@@ -1,0 +1,124 @@
+[
+  {
+    "name": "candidates",
+    "value": [
+      {
+        "candidateId": "a17",
+        "description": "Select Documents in the Finder sidebar to show the Documents folder.",
+        "operation": "select",
+        "targetRef": "target-documents",
+        "parameters": {},
+        "preconditions": [
+          "target_exists",
+          "target_visible",
+          "target_enabled",
+          "fresh_observation"
+        ],
+        "verifier": {
+          "kind": "folder_identity",
+          "expectedRef": "binding-documents-folder"
+        },
+        "effects": [
+          "NAVIGATE"
+        ],
+        "delivery": "semantic",
+        "riskPolicyRef": "policy.finder-navigation.v1",
+        "replayPolicy": "only_if_not_applied"
+      },
+      {
+        "candidateId": "help",
+        "description": "Pause for user clarification because no offered action can safely advance the task.",
+        "operation": "request_help",
+        "parameters": {
+          "reason": "missing_target"
+        },
+        "preconditions": [],
+        "verifier": {
+          "kind": "no_effect_expected"
+        },
+        "effects": [
+          "READ"
+        ],
+        "delivery": "controller",
+        "riskPolicyRef": "policy.finder-navigation.v1",
+        "replayPolicy": "never"
+      }
+    ],
+    "canonical": "[{\"candidateId\":\"a17\",\"delivery\":\"semantic\",\"description\":\"Select Documents in the Finder sidebar to show the Documents folder.\",\"effects\":[\"NAVIGATE\"],\"operation\":\"select\",\"parameters\":{},\"preconditions\":[\"target_exists\",\"target_visible\",\"target_enabled\",\"fresh_observation\"],\"replayPolicy\":\"only_if_not_applied\",\"riskPolicyRef\":\"policy.finder-navigation.v1\",\"targetRef\":\"target-documents\",\"verifier\":{\"expectedRef\":\"binding-documents-folder\",\"kind\":\"folder_identity\"}},{\"candidateId\":\"help\",\"delivery\":\"controller\",\"description\":\"Pause for user clarification because no offered action can safely advance the task.\",\"effects\":[\"READ\"],\"operation\":\"request_help\",\"parameters\":{\"reason\":\"missing_target\"},\"preconditions\":[],\"replayPolicy\":\"never\",\"riskPolicyRef\":\"policy.finder-navigation.v1\",\"verifier\":{\"kind\":\"no_effect_expected\"}}]",
+    "sha256": "5c0a5860880dbde49bf712033aecf3db43023a4fc3a1aefb087d276d72614c34"
+  },
+  {
+    "name": "providerView",
+    "value": {
+      "projectionRevision": "projection.v2",
+      "stateText": "Goal: Find Budget.xlsx in Documents. Current state: Finder sidebar; Recents selected. Verified: Finder is active. Scope: locate only.",
+      "questionText": "Choose the next available action. Choose help if none can advance the goal.",
+      "candidates": [
+        {
+          "candidateId": "a17",
+          "description": "Select Documents in the Finder sidebar to show the Documents folder."
+        },
+        {
+          "candidateId": "help",
+          "description": "Pause for user clarification because no offered action can safely advance the task."
+        }
+      ]
+    },
+    "canonical": "{\"candidates\":[{\"candidateId\":\"a17\",\"description\":\"Select Documents in the Finder sidebar to show the Documents folder.\"},{\"candidateId\":\"help\",\"description\":\"Pause for user clarification because no offered action can safely advance the task.\"}],\"projectionRevision\":\"projection.v2\",\"questionText\":\"Choose the next available action. Choose help if none can advance the goal.\",\"stateText\":\"Goal: Find Budget.xlsx in Documents. Current state: Finder sidebar; Recents selected. Verified: Finder is active. Scope: locate only.\"}",
+    "sha256": "583a0cf2799211c01ee1f09886cce974ff47ab3cdb3c0cf88cbe7153d8952a55"
+  },
+  {
+    "name": "action",
+    "value": {
+      "candidate": {
+        "candidateId": "a17",
+        "description": "Select Documents in the Finder sidebar to show the Documents folder.",
+        "operation": "select",
+        "targetRef": "target-documents",
+        "parameters": {},
+        "preconditions": [
+          "target_exists",
+          "target_visible",
+          "target_enabled",
+          "fresh_observation"
+        ],
+        "verifier": {
+          "kind": "folder_identity",
+          "expectedRef": "binding-documents-folder"
+        },
+        "effects": [
+          "NAVIGATE"
+        ],
+        "delivery": "semantic",
+        "riskPolicyRef": "policy.finder-navigation.v1",
+        "replayPolicy": "only_if_not_applied"
+      },
+      "scopeRef": "scope-task-001",
+      "bindings": [
+        {
+          "bindingId": "binding-documents-folder",
+          "source": "known_constant",
+          "value": "user-approved Documents folder",
+          "sensitivity": "normal",
+          "sourceRef": "registry.user-selected-documents"
+        }
+      ]
+    },
+    "canonical": "{\"bindings\":[{\"bindingId\":\"binding-documents-folder\",\"sensitivity\":\"normal\",\"source\":\"known_constant\",\"sourceRef\":\"registry.user-selected-documents\",\"value\":\"user-approved Documents folder\"}],\"candidate\":{\"candidateId\":\"a17\",\"delivery\":\"semantic\",\"description\":\"Select Documents in the Finder sidebar to show the Documents folder.\",\"effects\":[\"NAVIGATE\"],\"operation\":\"select\",\"parameters\":{},\"preconditions\":[\"target_exists\",\"target_visible\",\"target_enabled\",\"fresh_observation\"],\"replayPolicy\":\"only_if_not_applied\",\"riskPolicyRef\":\"policy.finder-navigation.v1\",\"targetRef\":\"target-documents\",\"verifier\":{\"expectedRef\":\"binding-documents-folder\",\"kind\":\"folder_identity\"}},\"scopeRef\":\"scope-task-001\"}",
+    "sha256": "a3631bf3ed6f0f625436be7b37ca17e03512c6ccc2a9b1d011b01ec6e9665402"
+  },
+  {
+    "name": "unicode",
+    "value": {
+      "text": "café é 😀 / \u0000",
+      "values": [
+        true,
+        false,
+        null,
+        9007199254740991
+      ]
+    },
+    "canonical": "{\"text\":\"café é 😀 / \\u0000\",\"values\":[true,false,null,9007199254740991]}",
+    "sha256": "1097fea3b7c634400782681a27fd4a07aafc4b9fdc66ef4c6c9a53bc838d371f"
+  }
+]

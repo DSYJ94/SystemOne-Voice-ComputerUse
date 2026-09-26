@@ -1,0 +1,2891 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Computer-use internal protocol 2.0 - reviewed planning contract",
+  "description": "Internal host/controller protocol. Not a provider API. Wire version 2.0 is intentionally incompatible with 1.0. See BUILD_PLAN.md for authorization, projection, cancellation and replay invariants. This is a starter contract, not an implemented runtime.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Command"
+    },
+    {
+      "$ref": "#/$defs/Observation"
+    },
+    {
+      "$ref": "#/$defs/DecisionRequest"
+    },
+    {
+      "$ref": "#/$defs/DecisionProposal"
+    },
+    {
+      "$ref": "#/$defs/ExecutionRequest"
+    },
+    {
+      "$ref": "#/$defs/ExecutionReceipt"
+    },
+    {
+      "$ref": "#/$defs/Cancel"
+    },
+    {
+      "$ref": "#/$defs/ExecutionPermit"
+    },
+    {
+      "$ref": "#/$defs/CancelAck"
+    },
+    {
+      "$ref": "#/$defs/TaskStatus"
+    }
+  ],
+  "$defs": {
+    "Surface": {
+      "type": "object",
+      "properties": {
+        "adapter": {
+          "enum": [
+            "native",
+            "browser",
+            "vision"
+          ]
+        },
+        "surfaceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "appBundleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "windowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "tabId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "frameId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "origin": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "contentRevision": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "browserInstanceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "profileRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "documentId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "captureRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        }
+      },
+      "required": [
+        "adapter",
+        "surfaceId",
+        "appBundleId",
+        "windowId",
+        "contentRevision"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "adapter": {
+                "const": "browser"
+              }
+            },
+            "required": [
+              "adapter"
+            ]
+          },
+          "then": {
+            "required": [
+              "browserInstanceId",
+              "profileRef",
+              "tabId",
+              "frameId",
+              "documentId",
+              "origin"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "adapter": {
+                "const": "vision"
+              }
+            },
+            "required": [
+              "adapter"
+            ]
+          },
+          "then": {
+            "required": [
+              "captureRef"
+            ]
+          }
+        }
+      ]
+    },
+    "Target": {
+      "type": "object",
+      "properties": {
+        "targetRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "label": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 400
+        },
+        "context": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 1000
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "visible": {
+          "type": "boolean"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "invoke",
+              "focus",
+              "set_value",
+              "select",
+              "scroll",
+              "copy",
+              "upload",
+              "download"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 8,
+          "uniqueItems": true
+        },
+        "source": {
+          "enum": [
+            "accessibility",
+            "dom",
+            "ocr",
+            "vision",
+            "os_registry"
+          ]
+        },
+        "identityFingerprint": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "surfaceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "captureRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        }
+      },
+      "required": [
+        "targetRef",
+        "role",
+        "label",
+        "context",
+        "enabled",
+        "visible",
+        "capabilities",
+        "source",
+        "identityFingerprint",
+        "surfaceId"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "source": {
+                "enum": [
+                  "ocr",
+                  "vision"
+                ]
+              }
+            },
+            "required": [
+              "source"
+            ]
+          },
+          "then": {
+            "required": [
+              "captureRef"
+            ]
+          }
+        }
+      ]
+    },
+    "Verifier": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "app_focused",
+            "folder_identity",
+            "target_selected",
+            "value_equals",
+            "url_matches",
+            "download_complete",
+            "content_changed",
+            "user_confirmation",
+            "no_effect_expected",
+            "upload_complete"
+          ]
+        },
+        "expectedRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "app_focused",
+                  "folder_identity",
+                  "target_selected",
+                  "value_equals",
+                  "url_matches",
+                  "download_complete",
+                  "upload_complete"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "expectedRef"
+            ]
+          }
+        }
+      ]
+    },
+    "Candidate": {
+      "type": "object",
+      "properties": {
+        "candidateId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 1200,
+          "description": "Complete model-facing semantic action description; not a bare target ID."
+        },
+        "operation": {
+          "enum": [
+            "activate_app",
+            "invoke",
+            "focus",
+            "set_value",
+            "select",
+            "scroll",
+            "key_chord",
+            "navigate",
+            "tab_operation",
+            "copy",
+            "upload",
+            "download",
+            "inspect",
+            "wait",
+            "request_help",
+            "finish"
+          ]
+        },
+        "targetRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "parameters": {
+          "type": "object"
+        },
+        "preconditions": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "target_exists",
+              "target_visible",
+              "target_enabled",
+              "app_focused",
+              "field_editable",
+              "file_approved",
+              "origin_approved",
+              "fresh_observation"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 8,
+          "uniqueItems": true
+        },
+        "verifier": {
+          "$ref": "#/$defs/Verifier"
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "READ",
+              "NAVIGATE",
+              "LOCAL_EDIT",
+              "EXTERNAL_READ",
+              "EXTERNAL_WRITE",
+              "CLIPBOARD_READ",
+              "CLIPBOARD_WRITE",
+              "DOWNLOAD",
+              "UPLOAD",
+              "DESTRUCTIVE",
+              "CREDENTIAL",
+              "OS_SECURITY_CHANGE",
+              "UNKNOWN"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 13,
+          "uniqueItems": true
+        },
+        "delivery": {
+          "enum": [
+            "semantic",
+            "foreground_input",
+            "controller"
+          ]
+        },
+        "riskPolicyRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "replayPolicy": {
+          "enum": [
+            "never",
+            "only_if_not_applied",
+            "idempotent_verified"
+          ]
+        }
+      },
+      "required": [
+        "candidateId",
+        "description",
+        "operation",
+        "parameters",
+        "preconditions",
+        "verifier",
+        "effects",
+        "delivery",
+        "riskPolicyRef",
+        "replayPolicy"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "activate_app"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "appRef": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+                  }
+                },
+                "required": [
+                  "appRef"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "invoke"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "targetRef"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "focus"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "targetRef"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "set_value"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "textRef": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+                  }
+                },
+                "required": [
+                  "textRef"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "targetRef"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "select"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "optionRef": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "targetRef"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "scroll"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "direction": {
+                    "enum": [
+                      "up",
+                      "down",
+                      "left",
+                      "right"
+                    ]
+                  },
+                  "amount": {
+                    "enum": [
+                      "small",
+                      "page",
+                      "end"
+                    ]
+                  }
+                },
+                "required": [
+                  "direction",
+                  "amount"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "targetRef"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "key_chord"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "keyChordRef": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+                  }
+                },
+                "required": [
+                  "keyChordRef"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "navigate"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "urlRef": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+                  }
+                },
+                "required": [
+                  "urlRef"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "tab_operation"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "tabOperation": {
+                    "enum": [
+                      "open",
+                      "close",
+                      "switch"
+                    ]
+                  },
+                  "tabRef": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+                  }
+                },
+                "required": [
+                  "tabOperation"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "copy"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "targetRef"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "upload"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "fileRef": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+                  },
+                  "destinationRef": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+                  }
+                },
+                "required": [
+                  "fileRef",
+                  "destinationRef"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "targetRef"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "download"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "destinationRef": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+                  }
+                },
+                "required": [
+                  "destinationRef"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "targetRef"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "inspect"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "regionRef": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+                  },
+                  "cursorRef": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+                  },
+                  "maxNodes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100
+                  }
+                },
+                "required": [
+                  "regionRef",
+                  "maxNodes"
+                ],
+                "additionalProperties": false
+              },
+              "delivery": {
+                "const": "controller"
+              },
+              "effects": {
+                "const": [
+                  "READ"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "wait"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "timeoutMs": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5000
+                  },
+                  "conditionRef": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+                  }
+                },
+                "required": [
+                  "timeoutMs"
+                ],
+                "additionalProperties": false
+              },
+              "delivery": {
+                "const": "controller"
+              },
+              "effects": {
+                "const": [
+                  "READ"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "request_help"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "enum": [
+                      "ambiguous_target",
+                      "missing_target",
+                      "missing_value",
+                      "unsupported",
+                      "uncertain_decision",
+                      "unverified_outcome"
+                    ]
+                  }
+                },
+                "required": [
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              "delivery": {
+                "const": "controller"
+              },
+              "effects": {
+                "const": [
+                  "READ"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "finish"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "completionEvidenceRef": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+                  }
+                },
+                "required": [
+                  "completionEvidenceRef"
+                ],
+                "additionalProperties": false
+              },
+              "delivery": {
+                "const": "controller"
+              },
+              "effects": {
+                "const": [
+                  "READ"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "tab_operation"
+              },
+              "parameters": {
+                "properties": {
+                  "tabOperation": {
+                    "enum": [
+                      "close",
+                      "switch"
+                    ]
+                  }
+                },
+                "required": [
+                  "tabOperation"
+                ]
+              }
+            },
+            "required": [
+              "operation",
+              "parameters"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "required": [
+                  "tabRef"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ObservationData": {
+      "type": "object",
+      "properties": {
+        "observationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "surface": {
+          "$ref": "#/$defs/Surface"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 4000
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Target"
+          },
+          "minItems": 0,
+          "maxItems": 200
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Candidate"
+          },
+          "minItems": 1,
+          "maxItems": 64
+        },
+        "candidateSetDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "missingCapabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "minItems": 0,
+          "maxItems": 20
+        },
+        "coverage": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown"
+          ],
+          "description": "Coverage relative to the requested region, never a claim about the entire computer."
+        },
+        "regions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "regionRef": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "childrenEstimate": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "regionRef",
+              "label",
+              "truncated"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 100
+        }
+      },
+      "required": [
+        "observationId",
+        "observedAt",
+        "surface",
+        "summary",
+        "targets",
+        "candidates",
+        "candidateSetDigest",
+        "truncated",
+        "missingCapabilities",
+        "coverage",
+        "regions"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "truncated": {
+                "const": true
+              }
+            },
+            "required": [
+              "truncated"
+            ]
+          },
+          "then": {
+            "properties": {
+              "coverage": {
+                "enum": [
+                  "partial",
+                  "unknown"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Binding": {
+      "type": "object",
+      "properties": {
+        "bindingId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "source": {
+          "enum": [
+            "transcript_span",
+            "user_selection",
+            "approved_clipboard",
+            "known_constant",
+            "approved_file"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 4096
+        },
+        "sensitivity": {
+          "enum": [
+            "normal",
+            "sensitive",
+            "secret"
+          ]
+        },
+        "sourceStart": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sourceEnd": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sourceRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "offsetUnit": {
+          "const": "utf8_bytes"
+        }
+      },
+      "required": [
+        "bindingId",
+        "source",
+        "value",
+        "sensitivity",
+        "sourceRef"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "source": {
+                "const": "transcript_span"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "sourceStart",
+              "sourceEnd",
+              "offsetUnit"
+            ]
+          }
+        }
+      ]
+    },
+    "Fact": {
+      "type": "object",
+      "properties": {
+        "factId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "evidenceRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "verifiedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "validity": {
+          "enum": [
+            "observation",
+            "task_durable"
+          ]
+        },
+        "observationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "scopeRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        }
+      },
+      "required": [
+        "factId",
+        "text",
+        "evidenceRef",
+        "verifiedAt",
+        "validity",
+        "scopeRef"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "validity": {
+                "const": "observation"
+              }
+            },
+            "required": [
+              "validity"
+            ]
+          },
+          "then": {
+            "required": [
+              "observationId"
+            ]
+          }
+        }
+      ]
+    },
+    "TaskContext": {
+      "type": "object",
+      "properties": {
+        "goal": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "completionKind": {
+          "enum": [
+            "LOCATE",
+            "OPEN",
+            "NAVIGATE",
+            "FILL",
+            "DOWNLOAD",
+            "USER_CONFIRMATION",
+            "UPLOAD"
+          ]
+        },
+        "approvedEffects": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "READ",
+              "NAVIGATE",
+              "LOCAL_EDIT",
+              "EXTERNAL_READ",
+              "EXTERNAL_WRITE",
+              "CLIPBOARD_READ",
+              "CLIPBOARD_WRITE",
+              "DOWNLOAD",
+              "UPLOAD",
+              "DESTRUCTIVE",
+              "CREDENTIAL",
+              "OS_SECURITY_CHANGE",
+              "UNKNOWN"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 13,
+          "uniqueItems": true
+        },
+        "verifiedFacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Fact"
+          },
+          "minItems": 0,
+          "maxItems": 30
+        },
+        "recentOutcomes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "minItems": 0,
+          "maxItems": 10
+        },
+        "bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Binding"
+          },
+          "minItems": 0,
+          "maxItems": 30
+        },
+        "stepCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "maxSteps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "scopeRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "completionVerifierRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        }
+      },
+      "required": [
+        "goal",
+        "scope",
+        "completionKind",
+        "approvedEffects",
+        "verifiedFacts",
+        "recentOutcomes",
+        "bindings",
+        "stepCount",
+        "maxSteps",
+        "scopeRef",
+        "completionVerifierRef"
+      ],
+      "additionalProperties": false
+    },
+    "Command": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "command"
+        },
+        "protocolVersion": {
+          "const": "2.0"
+        },
+        "messageId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskEpoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "goalRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "source": {
+          "enum": [
+            "voice",
+            "text"
+          ]
+        },
+        "mode": {
+          "enum": [
+            "command",
+            "dictation"
+          ]
+        },
+        "utteranceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "utteranceRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "isFinal": {
+          "const": true,
+          "description": "Committed input only. Partial transcript previews are native UI events, not commands."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "originSurface": {
+          "$ref": "#/$defs/Surface"
+        }
+      },
+      "required": [
+        "type",
+        "protocolVersion",
+        "messageId",
+        "taskId",
+        "taskEpoch",
+        "goalRevision",
+        "source",
+        "mode",
+        "utteranceId",
+        "utteranceRevision",
+        "text",
+        "isFinal",
+        "createdAt",
+        "originSurface"
+      ],
+      "additionalProperties": false
+    },
+    "Observation": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "observation"
+        },
+        "protocolVersion": {
+          "const": "2.0"
+        },
+        "messageId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskEpoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "goalRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "data": {
+          "$ref": "#/$defs/ObservationData"
+        }
+      },
+      "required": [
+        "type",
+        "protocolVersion",
+        "messageId",
+        "taskId",
+        "taskEpoch",
+        "goalRevision",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "DecisionRequest": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "decision_request"
+        },
+        "protocolVersion": {
+          "const": "2.0"
+        },
+        "messageId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskEpoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "goalRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "requestId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "context": {
+          "$ref": "#/$defs/TaskContext"
+        },
+        "observation": {
+          "$ref": "#/$defs/ObservationData"
+        },
+        "deadline": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "privacyMode": {
+          "enum": [
+            "offline",
+            "owned_service",
+            "external_opt_in"
+          ]
+        },
+        "providerView": {
+          "$ref": "#/$defs/ProviderView"
+        },
+        "providerViewDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "type",
+        "protocolVersion",
+        "messageId",
+        "taskId",
+        "taskEpoch",
+        "goalRevision",
+        "requestId",
+        "context",
+        "observation",
+        "deadline",
+        "privacyMode",
+        "providerView",
+        "providerViewDigest"
+      ],
+      "additionalProperties": false
+    },
+    "Provider": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "enum": [
+            "clm",
+            "laya",
+            "jev",
+            "mock",
+            "semif"
+          ],
+          "description": "semif is reserved for optional evaluation only, not a default production provider."
+        },
+        "modelRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "calibrationRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "location": {
+          "enum": [
+            "local",
+            "owned_service",
+            "external_service"
+          ]
+        },
+        "serializerRevision": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "encoderRevision": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        }
+      },
+      "required": [
+        "name",
+        "modelRevision",
+        "calibrationRevision",
+        "location",
+        "serializerRevision",
+        "encoderRevision"
+      ],
+      "additionalProperties": false
+    },
+    "Ranked": {
+      "type": "object",
+      "properties": {
+        "candidateId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "probability": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "candidateId",
+        "probability"
+      ],
+      "additionalProperties": false
+    },
+    "DecisionProposal": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "decision_proposal"
+        },
+        "protocolVersion": {
+          "const": "2.0"
+        },
+        "messageId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskEpoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "goalRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "requestId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "observationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "candidateSetDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "provider": {
+          "$ref": "#/$defs/Provider"
+        },
+        "selectedCandidateId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "ranked": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Ranked"
+          },
+          "minItems": 1,
+          "maxItems": 64
+        },
+        "latencyMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "providerViewDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "type",
+        "protocolVersion",
+        "messageId",
+        "taskId",
+        "taskEpoch",
+        "goalRevision",
+        "requestId",
+        "observationId",
+        "candidateSetDigest",
+        "provider",
+        "selectedCandidateId",
+        "ranked",
+        "latencyMs",
+        "createdAt",
+        "expiresAt",
+        "providerViewDigest"
+      ],
+      "additionalProperties": false
+    },
+    "ExecutionRequest": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "execution_request"
+        },
+        "protocolVersion": {
+          "const": "2.0"
+        },
+        "messageId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskEpoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "goalRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "executionId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "observationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "candidateSetDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "candidateId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "permitRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "deadline": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "scopeRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "actionDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "leaseGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "type",
+        "protocolVersion",
+        "messageId",
+        "taskId",
+        "taskEpoch",
+        "goalRevision",
+        "executionId",
+        "observationId",
+        "candidateSetDigest",
+        "candidateId",
+        "permitRef",
+        "deadline",
+        "scopeRef",
+        "actionDigest",
+        "leaseGeneration"
+      ],
+      "additionalProperties": false
+    },
+    "Evidence": {
+      "type": "object",
+      "properties": {
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "kind": {
+          "enum": [
+            "accessibility",
+            "dom",
+            "file_metadata",
+            "image_region",
+            "user_confirmation",
+            "driver_event"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "observationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "sourceRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        }
+      },
+      "required": [
+        "evidenceId",
+        "kind",
+        "summary",
+        "observedAt",
+        "observationId",
+        "sourceRef"
+      ],
+      "additionalProperties": false
+    },
+    "ExecutionReceipt": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "execution_receipt"
+        },
+        "protocolVersion": {
+          "const": "2.0"
+        },
+        "messageId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskEpoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "goalRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "executionId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "outcome": {
+          "enum": [
+            "succeeded",
+            "failed",
+            "unknown",
+            "cancelled"
+          ]
+        },
+        "verification": {
+          "enum": [
+            "matched",
+            "not_matched",
+            "unavailable"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "minItems": 0,
+          "maxItems": 20
+        },
+        "finishedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "deliveryStatus": {
+          "enum": [
+            "not_dispatched",
+            "dispatched",
+            "unknown"
+          ]
+        },
+        "effectStatus": {
+          "enum": [
+            "not_applied",
+            "applied",
+            "unknown"
+          ]
+        },
+        "observationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "verifierRevision": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        }
+      },
+      "required": [
+        "type",
+        "protocolVersion",
+        "messageId",
+        "taskId",
+        "taskEpoch",
+        "goalRevision",
+        "executionId",
+        "outcome",
+        "verification",
+        "evidence",
+        "finishedAt",
+        "deliveryStatus",
+        "effectStatus",
+        "observationId",
+        "verifierRevision"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "succeeded"
+              }
+            },
+            "required": [
+              "outcome"
+            ]
+          },
+          "then": {
+            "properties": {
+              "verification": {
+                "const": "matched"
+              },
+              "effectStatus": {
+                "enum": [
+                  "not_applied",
+                  "applied"
+                ]
+              },
+              "evidence": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "unknown"
+              }
+            },
+            "required": [
+              "outcome"
+            ]
+          },
+          "then": {
+            "properties": {
+              "verification": {
+                "enum": [
+                  "not_matched",
+                  "unavailable"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "effectStatus": {
+                "const": "unknown"
+              }
+            },
+            "required": [
+              "effectStatus"
+            ]
+          },
+          "then": {
+            "properties": {
+              "outcome": {
+                "enum": [
+                  "unknown",
+                  "failed",
+                  "cancelled"
+                ]
+              },
+              "verification": {
+                "enum": [
+                  "not_matched",
+                  "unavailable"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "deliveryStatus": {
+                "const": "not_dispatched"
+              }
+            },
+            "required": [
+              "deliveryStatus"
+            ]
+          },
+          "then": {
+            "properties": {
+              "effectStatus": {
+                "const": "not_applied"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "verification": {
+                "const": "matched"
+              }
+            },
+            "required": [
+              "verification"
+            ]
+          },
+          "then": {
+            "properties": {
+              "evidence": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ],
+      "description": "Delivery records handoff to the target API; effects and objective verification are separate. No exactly-once guarantee is implied. An already-completed desired state can succeed without new effects if evidence verifies it. Unknown objective outcome does not erase known delivery or effects; never infer replay safety from outcome alone."
+    },
+    "Cancel": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "cancel"
+        },
+        "protocolVersion": {
+          "const": "2.0"
+        },
+        "messageId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskEpoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "goalRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reason": {
+          "enum": [
+            "user_stop",
+            "new_goal",
+            "permission_revoked",
+            "screen_locked",
+            "manual_interference",
+            "timeout"
+          ]
+        },
+        "requestedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "type",
+        "protocolVersion",
+        "messageId",
+        "taskId",
+        "taskEpoch",
+        "goalRevision",
+        "reason",
+        "requestedAt"
+      ],
+      "additionalProperties": false
+    },
+    "ProviderView": {
+      "type": "object",
+      "properties": {
+        "projectionRevision": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "stateText": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24000
+        },
+        "questionText": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "candidateId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 10,
+                "maxLength": 1200
+              }
+            },
+            "required": [
+              "candidateId",
+              "description"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 64
+        }
+      },
+      "required": [
+        "projectionRevision",
+        "stateText",
+        "questionText",
+        "candidates"
+      ],
+      "additionalProperties": false,
+      "description": "Only this approved minimized projection is serialized to a model. All other DecisionRequest fields stay host-side. This distinction is enforced by implementation and tests, not by JSON Schema."
+    },
+    "ExecutionPermit": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "execution_permit"
+        },
+        "protocolVersion": {
+          "const": "2.0"
+        },
+        "messageId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskEpoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "goalRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "permitRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "issuer": {
+          "const": "host"
+        },
+        "scopeRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "candidateId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "observationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "candidateSetDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "actionDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "leaseGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "uses": {
+          "const": 1
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "type",
+        "protocolVersion",
+        "messageId",
+        "taskId",
+        "taskEpoch",
+        "goalRevision",
+        "permitRef",
+        "issuer",
+        "scopeRef",
+        "candidateId",
+        "observationId",
+        "candidateSetDigest",
+        "actionDigest",
+        "leaseGeneration",
+        "uses",
+        "issuedAt",
+        "expiresAt"
+      ],
+      "additionalProperties": false,
+      "description": "Host-private registry record; a wire object with issuer=host does not prove provenance. Only the owning authenticated host channel may create this record."
+    },
+    "CancelAck": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "cancel_ack"
+        },
+        "protocolVersion": {
+          "const": "2.0"
+        },
+        "messageId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskEpoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "goalRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "leaseGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "barrierApplied": {
+          "const": true
+        },
+        "inFlightExecutionIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+          },
+          "minItems": 0,
+          "maxItems": 8
+        },
+        "acknowledgedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "type",
+        "protocolVersion",
+        "messageId",
+        "taskId",
+        "taskEpoch",
+        "goalRevision",
+        "leaseGeneration",
+        "barrierApplied",
+        "inFlightExecutionIds",
+        "acknowledgedAt"
+      ],
+      "additionalProperties": false
+    },
+    "TaskStatus": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "task_status"
+        },
+        "protocolVersion": {
+          "const": "2.0"
+        },
+        "messageId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskEpoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "goalRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "status": {
+          "enum": [
+            "ready",
+            "observing",
+            "deciding",
+            "executing",
+            "verifying",
+            "clarifying",
+            "awaiting_approval",
+            "paused",
+            "completed",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+          },
+          "minItems": 0,
+          "maxItems": 20
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "type",
+        "protocolVersion",
+        "messageId",
+        "taskId",
+        "taskEpoch",
+        "goalRevision",
+        "status",
+        "summary",
+        "evidenceRefs",
+        "createdAt"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "completed"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "evidenceRefs": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "examples": [
+    {
+      "type": "command",
+      "protocolVersion": "2.0",
+      "messageId": "m1",
+      "taskId": "task-001",
+      "taskEpoch": 1,
+      "goalRevision": 1,
+      "source": "voice",
+      "mode": "command",
+      "utteranceId": "utt-1",
+      "utteranceRevision": 3,
+      "text": "Open Finder, go to Documents, and find Budget.xlsx",
+      "isFinal": true,
+      "createdAt": "2026-09-25T16:59:58Z",
+      "originSurface": {
+        "adapter": "native",
+        "surfaceId": "finder-win-1",
+        "appBundleId": "com.apple.finder",
+        "windowId": "window-1",
+        "contentRevision": "content-17"
+      }
+    },
+    {
+      "type": "observation",
+      "protocolVersion": "2.0",
+      "messageId": "m2",
+      "taskId": "task-001",
+      "taskEpoch": 1,
+      "goalRevision": 1,
+      "data": {
+        "observationId": "obs-17",
+        "observedAt": "2026-09-25T17:00:00Z",
+        "surface": {
+          "adapter": "native",
+          "surfaceId": "finder-win-1",
+          "appBundleId": "com.apple.finder",
+          "windowId": "window-1",
+          "contentRevision": "content-17"
+        },
+        "summary": "Finder sidebar visible. Recents is selected. Documents is available.",
+        "targets": [
+          {
+            "targetRef": "target-documents",
+            "role": "row",
+            "label": "Documents",
+            "context": "Finder sidebar",
+            "enabled": true,
+            "visible": true,
+            "capabilities": [
+              "select"
+            ],
+            "source": "accessibility",
+            "surfaceId": "finder-win-1",
+            "identityFingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        ],
+        "candidates": [
+          {
+            "candidateId": "a17",
+            "description": "Select Documents in the Finder sidebar to show the Documents folder.",
+            "operation": "select",
+            "targetRef": "target-documents",
+            "parameters": {},
+            "preconditions": [
+              "target_exists",
+              "target_visible",
+              "target_enabled",
+              "fresh_observation"
+            ],
+            "verifier": {
+              "kind": "folder_identity",
+              "expectedRef": "binding-documents-folder"
+            },
+            "effects": [
+              "NAVIGATE"
+            ],
+            "delivery": "semantic",
+            "riskPolicyRef": "policy.finder-navigation.v1",
+            "replayPolicy": "only_if_not_applied"
+          },
+          {
+            "candidateId": "help",
+            "description": "Pause for user clarification because no offered action can safely advance the task.",
+            "operation": "request_help",
+            "parameters": {
+              "reason": "missing_target"
+            },
+            "preconditions": [],
+            "verifier": {
+              "kind": "no_effect_expected"
+            },
+            "effects": [
+              "READ"
+            ],
+            "delivery": "controller",
+            "riskPolicyRef": "policy.finder-navigation.v1",
+            "replayPolicy": "never"
+          }
+        ],
+        "candidateSetDigest": "5c0a5860880dbde49bf712033aecf3db43023a4fc3a1aefb087d276d72614c34",
+        "truncated": false,
+        "missingCapabilities": [],
+        "coverage": "complete",
+        "regions": []
+      }
+    },
+    {
+      "type": "decision_request",
+      "protocolVersion": "2.0",
+      "messageId": "m3",
+      "taskId": "task-001",
+      "taskEpoch": 1,
+      "goalRevision": 1,
+      "requestId": "req-1",
+      "context": {
+        "goal": "Open Finder, go to Documents, and find Budget.xlsx",
+        "scope": "Locate the file only. Do not open, change, delete, or upload it.",
+        "completionKind": "LOCATE",
+        "approvedEffects": [
+          "READ",
+          "NAVIGATE"
+        ],
+        "verifiedFacts": [
+          {
+            "factId": "fact-1",
+            "text": "Finder is foreground",
+            "evidenceRef": "evidence-1",
+            "verifiedAt": "2026-09-25T16:59:59Z",
+            "validity": "observation",
+            "observationId": "obs-17",
+            "scopeRef": "scope-task-001"
+          }
+        ],
+        "recentOutcomes": [
+          "Finder activation verified"
+        ],
+        "bindings": [
+          {
+            "bindingId": "binding-documents-folder",
+            "source": "known_constant",
+            "value": "user-approved Documents folder",
+            "sensitivity": "normal",
+            "sourceRef": "registry.user-selected-documents"
+          }
+        ],
+        "stepCount": 1,
+        "maxSteps": 30,
+        "scopeRef": "scope-task-001",
+        "completionVerifierRef": "verifier.locate.v1"
+      },
+      "observation": {
+        "observationId": "obs-17",
+        "observedAt": "2026-09-25T17:00:00Z",
+        "surface": {
+          "adapter": "native",
+          "surfaceId": "finder-win-1",
+          "appBundleId": "com.apple.finder",
+          "windowId": "window-1",
+          "contentRevision": "content-17"
+        },
+        "summary": "Finder sidebar visible. Recents is selected. Documents is available.",
+        "targets": [
+          {
+            "targetRef": "target-documents",
+            "role": "row",
+            "label": "Documents",
+            "context": "Finder sidebar",
+            "enabled": true,
+            "visible": true,
+            "capabilities": [
+              "select"
+            ],
+            "source": "accessibility",
+            "surfaceId": "finder-win-1",
+            "identityFingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        ],
+        "candidates": [
+          {
+            "candidateId": "a17",
+            "description": "Select Documents in the Finder sidebar to show the Documents folder.",
+            "operation": "select",
+            "targetRef": "target-documents",
+            "parameters": {},
+            "preconditions": [
+              "target_exists",
+              "target_visible",
+              "target_enabled",
+              "fresh_observation"
+            ],
+            "verifier": {
+              "kind": "folder_identity",
+              "expectedRef": "binding-documents-folder"
+            },
+            "effects": [
+              "NAVIGATE"
+            ],
+            "delivery": "semantic",
+            "riskPolicyRef": "policy.finder-navigation.v1",
+            "replayPolicy": "only_if_not_applied"
+          },
+          {
+            "candidateId": "help",
+            "description": "Pause for user clarification because no offered action can safely advance the task.",
+            "operation": "request_help",
+            "parameters": {
+              "reason": "missing_target"
+            },
+            "preconditions": [],
+            "verifier": {
+              "kind": "no_effect_expected"
+            },
+            "effects": [
+              "READ"
+            ],
+            "delivery": "controller",
+            "riskPolicyRef": "policy.finder-navigation.v1",
+            "replayPolicy": "never"
+          }
+        ],
+        "candidateSetDigest": "5c0a5860880dbde49bf712033aecf3db43023a4fc3a1aefb087d276d72614c34",
+        "truncated": false,
+        "missingCapabilities": [],
+        "coverage": "complete",
+        "regions": []
+      },
+      "deadline": "2026-09-25T17:00:05Z",
+      "privacyMode": "owned_service",
+      "providerView": {
+        "projectionRevision": "projection.v2",
+        "stateText": "Goal: Find Budget.xlsx in Documents. Current state: Finder sidebar; Recents selected. Verified: Finder is active. Scope: locate only.",
+        "questionText": "Choose the next available action. Choose help if none can advance the goal.",
+        "candidates": [
+          {
+            "candidateId": "a17",
+            "description": "Select Documents in the Finder sidebar to show the Documents folder."
+          },
+          {
+            "candidateId": "help",
+            "description": "Pause for user clarification because no offered action can safely advance the task."
+          }
+        ]
+      },
+      "providerViewDigest": "583a0cf2799211c01ee1f09886cce974ff47ab3cdb3c0cf88cbe7153d8952a55"
+    },
+    {
+      "type": "decision_proposal",
+      "protocolVersion": "2.0",
+      "messageId": "m4",
+      "taskId": "task-001",
+      "taskEpoch": 1,
+      "goalRevision": 1,
+      "requestId": "req-1",
+      "observationId": "obs-17",
+      "candidateSetDigest": "5c0a5860880dbde49bf712033aecf3db43023a4fc3a1aefb087d276d72614c34",
+      "provider": {
+        "name": "clm",
+        "modelRevision": "pinned-reference-example",
+        "calibrationRevision": "fixture-only",
+        "location": "owned_service",
+        "serializerRevision": "provider.clm.v2",
+        "encoderRevision": "qwen3-8b-fixture-only"
+      },
+      "selectedCandidateId": "a17",
+      "ranked": [
+        {
+          "candidateId": "a17",
+          "probability": 0.9
+        },
+        {
+          "candidateId": "help",
+          "probability": 0.1
+        }
+      ],
+      "latencyMs": 100,
+      "createdAt": "2026-09-25T17:00:01Z",
+      "expiresAt": "2026-09-25T17:00:05Z",
+      "providerViewDigest": "583a0cf2799211c01ee1f09886cce974ff47ab3cdb3c0cf88cbe7153d8952a55"
+    },
+    {
+      "type": "execution_request",
+      "protocolVersion": "2.0",
+      "messageId": "m5",
+      "taskId": "task-001",
+      "taskEpoch": 1,
+      "goalRevision": 1,
+      "executionId": "exec-1",
+      "observationId": "obs-17",
+      "candidateSetDigest": "5c0a5860880dbde49bf712033aecf3db43023a4fc3a1aefb087d276d72614c34",
+      "candidateId": "a17",
+      "permitRef": "host-issued-fixture-permit",
+      "deadline": "2026-09-25T17:00:05Z",
+      "actionDigest": "a3631bf3ed6f0f625436be7b37ca17e03512c6ccc2a9b1d011b01ec6e9665402",
+      "scopeRef": "scope-task-001",
+      "leaseGeneration": 1
+    },
+    {
+      "type": "execution_receipt",
+      "protocolVersion": "2.0",
+      "messageId": "m6",
+      "taskId": "task-001",
+      "taskEpoch": 1,
+      "goalRevision": 1,
+      "executionId": "exec-1",
+      "outcome": "succeeded",
+      "verification": "matched",
+      "evidence": [
+        {
+          "evidenceId": "evidence-2",
+          "kind": "accessibility",
+          "summary": "Finder location is Documents",
+          "observedAt": "2026-09-25T17:00:02Z",
+          "observationId": "obs-18",
+          "sourceRef": "registry.finder.folder-identity"
+        }
+      ],
+      "finishedAt": "2026-09-25T17:00:02Z",
+      "deliveryStatus": "dispatched",
+      "effectStatus": "applied",
+      "observationId": "obs-18",
+      "verifierRevision": "folder-identity.v1"
+    },
+    {
+      "type": "cancel",
+      "protocolVersion": "2.0",
+      "messageId": "m7",
+      "taskId": "task-001",
+      "taskEpoch": 2,
+      "goalRevision": 1,
+      "reason": "user_stop",
+      "requestedAt": "2026-09-25T17:00:03Z"
+    },
+    {
+      "protocolVersion": "2.0",
+      "taskId": "task-001",
+      "taskEpoch": 1,
+      "goalRevision": 1,
+      "type": "execution_permit",
+      "messageId": "m8",
+      "permitRef": "host-issued-fixture-permit",
+      "issuer": "host",
+      "scopeRef": "scope-task-001",
+      "candidateId": "a17",
+      "observationId": "obs-17",
+      "candidateSetDigest": "5c0a5860880dbde49bf712033aecf3db43023a4fc3a1aefb087d276d72614c34",
+      "actionDigest": "a3631bf3ed6f0f625436be7b37ca17e03512c6ccc2a9b1d011b01ec6e9665402",
+      "leaseGeneration": 1,
+      "uses": 1,
+      "issuedAt": "2026-09-25T17:00:01Z",
+      "expiresAt": "2026-09-25T17:00:05Z"
+    },
+    {
+      "type": "execution_receipt",
+      "protocolVersion": "2.0",
+      "messageId": "m9",
+      "taskId": "task-001",
+      "taskEpoch": 1,
+      "goalRevision": 1,
+      "executionId": "exec-1",
+      "outcome": "unknown",
+      "verification": "unavailable",
+      "evidence": [],
+      "finishedAt": "2026-09-25T17:00:02Z",
+      "deliveryStatus": "unknown",
+      "effectStatus": "unknown",
+      "observationId": "obs-18",
+      "verifierRevision": "folder-identity.v1"
+    },
+    {
+      "protocolVersion": "2.0",
+      "taskId": "task-001",
+      "taskEpoch": 2,
+      "goalRevision": 1,
+      "type": "cancel_ack",
+      "messageId": "m10",
+      "leaseGeneration": 2,
+      "barrierApplied": true,
+      "inFlightExecutionIds": [
+        "exec-1"
+      ],
+      "acknowledgedAt": "2026-09-25T17:00:03Z"
+    },
+    {
+      "protocolVersion": "2.0",
+      "taskId": "task-001",
+      "taskEpoch": 1,
+      "goalRevision": 1,
+      "type": "task_status",
+      "messageId": "m11",
+      "status": "paused",
+      "summary": "Task paused; previous action outcome is unknown.",
+      "evidenceRefs": [],
+      "createdAt": "2026-09-25T17:00:03Z"
+    },
+    {
+      "type": "observation",
+      "protocolVersion": "2.0",
+      "messageId": "m12",
+      "taskId": "task-001",
+      "taskEpoch": 1,
+      "goalRevision": 1,
+      "data": {
+        "observationId": "browser-obs-1",
+        "observedAt": "2026-09-25T17:00:00Z",
+        "surface": {
+          "adapter": "browser",
+          "surfaceId": "web-surface-1",
+          "appBundleId": "org.chromium.Chromium",
+          "windowId": "browser-window-1",
+          "contentRevision": "dom-1",
+          "browserInstanceId": "browser-session-1",
+          "profileRef": "approved-profile-1",
+          "tabId": "tab-1",
+          "frameId": "frame-0",
+          "documentId": "doc-1",
+          "origin": "https://fixture.example"
+        },
+        "summary": "Empty permitted fixture page",
+        "targets": [],
+        "candidates": [
+          {
+            "candidateId": "help",
+            "description": "Pause for user clarification because no offered action can safely advance the task.",
+            "operation": "request_help",
+            "parameters": {
+              "reason": "missing_target"
+            },
+            "preconditions": [],
+            "verifier": {
+              "kind": "no_effect_expected"
+            },
+            "effects": [
+              "READ"
+            ],
+            "delivery": "controller",
+            "riskPolicyRef": "policy.finder-navigation.v1",
+            "replayPolicy": "never"
+          }
+        ],
+        "candidateSetDigest": "ed49e2f0a6e7ddd5f6d546dbb82e09d3a62bfe44398c3c31e31364b0a82bcc80",
+        "truncated": false,
+        "missingCapabilities": [],
+        "coverage": "complete",
+        "regions": []
+      }
+    }
+  ],
+  "$comment": "Validate with Draft 2020-12 plus format checking. Reject duplicate object keys and non-finite JSON numbers at transport parsing. Runtime must also enforce cross-message invariants. Run validate_contract.py. A schema-valid model proposal never authorizes execution.",
+  "$id": "https://example.invalid/computer-use/internal-protocol-2.schema.json"
+}

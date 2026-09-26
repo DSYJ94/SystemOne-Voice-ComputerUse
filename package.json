@@ -1,0 +1,24 @@
+{
+  "name": "systemone-voice-computer-use",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=26.5.0 <27" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test packages/protocol/test/*.test.ts packages/runtime/test/*.test.ts",
+    "check": "npm run typecheck && npm test",
+    "test:swift": "swift test --package-path packages/protocol/swift",
+    "fixtures": "node scripts/export-fixtures.ts"
+  },
+  "dependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "jsonc-parser": "3.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.3",
+    "typescript": "7.0.2"
+  }
+}
