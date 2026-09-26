@@ -21,7 +21,7 @@ fixtures. Supported operations and limitations must be stated explicitly.
 | Backlog | State | Evidence and remaining work |
 |---|---|---|
 | B01 source/dependency pins | In progress | Node/test dependency locks and CLM source metadata recorded. Actual model bytes, encoder/tokenizer revisions and release license clearance remain unverified. |
-| B03 protocol | In progress | TypeScript schema/parser/framing, Swift digest parity, endpoint allowlists, bounded reply correlation/deadlines and final-input routing. OS peer authentication, typed Swift messages, host-private task admission/approvals and cross-message execution authority remain. |
+| B03 protocol | In progress | TypeScript schema/parser/framing, Swift digest parity, endpoint allowlists, bounded reply correlation/deadlines, final-input routing, host-private task admission and one-use approval records. OS peer authentication, typed Swift messages, clarification/resume events and permit/dispatch authority remain. |
 | B05 fixtures | In progress | Twelve schema messages and shared digest/Unicode fixtures. Resettable native fixture app and browser portal have not been built. |
 | B26 conformance | In progress | Python oracle and TypeScript tests pass; standalone Swift digest check passes. XCTest cannot run with the installed SDK. Full cross-language negative fixtures, property/fuzz/race tests and CI remain. |
 | All other tickets | Not started | No signed UX, ASR, adapter, browser worker, model service, durable journal or release artifact. |
@@ -46,15 +46,25 @@ Use a new ledger and fresh request IDs after correction, cancellation or reconne
 Closing a ledger is a local input barrier, not evidence of the real OS/browser
 Stop barrier. Supervisor peer authentication and connection teardown remain.
 
-The second-review Approval patch is still an assessment artifact. It has not been
-blindly applied over the working contract; its complete reference registries,
-policy revision, durable approval consumption and cross-language tests must be
-reconciled before live execution is enabled.
+The second-review Approval patch remains an assessment artifact and was not applied
+wholesale. The working contract now independently adds an `Approval` record and
+requires `policyRevision` on permits and execution requests. `ApprovalLedger`
+accepts a reply only from the exact bound UI endpoint object and binds actor/UI
+session, task revision, prompt, presentation, scope, observation, candidate set,
+action, policy and elevated effects. It checks injected monotonic and wall clocks,
+then permits one consumption. This is in-memory contract authority only: endpoint
+objects do not authenticate an OS process, and consumption is not yet durable.
+
+`TaskAdmissionRegistry` converts only an already validated final command into a
+host-private task contract. It binds outcome kind, parameter provenance digests,
+scope, completion verifier, policy revision and approved effects. Dictation cannot
+admit a task and `UNKNOWN` effects fail closed. A future workflow-specific admission
+UI still needs to select these fields; no natural-language interpreter is implied.
 
 ## Next sequence
 
-1. Finish B03 typed task-admission/approval contracts, actual peer authentication
-   and cross-language semantic fixtures. Add B05
+1. Finish B03 clarification/resume contracts, durable authority, actual peer
+   authentication and Swift typed bindings. Add B05
    resettable portal/native fixtures and mock-only CI. Do not port the Python guard
    wholesale as host authorization code.
 2. B04/B07/B08/B09: signed native panel/PTT/dictation and independent Stop with mock

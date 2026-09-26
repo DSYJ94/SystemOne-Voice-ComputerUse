@@ -51,3 +51,23 @@ authentication, real pipe lifecycle, durable execution ledger, dispatch or Stop
 latency is qualified by these results. Existing Python/Swift files and schema were
 unchanged in this slice; the earlier Python/Swift results above are prior evidence,
 not newly executed platform tests.
+
+## Task admission and approval authority, 27 September 2026
+
+`npm run check`: TypeScript typecheck and **95/95 tests passed**, zero skipped.
+The new cases cover final-command-only task admission, outcome and parameter-source
+binding, exact endpoint identity, task/goal revision, actor and UI session, prompt
+and presentation, scope, observation, candidate set, action, policy revision,
+effect equality, one-use consumption, monotonic deadlines, wall-clock expiry,
+mutable caller inputs, replay and closure.
+
+`review-work/.venv/bin/python packages/protocol/validate_contract.py`:
+**110/110 synthetic contract checks passed** with jsonschema 4.26.0 and format
+extras. The added independent structural cases reject multi-use approvals, missing
+prompt identity, non-elevated approval effects, and execution/permit records without
+policy revisions.
+
+These are in-process and schema fixtures. They do not prove OS peer credentials,
+durable approval consumption, signed native UI provenance, permit minting, dispatch,
+Stop barriers or recovery after a crash. No application, browser, account, audio,
+model endpoint or macOS permission was exercised.

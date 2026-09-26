@@ -7,6 +7,9 @@
       "$ref": "#/$defs/Command"
     },
     {
+      "$ref": "#/$defs/Approval"
+    },
+    {
       "$ref": "#/$defs/Observation"
     },
     {
@@ -1458,6 +1461,139 @@
       ],
       "additionalProperties": false
     },
+    "Approval": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "approval"
+        },
+        "protocolVersion": {
+          "const": "2.0"
+        },
+        "messageId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "taskEpoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "goalRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "approvalRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "issuer": {
+          "const": "native_ui"
+        },
+        "actorRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "uiSessionRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "promptId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "presentationDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "scopeRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "candidateId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "observationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "candidateSetDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "actionDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "policyRevision": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "approvedEffects": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "LOCAL_EDIT",
+              "EXTERNAL_READ",
+              "EXTERNAL_WRITE",
+              "CLIPBOARD_READ",
+              "CLIPBOARD_WRITE",
+              "DOWNLOAD",
+              "UPLOAD",
+              "DESTRUCTIVE",
+              "CREDENTIAL",
+              "OS_SECURITY_CHANGE"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 10,
+          "uniqueItems": true
+        },
+        "uses": {
+          "const": 1
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "type",
+        "protocolVersion",
+        "messageId",
+        "taskId",
+        "taskEpoch",
+        "goalRevision",
+        "approvalRef",
+        "issuer",
+        "actorRef",
+        "uiSessionRef",
+        "promptId",
+        "presentationDigest",
+        "scopeRef",
+        "candidateId",
+        "observationId",
+        "candidateSetDigest",
+        "actionDigest",
+        "policyRevision",
+        "approvedEffects",
+        "uses",
+        "issuedAt",
+        "expiresAt"
+      ],
+      "additionalProperties": false,
+      "description": "Host-private record emitted only by the authenticated native approval UI. issuer is descriptive metadata, not authentication."
+    },
     "Observation": {
       "type": "object",
       "properties": {
@@ -1791,6 +1927,14 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },
+        "policyRevision": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "approvalRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
         "leaseGeneration": {
           "type": "integer",
           "minimum": 1,
@@ -1812,6 +1956,7 @@
         "deadline",
         "scopeRef",
         "actionDigest",
+        "policyRevision",
         "leaseGeneration"
       ],
       "additionalProperties": false
@@ -2240,6 +2385,14 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },
+        "policyRevision": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
+        "approvalRef": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{1,160}$"
+        },
         "leaseGeneration": {
           "type": "integer",
           "minimum": 1,
@@ -2271,6 +2424,7 @@
         "observationId",
         "candidateSetDigest",
         "actionDigest",
+        "policyRevision",
         "leaseGeneration",
         "uses",
         "issuedAt",
@@ -2733,6 +2887,7 @@
       "deadline": "2026-09-25T17:00:05Z",
       "actionDigest": "a3631bf3ed6f0f625436be7b37ca17e03512c6ccc2a9b1d011b01ec6e9665402",
       "scopeRef": "scope-task-001",
+      "policyRevision": "policy.finder-navigation.v1",
       "leaseGeneration": 1
     },
     {
@@ -2785,6 +2940,7 @@
       "observationId": "obs-17",
       "candidateSetDigest": "5c0a5860880dbde49bf712033aecf3db43023a4fc3a1aefb087d276d72614c34",
       "actionDigest": "a3631bf3ed6f0f625436be7b37ca17e03512c6ccc2a9b1d011b01ec6e9665402",
+      "policyRevision": "policy.finder-navigation.v1",
       "leaseGeneration": 1,
       "uses": 1,
       "issuedAt": "2026-09-25T17:00:01Z",
@@ -2884,6 +3040,33 @@
         "coverage": "complete",
         "regions": []
       }
+    },
+    {
+      "type": "approval",
+      "protocolVersion": "2.0",
+      "messageId": "m13",
+      "taskId": "task-approval-fixture",
+      "taskEpoch": 4,
+      "goalRevision": 2,
+      "approvalRef": "approval-upload-1",
+      "issuer": "native_ui",
+      "actorRef": "local-user-fixture",
+      "uiSessionRef": "native-ui-fixture",
+      "promptId": "prompt-upload-1",
+      "presentationDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "scopeRef": "scope-upload-fixture",
+      "candidateId": "upload-candidate-1",
+      "observationId": "upload-observation-1",
+      "candidateSetDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "actionDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "policyRevision": "policy.upload.v1",
+      "approvedEffects": [
+        "UPLOAD",
+        "EXTERNAL_WRITE"
+      ],
+      "uses": 1,
+      "issuedAt": "2026-09-25T17:00:01Z",
+      "expiresAt": "2026-09-25T17:00:05Z"
     }
   ],
   "$comment": "Validate with Draft 2020-12 plus format checking. Reject duplicate object keys and non-finite JSON numbers at transport parsing. Runtime must also enforce cross-message invariants. Run validate_contract.py. A schema-valid model proposal never authorizes execution.",

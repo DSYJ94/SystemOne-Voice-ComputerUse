@@ -15,6 +15,8 @@ decision model. There is no application binary or live executor yet.
 - A Swift digest library checked against the same Unicode and integrity fixtures.
 - Final-input routing with literal dictation separation, trusted-endpoint allowlists,
   and bounded request/reply correlation with monotonic deadlines and replay rejection.
+- Host-private task admission plus revision-, prompt-, actor-, presentation-, action-
+  and policy-bound approvals that are accepted and consumed once in mock tests.
 
 Schema validity and hashes do not confer execution authority. The Python guard is
 an illustrative oracle, not our production security implementation. The next work
