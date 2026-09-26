@@ -13,6 +13,8 @@ decision model. There is no application binary or live executor yet.
 - A pre-I/O provider policy boundary with spy-transport tests. No network transport
   is implemented; host disclosure review is still required before approving input.
 - A Swift digest library checked against the same Unicode and integrity fixtures.
+- Final-input routing with literal dictation separation, trusted-endpoint allowlists,
+  and bounded request/reply correlation with monotonic deadlines and replay rejection.
 
 Schema validity and hashes do not confer execution authority. The Python guard is
 an illustrative oracle, not our production security implementation. The next work

@@ -36,3 +36,18 @@ operated and no model weights or OS permission grants were requested.
 The local Git repository is initialized on main. The owner subsequently selected
 Daryl <darylseow@hotmail.com> as commit author, a private GitHub repository, and MIT
 licensing. These repository administration changes do not alter the test results.
+
+## Input/reply foundation, 26 September 2026
+
+`npm run check`: TypeScript typecheck and **67/67 tests passed**, zero skipped.
+This adds 22 tests for input routing and producer/correlation/deadline boundaries.
+Cases include partial input, literal dictation, Unicode preservation, duplicate
+utterance/message IDs, endpoint impersonation by a different object, wrong task
+revisions, changed observation/projection digests, expired/replayed replies,
+session closure, clock faults, memory budgets and validation crossing a deadline.
+
+All producers and clocks in these tests are injected local fixtures. No process
+authentication, real pipe lifecycle, durable execution ledger, dispatch or Stop
+latency is qualified by these results. Existing Python/Swift files and schema were
+unchanged in this slice; the earlier Python/Swift results above are prior evidence,
+not newly executed platform tests.

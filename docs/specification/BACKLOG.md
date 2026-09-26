@@ -178,7 +178,7 @@ Expand to tested menus, tab/window switching, file chooser boundaries, multiple 
 
 Done when: the first full support matrix names app/browser/OS versions and action families, with passing and unsupported cases; all hybrid release fixtures run end to end.
 
-M4 exit: public beta may be published with explicit exclusions, provided security and packaging prerequisites also pass.
+M4 exit: public beta requires native apps, managed Chromium and existing Chrome using the user's actual current profile, data and tabs (owner decision, 26 September 2026). B19/G4 remain mandatory; a fresh or copied profile is not a substitute. Publish explicit supported operation limits, and pass security and packaging prerequisites.
 
 ## M5 - Perception, open models, and improvement
 
