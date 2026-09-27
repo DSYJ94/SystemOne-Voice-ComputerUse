@@ -31,10 +31,11 @@ established by the current fixture-only native or browser tests.
   [#10 scripted task and TCC development fix](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/10),
   [#11 read-only native observation foundation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/11),
   [#12 managed-browser Stop fence](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/12),
-  [#13 journal completion and unknown effects](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/13).
+  [#13 journal completion and unknown effects](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/13),
+  [#14 scripted portal journal integration](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/14).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/journal-completion`, stacked on
-  `codex/managed-browser-stop-barrier`.
+- The current implementation branch is `codex/portal-journal-integration`,
+  stacked on `codex/journal-completion`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
