@@ -22,12 +22,12 @@ fixtures. Supported operations and limitations must be stated explicitly.
 |---|---|---|
 | B01 source/dependency pins | In progress | Node/test dependency locks and CLM source metadata recorded. Actual model bytes, encoder/tokenizer revisions and release license clearance remain unverified. |
 | B03 protocol | In progress | TypeScript schema/parser/framing, Swift digest parity, endpoint allowlists, bounded reply correlation/deadlines, final-input routing, host-private task admission, one-use approvals, clarification/resume intent records and a Swift audit-token/code-signing peer verifier. Production supervisor integration, release-identity qualification, typed Swift messages and permit/dispatch authority remain. |
-| B05 fixtures | In progress | Fifteen schema messages and shared digest/Unicode fixtures. Resettable native fixture app and browser portal have not been built. |
+| B05 fixtures | In progress | Fifteen schema messages, shared digest/Unicode fixtures, and one resettable synthetic native text field. The broader native fixture set and browser portal have not been built. |
 | B26 conformance | In progress | Python oracle and TypeScript tests pass; standalone Swift digest check passes. XCTest cannot run with the installed SDK. Full cross-language negative fixtures, property/fuzz/race tests and CI remain. |
-| B07 UX shell | Mock only | A local ad-hoc-signed AppKit menu-bar shell can display a translucent command panel and Stop without dispatch. It lacks shortcut, focus capture, voice, TCC qualification and production signing. |
-| All other tickets | Not started | No qualified signed UX, ASR, adapter, browser worker, model service, durable journal or release artifact. |
+| B05/B07 native fixture slice | Local test build | A synthetic AppKit fixture exposes one editable field; the mock can open it and, after user-granted Accessibility, attempt one exact field set with read-back verification. This has not been qualified as an effectful live test yet. No shortcut, focus capture, voice, TCC attribution or production signing. |
+| All other tickets | Not started | No qualified signed UX, general native adapter, ASR, browser worker, model service, durable journal or release artifact. |
 
-These slices advance PR1; they do not mark the entire contracts-and-fixtures stage
+These slices are staged across draft PRs; they do not mark the entire contracts-and-fixtures stage
 or any of B01/B03/B05/B26 complete. The private GitHub remote is configured.
 
 ## Input and reply foundation
@@ -81,8 +81,17 @@ must connect it to durable recovery and revalidation.
 
 The local UI mock provides a runnable menu-bar panel for human feedback while B04
 signing and permission attribution remain open. Its Preview button only updates
-status text; Stop clears the mock input. It has no task controller or execution
-path and is not evidence for native-app or browser support.
+status text; the fixture-only action below is a separate explicit path and is not
+evidence for general native-app or browser support.
+
+The fixture build adds one deliberately separate effect path. It finds exactly one
+running `com.aurium.systemone.fixture` bundle at the build path, checks a single
+window and labelled AX text field, sets its value off the UI thread, and re-reads
+the field before reporting success. This is a scripted local test, not natural-
+language navigation. Stop invalidates the local attempt epoch and keeps the UI
+responsive; it does not claim to undo or fence an already-started AX setter.
+Durable attempt journal, permit/approval dispatch, supervisor identity integration,
+fast independent Stop barriers, and non-fixture scopes are still pending.
 
 ## Next sequence
 
@@ -110,5 +119,6 @@ into a cloud-synced note remain owner decisions before those modes ship.
 - Framing is for private inherited app/sidecar pipes: 4-byte big-endian length,
   followed by UTF-8 JSON, capped at 1 MiB. The caller must bound read chunks; malformed
   or truncated sessions fail closed. Chrome native messaging needs its own framing.
-- No code in this slice can dispatch OS/browser actions. Actor authentication,
-  one-use permits, target freshness and one-writer ownership are still future work.
+- Only the explicit synthetic fixture field can be changed by the local test build.
+  General native/browser dispatch, durable one-use permits, host actor authentication,
+  target freshness across navigation and production one-writer ownership remain open.

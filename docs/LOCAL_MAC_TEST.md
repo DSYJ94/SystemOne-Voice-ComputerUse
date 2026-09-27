@@ -50,9 +50,11 @@ If your menu-bar manager shows **S1 Mock**, its menu also has **Open Command Pan
 Type any request and select **Preview only**. The panel should say it received a preview
 and sent no action. **Stop** clears the text; **Hide** closes the panel without
 quitting; **Quit Mock** is in the menu-bar menu, or you can quit from the Dock.
-This build has no shortcut,
-microphone, model, Accessibility adapter or browser connection. It will not act
-on the typed request. The mock is ad-hoc signed locally and asks for no TCC grants.
+**Preview only** never acts on the typed text. A separate **Fill Fixture Name**
+button can now perform one synthetic Accessibility action after you explicitly
+grant access; see `docs/FIXTURE_COMPUTER_USE_TEST.md` before using it. This build
+has no shortcut, microphone, model or browser connection. The development app
+is ad-hoc signed locally.
 
 The app lives under `.build/native-mock/`; the command rebuilds it when its source
 changes, then opens it. Repeating the command with the current build reopens it.

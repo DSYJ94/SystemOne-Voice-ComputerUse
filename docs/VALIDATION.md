@@ -124,3 +124,14 @@ acceptance.
 
 The tester command was rerun against the live corrected build; it reopened the
 existing bundle without recompiling or modifying its running executable.
+
+## Fixture-only native action build, 27 September 2026
+
+Swift 6 compilation passed for the synthetic fixture and the bounded
+Accessibility host. The resulting ad-hoc-signed bundles launched locally. A
+read-only macOS Accessibility inspection showed the fixture window, labelled
+`fixture.name` text field, and Reset button; it also showed Open Fixture,
+Request Accessibility, Fill Fixture Name and Stop in the host panel. No TCC
+permission was granted, no AX setter was invoked by the product, and the
+effectful path remains **unverified** until the owner performs the opt-in test.
+See `docs/FIXTURE_COMPUTER_USE_TEST.md`.
