@@ -429,6 +429,7 @@ current synthetic DOM field value; it does not prove a server save. Stop races
 after dispatch used an injected driver, not a live browser race. No app UI,
 external site, existing Chrome profile, OS-authenticated worker, headed
 workflow, CLM or signed distribution was tested.
+
 ## Native panel to managed-browser development bridge, 28 September 2026
 
 `npm run typecheck` passed. The first unprivileged run of
@@ -444,6 +445,10 @@ the AppKit panel, ad-hoc signed it and passed strict codesign verification on
 this Mac. The first build run emitted a sandbox `ps` denial while checking for
 a running app; the build script now fails closed if process inspection fails,
 and the escalated rerun completed without that warning.
+`npm run run:portal-fixture` started a synthetic loopback server, and
+`npm run run:native-dev` opened the app. A process check found the AppKit app,
+its Node controller child and the fixture server running. A human-visible
+field fill has not yet been reported by the owner.
 
 The manual headed panel/Chromium test in [native managed test](NATIVE_MANAGED_TEST.md)
 still needs owner observation. The app uses absolute external Node/source paths;

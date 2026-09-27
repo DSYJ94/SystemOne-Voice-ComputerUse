@@ -3,8 +3,9 @@
 A native macOS voice/text computer-use product in early development. The intended
 app is a background/menu-bar agent with a transient command panel, one persistent
 task controller, semantic Accessibility/DOM adapters, and CLM as its primary
-decision model. Two local development app bundles now exercise one synthetic
-Accessibility field; there is no general-purpose executor or release binary yet.
+decision model. Two local development bundles exercise one synthetic
+Accessibility field; a separate development panel drives one managed-browser
+field fill. There is no general-purpose executor or release binary yet.
 
 ## Current implementation
 
