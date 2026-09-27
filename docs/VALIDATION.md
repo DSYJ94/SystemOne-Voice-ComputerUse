@@ -157,6 +157,25 @@ The journal is not yet connected to the native app or an authenticated host;
 therefore its tests do not qualify a real Stop barrier, exactly-once delivery or
 safe resume.
 
+## Read-only native observation foundation, 27 September 2026
+
+`npm run test:native-ax` passed on this arm64 Mac with Apple Swift 6.4 and the
+installed macOS SDK. The script compiles the new Swift package sources directly
+and runs synthetic registry checks for bounded coverage, duplicate labels,
+secure-control metadata, stale observations, changed targets and foreign nodes.
+`swift run --package-path packages/native-ax NativeAXCheck` was attempted but
+failed in this sandbox because SwiftPM's nested sandbox could not apply. The
+direct compile passed using a temporary build directory. No Accessibility
+permission was requested and no live app was inspected by this check. Real AX
+coverage, thread responsiveness, privacy filtering and target interference
+remain untested.
+
+`npm run check` typechecked and passed **136/136** Node tests on a rerun with
+loopback fixture access. The first sandboxed attempt failed 13 portal/browser
+tests at `listen EPERM 127.0.0.1`; those tests did not reach their assertions.
+The permitted rerun had zero failures. No application source changed between
+these runs.
+
 ## Fixture-scoped host dispatch gate, 27 September 2026
 
 `npm run check` typechecked the project and passed **123/123** Node tests after
@@ -257,3 +276,12 @@ the targeted TCC reset succeeded again, and a second `npm run run:native-mock`
 relaunched that same binary without rebuilding. A human still has to grant that
 binary in macOS and test Fill/Reset. The new `SYSTEMONE_CODESIGN_IDENTITY` option
 was not tested because the Mac has no valid code-signing identity.
+
+## Owner-confirmed native fixture action, 27 September 2026
+
+After the targeted TCC reset and fresh macOS grant, the owner showed the
+current SystemOne Mock reporting "Verified: the synthetic Fixture Name field
+was changed" and the separate SystemOne Fixture displaying `fixture-123`.
+This verifies the current ad-hoc build's one supported AX setter after the
+permission repair. The screenshot does not show Reset feedback, a non-fixture
+app, crash recovery, or production signing; those remain unverified.

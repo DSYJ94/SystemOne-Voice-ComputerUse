@@ -26,10 +26,11 @@ fixtures. Supported operations and limitations must be stated explicitly.
 | B26 conformance | In progress | Python oracle and TypeScript tests pass; standalone Swift digest check passes. XCTest cannot run with the installed SDK. Full cross-language negative fixtures, property/fuzz/race tests and CI remain. |
 | B05/B07 native fixture slice | Local test build | A synthetic AppKit fixture exposes one editable field. On this local Mac, the mock changed `Fixture Name` through Accessibility and the value was independently re-observed. This is one fixture action, not general native support. No shortcut, focus capture, voice, TCC attribution or production signing. |
 | B09 host dispatch gate foundation | In progress | A fixture-scoped TypeScript gate binds a selected candidate to the admitted task, exact observation, policy, target, argument provenance and one-use in-process permit. Synthetic drivers prove Stop before send, unresolved send after Stop, expiry and stale-target refusal. No OS/browser worker barrier has been qualified. |
+| B10 native observation foundation | In progress | A separate Swift package provides a read-only Accessibility tree walker with node/depth/time limits, observation-scoped handles, target PID/bundle/path/launch identity, and stale-node checks. Synthetic registry checks pass. It has not observed a live non-fixture app, is not wired to the host, and does not provide execution authority, a Stop barrier or a production privacy projection. |
 | B12 managed Chromium worker | In progress | Playwright 1.63.0 launches a fresh temporary Chromium profile and a narrow scripted portal driver. Headless tests search, open an exact duplicate and download a fixed document. General DOM snapshots, tabs/frames, uploads, headed UX, Stop barrier and packaging remain. |
 | B15 attempt journal foundation | In progress | SQLite records prepared attempts, the dispatch boundary, outcomes, cancellation and restart pause. A separate fixture-only SQLite task record keeps verified portal progress and pauses unknown in-flight actions on restart. Neither store is connected to the native mock or a signed supervisor. |
 | B16 portal outcome predicates | In progress | The managed portal re-observes exact invoice ID/title/account for LOCATE and OPEN, and requires a session-owned download receipt plus unchanged file bytes for DOWNLOAD. A scripted task uses those predicates across search/open/download/save; its output is private fixture data. No general outcome engine or authenticated task actor is connected. |
-| All other tickets | Not started | No qualified signed UX, general native adapter, ASR, existing-Chrome bridge, model service or release artifact. |
+| All other tickets | Not started | No qualified signed UX, general native action adapter, ASR, existing-Chrome bridge, model service or release artifact. |
 
 These slices are staged across draft PRs; they do not mark the entire contracts-and-fixtures stage
 or any of B01/B03/B05/B26 complete. The private GitHub remote is configured.
@@ -140,10 +141,14 @@ while System Settings showed its Accessibility toggle on. The installed bundle
 has an ad-hoc designated requirement bound to CDHash, and it was rebuilt after
 the earlier grant. This Mac has zero valid code-signing identities. The narrow
 `tccutil reset Accessibility com.aurium.systemone.native-mock` succeeded and the
-Mock relaunched; a fresh user grant and Fill/Reset retest are pending. The build
+Mock relaunched; the subsequent user grant and Fill result are recorded below. The build
 script now accepts an optional `SYSTEMONE_CODESIGN_IDENTITY` for a valid local
 development certificate and warns when using ad-hoc signing. No production TCC
 update or clean-install behavior has been qualified.
+
+The owner then granted the current Mock and showed both its Verified status and
+`fixture-123` in the separate Fixture. The current fixture-only AX action is
+verified again. Reset feedback and broader native control were not shown.
 
 The local invoice portal now supplies deterministic search results, duplicate
 titles under distinct IDs/accounts, exact detail pages and a download link that
