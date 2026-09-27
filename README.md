@@ -18,6 +18,9 @@ Accessibility field; there is no general-purpose executor or release binary yet.
   and bounded request/reply correlation with monotonic deadlines and replay rejection.
 - Host-private task admission plus revision-, prompt-, actor-, presentation-, action-
   and policy-bound approvals that are accepted and consumed once in mock tests.
+- A SQLite attempt-journal foundation that preserves uncertain dispatch across
+  restart and fences journal dispatch after cancellation; adapter and permit
+  integration remain open.
 - Clarification and resume intent records bound to displayed prompts, task revisions,
   current observations and recovered checkpoints.
 - A macOS Unix-socket peer verifier that binds kernel audit-token identity to
@@ -54,6 +57,9 @@ Preview only has no effect. The build also offers one **fixture-only** action: s
 the `Fixture Name` field of a synthetic app through macOS Accessibility. It has no
 general computer-control capability. See `docs/FIXTURE_COMPUTER_USE_TEST.md` for
 the opt-in local steps and exact limits.
+On 27 September, the local fixture test succeeded: SystemOne Mock set
+`fixture-123` through Accessibility and the separate fixture showed that value.
+The guided steps now distinguish the mock's input from the target field.
 
 The XCTest suite requires an SDK providing XCTest; it could not run with this
 machine's command-line-tools installation. The standalone parity check did pass:

@@ -24,8 +24,9 @@ fixtures. Supported operations and limitations must be stated explicitly.
 | B03 protocol | In progress | TypeScript schema/parser/framing, Swift digest parity, endpoint allowlists, bounded reply correlation/deadlines, final-input routing, host-private task admission, one-use approvals, clarification/resume intent records and a Swift audit-token/code-signing peer verifier. Production supervisor integration, release-identity qualification, typed Swift messages and permit/dispatch authority remain. |
 | B05 fixtures | In progress | Fifteen schema messages, shared digest/Unicode fixtures, and one resettable synthetic native text field. The broader native fixture set and browser portal have not been built. |
 | B26 conformance | In progress | Python oracle and TypeScript tests pass; standalone Swift digest check passes. XCTest cannot run with the installed SDK. Full cross-language negative fixtures, property/fuzz/race tests and CI remain. |
-| B05/B07 native fixture slice | Local test build | A synthetic AppKit fixture exposes one editable field; the mock can open it and, after user-granted Accessibility, attempt one exact field set with read-back verification. This has not been qualified as an effectful live test yet. No shortcut, focus capture, voice, TCC attribution or production signing. |
-| All other tickets | Not started | No qualified signed UX, general native adapter, ASR, browser worker, model service, durable journal or release artifact. |
+| B05/B07 native fixture slice | Local test build | A synthetic AppKit fixture exposes one editable field. On this local Mac, the mock changed `Fixture Name` through Accessibility and the value was independently re-observed. This is one fixture action, not general native support. No shortcut, focus capture, voice, TCC attribution or production signing. |
+| B15 attempt journal foundation | In progress | SQLite records prepared attempts, the dispatch boundary, outcomes, cancellation and restart pause. Crash, late-receipt and replay scenarios pass synthetic tests. It is not connected to the native mock or a signed supervisor yet. |
+| All other tickets | Not started | No qualified signed UX, general native adapter, ASR, browser worker, model service or release artifact. |
 
 These slices are staged across draft PRs; they do not mark the entire contracts-and-fixtures stage
 or any of B01/B03/B05/B26 complete. The private GitHub remote is configured.
@@ -90,8 +91,18 @@ window and labelled AX text field, sets its value off the UI thread, and re-read
 the field before reporting success. This is a scripted local test, not natural-
 language navigation. Stop invalidates the local attempt epoch and keeps the UI
 responsive; it does not claim to undo or fence an already-started AX setter.
-Durable attempt journal, permit/approval dispatch, supervisor identity integration,
+Native integration of the attempt journal, permit/approval dispatch, supervisor identity integration,
 fast independent Stop barriers, and non-fixture scopes are still pending.
+
+The separate TypeScript `AttemptJournal` now persists opaque task/permit/action
+identifiers and status dimensions in SQLite with a full-sync transaction before
+the adapter boundary. A crash before that marker is recorded as not dispatched;
+after it, delivery stays unresolved until evidence arrives. Stop prevents later
+journal dispatch but does not fence an adapter queue. One unsettled attempt can
+occupy the writer slot, and late receipts update that attempt without resuming a
+cancelled task. This is a foundation only: the native fixture does not call it,
+no host-issued permit is validated here, and restart ownership/worker termination
+still need integration before non-fixture effects.
 
 ## Next sequence
 
