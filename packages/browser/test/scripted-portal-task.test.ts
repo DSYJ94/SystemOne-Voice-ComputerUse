@@ -109,6 +109,86 @@ test('portal start rejects forged or altered admission before any task is stored
   }
 });
 
+test('changed observation during action preflight pauses without a browser dispatch', async () => {
+  const local = privateStore();
+  const origin = 'http://127.0.0.1:12345';
+  const started = start(local.store, { taskId: 'task-preflight-change', origin,
+    outcomeKind: 'LOCATE', invoiceId: 'INV-105', title: 'April Service Statement',
+    account: 'Harbor Works', query: 'April' });
+  let observations = 0;
+  let searches = 0;
+  const fake = {
+    origin,
+    stop: async () => ({ workerFenced: true }),
+    observe: async (): Promise<PortalObservation> =>
+      ({ kind: 'home', revision: ++observations, url: origin }),
+    search: async (): Promise<PortalObservation> => {
+      searches++;
+      throw new Error('unexpected browser action');
+    },
+    openInvoice: async (): Promise<PortalObservation> => { throw new Error('unexpected open'); },
+    downloadInvoice: async () => { throw new Error('unexpected download'); },
+    verifyGoal: async () => ({ status: 'unavailable', reason: 'unused' } as const),
+  };
+  try {
+    const task = newTask(local.store, local.journal, fake, started);
+    const paused = await task.advance();
+    assert.equal(paused.state, 'paused');
+    assert.equal(paused.reason, 'search preflight observation changed');
+    assert.equal(searches, 0);
+    assert.deepEqual(local.journal.attemptsForTask(started.taskId), []);
+  } finally {
+    local.journal.close();
+    local.store.close();
+    rmSync(local.root, { recursive: true, force: true });
+  }
+});
+
+test('Stop during portal preflight prevents a later browser action', async () => {
+  const local = privateStore();
+  const origin = 'http://127.0.0.1:12345';
+  const started = start(local.store, { taskId: 'task-preflight-stop', origin,
+    outcomeKind: 'LOCATE', invoiceId: 'INV-105', title: 'April Service Statement',
+    account: 'Harbor Works', query: 'April' });
+  let observeCount = 0;
+  let preflightStarted!: () => void;
+  let releasePreflight!: (value: PortalObservation) => void;
+  const atPreflight = new Promise<void>(resolve => { preflightStarted = resolve; });
+  const held = new Promise<PortalObservation>(resolve => { releasePreflight = resolve; });
+  let searches = 0;
+  const fake = {
+    origin,
+    stop: async () => ({ workerFenced: true }),
+    observe: async (): Promise<PortalObservation> => {
+      if (++observeCount === 1) return { kind: 'home', revision: 1, url: origin };
+      preflightStarted();
+      return held;
+    },
+    search: async (): Promise<PortalObservation> => {
+      searches++;
+      throw new Error('unexpected browser action');
+    },
+    openInvoice: async (): Promise<PortalObservation> => { throw new Error('unexpected open'); },
+    downloadInvoice: async () => { throw new Error('unexpected download'); },
+    verifyGoal: async () => ({ status: 'unavailable', reason: 'unused' } as const),
+  };
+  try {
+    const task = newTask(local.store, local.journal, fake, started);
+    const pending = task.advance();
+    await atPreflight;
+    const stopped = await task.stop();
+    assert.equal(stopped.workerFenced, true);
+    releasePreflight({ kind: 'home', revision: 1, url: origin });
+    assert.equal((await pending).state, 'cancelled');
+    assert.equal(searches, 0);
+    assert.deepEqual(local.journal.attemptsForTask(started.taskId), []);
+  } finally {
+    local.journal.close();
+    local.store.close();
+    rmSync(local.root, { recursive: true, force: true });
+  }
+});
+
 test('one task searches, opens exact duplicate, downloads, then saves to scoped output', async () => {
   const portal = await startPortalFixture();
   const local = privateStore();
@@ -323,7 +403,7 @@ test('Stop during save verification prevents a later file write', async () => {
   const receipt = { invoiceId: 'INV-105', filename: 'INV-105.txt', path: receiptPath,
     sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length };
   const results: PortalObservation = { kind: 'results', revision: 2,
-    url: `${origin}/invoices`, rows: [{ id: 'INV-105',
+    url: `${origin}/invoices?q=April`, rows: [{ id: 'INV-105',
       title: 'April Service Statement', account: 'Harbor Works' }] };
   const detail: PortalObservation = { kind: 'detail', revision: 3,
     url: `${origin}/invoices/INV-105`, invoiceId: 'INV-105',

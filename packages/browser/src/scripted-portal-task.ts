@@ -1,13 +1,13 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { open, readFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute } from 'node:path';
 import { realpathSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { digest } from '../../protocol/src/json.ts';
 import { AttemptJournal } from '../../runtime/src/attempt-journal.ts';
-import type { PreparedAttempt } from '../../runtime/src/attempt-journal.ts';
 import { TaskAdmissionRegistry } from '../../runtime/src/task-authority.ts';
 import type { TaskAdmission, Effect } from '../../runtime/src/task-authority.ts';
+import { PortalActionAuthority } from './portal-action-authority.ts';
 import type { PortalDownload, PortalGoal, PortalGoalResult, PortalObservation } from './managed-portal.ts';
 
 type GoalKind = PortalGoal['kind'];
@@ -183,7 +183,7 @@ export class ScriptedPortalTask {
   readonly #journal: AttemptJournal;
   readonly #session: PortalSession;
   readonly #taskId: string;
-  readonly #admission: TaskAdmission;
+  readonly #authority: PortalActionAuthority;
   #receipt: PortalDownload | undefined;
   #localSaveActive = false;
 
@@ -193,13 +193,13 @@ export class ScriptedPortalTask {
     this.#journal = journal;
     this.#session = session;
     this.#taskId = admission.taskId;
-    this.#admission = admission;
     assertAdmission(admission, started);
     const task = store.get(admission.taskId);
     if (!task || task.origin !== session.origin || task.state !== 'active') {
       throw new Error('scripted task origin or state mismatch');
     }
     store.claimStarted(started, admission);
+    this.#authority = new PortalActionAuthority(admission);
     try { journal.startTask(admission.taskId, admission.taskEpoch, admission.goalRevision); }
     catch (error) {
       store.pause(admission.taskId, 'journal admission failed');
@@ -212,6 +212,7 @@ export class ScriptedPortalTask {
     unresolvedExecutionIds: readonly string[] }> {
     // Persist cancellation before waiting for Playwright to close. A successful
     // worker fence never changes an in-flight action into "not dispatched".
+    this.#authority.stop();
     const record = this.#store.stop(this.#taskId);
     let journalFenced = false;
     let unresolvedExecutionIds: readonly string[] = [];
@@ -330,28 +331,39 @@ export class ScriptedPortalTask {
   async #action(task: ScriptedPortalRecord, action: Action, stage: Stage,
     completed: boolean, body: () => Promise<string>,
     observed: PortalObservation): Promise<ScriptedPortalRecord> {
-    const attempt = this.#attempt(task, action, observed);
-    try { this.#journal.prepare(attempt); }
+    let fresh: PortalObservation;
+    try { fresh = await this.#session.observe(); }
+    catch { return this.#store.pause(task.taskId, `${action} preflight observation unavailable`); }
+    const current = this.#store.get(task.taskId)!;
+    if (current.state !== 'active') return current;
+    if (!PortalActionAuthority.sameObservation(observed, fresh)) {
+      return this.#store.pause(task.taskId, `${action} preflight observation changed`);
+    }
+    let permit;
+    try { permit = this.#authority.issue(current, action, fresh); }
+    catch { return this.#store.pause(task.taskId, `${action} was not admitted`); }
+    try { this.#journal.prepare(permit); }
     catch { return this.#store.pause(task.taskId, `${action} journal preparation failed`); }
     try {
+      this.#authority.consume(permit, current, action, fresh);
       this.#store.begin(task.taskId, action);
       // No await between the durable marker and the browser call. The marker
       // means an effect is possible, including during Playwright auto-waiting.
-      this.#journal.markDispatchBoundary(attempt.executionId);
+      this.#journal.markDispatchBoundary(permit.executionId);
     } catch {
-      if (this.#journal.getAttempt(attempt.executionId)?.phase === 'prepared') {
-        this.#journal.recordNotDispatched(attempt.executionId);
+      if (this.#journal.getAttempt(permit.executionId)?.phase === 'prepared') {
+        this.#journal.recordNotDispatched(permit.executionId);
       }
       return this.#store.pause(task.taskId, `${action} was not dispatched`);
     }
     let evidenceRef: string;
     try { evidenceRef = await body(); }
     catch {
-      this.#recordUnknown(attempt.executionId);
+      this.#recordUnknown(permit.executionId);
       return this.#store.pause(task.taskId, `${action} outcome uncertain; re-observe before any retry`);
     }
     try {
-      this.#journal.recordOutcome(attempt.executionId, {
+      this.#journal.recordOutcome(permit.executionId, {
         deliveryStatus: 'dispatched', effectStatus: 'applied',
         verification: 'matched', evidenceRef,
       });
@@ -374,31 +386,6 @@ export class ScriptedPortalTask {
     } catch {
       this.#store.pause(task.taskId, 'terminal verification could not be recorded');
     }
-  }
-
-  #attempt(task: ScriptedPortalRecord, action: Action,
-    observed: PortalObservation): PreparedAttempt {
-    const observationRecord = observed.kind === 'results'
-      ? { kind: observed.kind, revision: observed.revision, url: observed.url,
-          rows: observed.rows.map(row => ({ id: row.id, title: row.title,
-            account: row.account })) }
-      : observed.kind === 'detail'
-        ? { kind: observed.kind, revision: observed.revision, url: observed.url,
-            invoiceId: observed.invoiceId, title: observed.title,
-            account: observed.account }
-        : { kind: observed.kind, revision: observed.revision, url: observed.url };
-    const actionRecord = { action, taskId: task.taskId, origin: task.origin,
-      invoiceId: task.invoiceId, query: task.query,
-      destinationPath: task.destinationPath ?? null, observation: observationRecord };
-    return Object.freeze({ executionId: randomUUID(), permitRef: randomUUID(),
-      taskId: task.taskId, taskEpoch: this.#admission.taskEpoch,
-      goalRevision: this.#admission.goalRevision,
-      scopeRef: this.#admission.scopeRef,
-      observationId: `portal-${digest(observationRecord).slice(0, 32)}`,
-      candidateId: `scripted-${action}`,
-      candidateSetDigest: digest([actionRecord]),
-      actionDigest: digest(actionRecord), policyRevision: this.#admission.policyRevision,
-      leaseGeneration: 1 });
   }
 
   #recordUnknown(executionId: string): void {

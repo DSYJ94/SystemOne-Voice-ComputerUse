@@ -34,9 +34,10 @@ Accessibility field; there is no general-purpose executor or release binary yet.
   search result, an opened detail and a saved document. These are not wired to
   the general host controller or a production completion engine.
 - A fixture-scoped durable task accepts a one-use admitted contract and runs
-  portal search/open/download/save one action at a time, keeping verified progress and pausing after unknown in-flight
-  outcomes. Each scripted action now writes an attempt and dispatch boundary to
-  the host-private journal before its browser call; Stop fences both records.
+  portal search/open/download/save one action at a time, keeping verified progress
+  and pausing after unknown in-flight outcomes. Each action requires a short-lived
+  in-process permit bound to a fresh portal observation and admitted effect, then
+  writes an attempt and dispatch boundary before its browser call. Stop fences both records.
   Output is confined to a private fixture directory. This is still in-process
   fixture authority, not authenticated production dispatch.
 - A read-only native Accessibility observation package with bounded traversal,
