@@ -296,3 +296,8 @@ typechecking and **137/137** Node tests with local loopback access. This proves
 that one fixture scenario was fenced; a click or download already dispatched
 before Stop may still have had an effect and remains unresolved. The path is
 not connected to the host permit/journal, native app, or existing Chrome.
+An additional store test then confirmed that a cancelled task with an unresolved
+in-flight action blocks admission of a second task, while cancellation before
+any action permits a new task. The final `npm run check` passed typechecking
+and **138/138** Node tests. Explicit recovery of a truly unknown effect is still
+not implemented.

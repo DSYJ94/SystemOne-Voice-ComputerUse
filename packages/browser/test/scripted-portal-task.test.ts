@@ -135,6 +135,10 @@ test('Stop during an unresolved browser action cannot become task completion', a
     const stopped = await task.stop();
     assert.equal(stopped.record.reason, 'stopped with unresolved action');
     assert.equal(stopped.workerFenced, false);
+    assert.throws(() => local.store.start({ taskId: 'task-after-unknown',
+      origin: portal.url, outcomeKind: 'LOCATE', invoiceId: 'INV-104',
+      title: 'April Service Statement', account: 'Northstar Studio', query: 'April' }),
+    /unresolved action/);
     releaseSearch({ kind: 'results', revision: 2, url: `${portal.url}/invoices`,
       rows: [{ id: 'INV-105', title: 'April Service Statement', account: 'Harbor Works' }] });
     assert.equal((await pending).state, 'cancelled');
@@ -142,6 +146,21 @@ test('Stop during an unresolved browser action cannot become task completion', a
   } finally {
     local.store.close();
     await portal.close();
+    rmSync(local.root, { recursive: true, force: true });
+  }
+});
+
+test('a stopped task with no in-flight action permits a fresh task', () => {
+  const local = privateStore();
+  const contract = { origin: 'http://127.0.0.1:12345', outcomeKind: 'LOCATE' as const,
+    invoiceId: 'INV-105', title: 'April Service Statement',
+    account: 'Harbor Works', query: 'April' };
+  try {
+    local.store.start({ ...contract, taskId: 'settled-task' });
+    assert.equal(local.store.stop('settled-task').inFlight, null);
+    assert.equal(local.store.start({ ...contract, taskId: 'next-task' }).state, 'active');
+  } finally {
+    local.store.close();
     rmSync(local.root, { recursive: true, force: true });
   }
 });
