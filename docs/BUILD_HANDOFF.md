@@ -27,10 +27,11 @@ established by the current fixture-only native or browser tests.
   [#6 portal fixture](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/6),
   [#7 managed browser](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/7),
   [#8 handoff and outcome checks](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/8),
-  [#9 native fixture launch recovery](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/9).
+  [#9 native fixture launch recovery](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/9),
+  [#10 scripted task and TCC development fix](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/10).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current review branch is `codex/native-fixture-launch-recovery`, stacked
-  on `codex/build-handoff-outcomes`.
+- The current review branch is `codex/scripted-task-controller`, stacked on
+  `codex/native-fixture-launch-recovery`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
