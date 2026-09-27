@@ -216,20 +216,18 @@ export class AttemptJournal {
   }
 
   /** Records a host-verified terminal result. The caller must own and check the
-   * completion predicate; this journal cannot infer task success from an action
-   * receipt. Unknown or unmatched attempts cannot be silently completed. */
+   * completion predicate; a read-only task can finish without any action.
+   * Unknown delivery/effect cannot be silently completed. */
   completeTask(taskId: string, completionEvidenceRef: string): void {
     assertId(taskId, 'task ID');
     assertId(completionEvidenceRef, 'completion evidence reference');
     this.#transaction(() => {
       const task = this.#task(taskId);
       if (!task || task.state !== 'active') throw new ContractError('task is not active');
-      const count = this.#db.prepare('SELECT count(*) AS n FROM attempts WHERE task_id = ?')
-        .get(taskId) as { n: number };
-      if (count.n === 0 || this.#db.prepare(`SELECT 1 FROM attempts
-        WHERE task_id = ? AND (phase != 'settled' OR verification != 'matched'
-          OR delivery_status != 'dispatched' OR effect_status != 'applied')`).get(taskId)) {
-        throw new ContractError('task lacks settled verified attempts');
+      if (this.#db.prepare(`SELECT 1 FROM attempts WHERE task_id = ?
+        AND (phase != 'settled' OR delivery_status = 'unknown'
+          OR effect_status = 'unknown')`).get(taskId)) {
+        throw new ContractError('task has unsettled or unknown attempts');
       }
       this.#db.prepare(`UPDATE tasks SET state = 'completed' WHERE task_id = ?`)
         .run(taskId);

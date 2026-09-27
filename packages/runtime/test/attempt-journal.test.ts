@@ -89,18 +89,27 @@ test('a verified multi-step task completes and releases the writer', () => withD
   reopened.close();
 }));
 
-test('completion rejects unverified or uncertain effects', () => withDatabase(path => {
+test('completion accepts host-verified read-only task and rejects uncertainty', () => withDatabase(path => {
   const journal = new AttemptJournal(path);
   journal.startTask('task-1', 1, 1);
-  assert.throws(() => journal.completeTask('task-1', 'evidence-1'), /verified attempts/);
+  assert.throws(() => journal.completeTask('task-1', ''), /evidence reference/);
   journal.prepare(attempt);
-  assert.throws(() => journal.completeTask('task-1', 'evidence-1'), /verified attempts/);
+  assert.throws(() => journal.completeTask('task-1', 'evidence-1'), /unsettled or unknown/);
   journal.markDispatchBoundary('execution-1');
   journal.recordOutcome('execution-1', { deliveryStatus: 'unknown',
     effectStatus: 'unknown', verification: 'unavailable' });
-  assert.throws(() => journal.completeTask('task-1', 'evidence-1'), /verified attempts/);
+  assert.throws(() => journal.completeTask('task-1', 'evidence-1'), /unsettled or unknown/);
   journal.cancelTask('task-1');
   assert.throws(() => journal.startTask('task-2', 1, 1), /unknown/);
+  journal.close();
+}));
+
+test('host-verified locate can complete without an effect attempt', () => withDatabase(path => {
+  const journal = new AttemptJournal(path);
+  journal.startTask('locate-task', 1, 1);
+  journal.completeTask('locate-task', 'observed-exact-result');
+  assert.equal(journal.getTaskState('locate-task'), 'completed');
+  journal.startTask('next-task', 1, 1);
   journal.close();
 }));
 
