@@ -19,8 +19,9 @@ Accessibility field; there is no general-purpose executor or release binary yet.
 - Host-private task admission plus revision-, prompt-, actor-, presentation-, action-
   and policy-bound approvals that are accepted and consumed once in mock tests.
 - A SQLite attempt-journal foundation that preserves uncertain dispatch across
-  restart and fences journal dispatch after cancellation; adapter and permit
-  integration remain open.
+  restart, fences journal dispatch after cancellation, and records verified
+  terminal task completion. Unknown settled effects still block a new task;
+  adapter and permit integration remain open.
 - A fixture-scoped host dispatch gate that binds a copied candidate, target and
   argument to a one-use in-process permit and the journal. Synthetic Stop and
   stale-target tests pass; no native/browser adapter uses this gate yet.

@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { DatabaseSync } from 'node:sqlite';
 import { AttemptJournal } from '../src/attempt-journal.ts';
 import type { PreparedAttempt } from '../src/attempt-journal.ts';
 
@@ -55,19 +56,85 @@ test('restart preserves an unresolved boundary and blocks another writer', () =>
   restarted.recordOutcome('execution-1', {
     deliveryStatus: 'unknown', effectStatus: 'unknown', verification: 'unavailable',
   });
-  assert.equal(restarted.unresolvedAttempts().length, 0);
-  restarted.startTask('task-2', 1, 1);
-  restarted.prepare({ ...attempt,
-    taskId: 'task-2', executionId: 'execution-2', permitRef: 'permit-2',
-  });
-  assert.throws(() => restarted.prepare({ ...attempt,
-    taskId: 'task-2', executionId: 'execution-3', permitRef: 'permit-3',
-  }), /UNIQUE constraint/);
-  restarted.recordNotDispatched('execution-2');
-  assert.throws(() => restarted.prepare({ ...attempt,
-    taskId: 'task-2', executionId: 'execution-3', permitRef: 'permit-2',
-  }), /attempts.permit_ref/);
+  assert.deepEqual(restarted.unresolvedAttempts().map(item => item.executionId), ['execution-1']);
+  assert.throws(() => restarted.startTask('task-2', 1, 1), /unknown/);
   restarted.close();
+  const reopened = new AttemptJournal(path);
+  assert.deepEqual(reopened.unresolvedAttempts().map(item => item.executionId), ['execution-1']);
+  assert.throws(() => reopened.startTask('task-2', 1, 1), /unknown/);
+  reopened.close();
+}));
+
+test('a verified multi-step task completes and releases the writer', () => withDatabase(path => {
+  const journal = new AttemptJournal(path);
+  journal.startTask('task-1', 1, 1);
+  for (const [index, evidence] of [[1, 'search-result'], [2, 'exact-detail']] as const) {
+    const item = { ...attempt, executionId: `execution-${index}`,
+      permitRef: `permit-${index}`, candidateId: `candidate-${index}` };
+    journal.prepare(item);
+    journal.markDispatchBoundary(item.executionId);
+    journal.recordOutcome(item.executionId, { deliveryStatus: 'dispatched',
+      effectStatus: 'applied', verification: 'matched', evidenceRef: evidence });
+  }
+  journal.completeTask('task-1', 'exact-detail');
+  assert.equal(journal.getTaskState('task-1'), 'completed');
+  assert.deepEqual(journal.taskEventKinds('task-1'), ['started', 'completed:exact-detail']);
+  assert.throws(() => journal.completeTask('task-1', 'again'), /not active/);
+  assert.throws(() => journal.cancelTask('task-1'), /not active/);
+  journal.startTask('task-2', 1, 1);
+  assert.equal(journal.getTaskState('task-2'), 'active');
+  journal.close();
+  const reopened = new AttemptJournal(path);
+  assert.equal(reopened.getTaskState('task-1'), 'completed');
+  reopened.close();
+}));
+
+test('completion accepts host-verified read-only task and rejects uncertainty', () => withDatabase(path => {
+  const journal = new AttemptJournal(path);
+  journal.startTask('task-1', 1, 1);
+  assert.throws(() => journal.completeTask('task-1', ''), /evidence reference/);
+  journal.prepare(attempt);
+  assert.throws(() => journal.completeTask('task-1', 'evidence-1'), /unsettled or unknown/);
+  journal.markDispatchBoundary('execution-1');
+  journal.recordOutcome('execution-1', { deliveryStatus: 'unknown',
+    effectStatus: 'unknown', verification: 'unavailable' });
+  assert.throws(() => journal.completeTask('task-1', 'evidence-1'), /unsettled or unknown/);
+  journal.cancelTask('task-1');
+  assert.throws(() => journal.startTask('task-2', 1, 1), /unknown/);
+  journal.close();
+}));
+
+test('host-verified locate can complete without an effect attempt', () => withDatabase(path => {
+  const journal = new AttemptJournal(path);
+  journal.startTask('locate-task', 1, 1);
+  journal.completeTask('locate-task', 'observed-exact-result');
+  assert.equal(journal.getTaskState('locate-task'), 'completed');
+  journal.startTask('next-task', 1, 1);
+  journal.close();
+}));
+
+test('legacy task schema migrates without losing event foreign keys', () => withDatabase(path => {
+  const legacy = new DatabaseSync(path);
+  legacy.exec(`PRAGMA foreign_keys = ON;
+    CREATE TABLE tasks (task_id TEXT PRIMARY KEY, task_epoch INTEGER NOT NULL,
+      goal_revision INTEGER NOT NULL,
+      state TEXT NOT NULL CHECK(state IN ('active', 'cancelled', 'paused')));
+    CREATE TABLE task_events (sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL REFERENCES tasks(task_id),
+      event_kind TEXT NOT NULL, recorded_at TEXT NOT NULL);
+    INSERT INTO tasks VALUES ('old-task', 1, 1, 'active');
+    INSERT INTO task_events (task_id, event_kind, recorded_at)
+      VALUES ('old-task', 'started', '2026-09-27T00:00:00Z');`);
+  legacy.close();
+  const journal = new AttemptJournal(path);
+  assert.equal(journal.getTaskState('old-task'), 'active');
+  assert.deepEqual(journal.taskEventKinds('old-task'), ['started']);
+  journal.recoverAfterRestart();
+  assert.equal(journal.getTaskState('old-task'), 'paused');
+  journal.close();
+  const check = new DatabaseSync(path);
+  assert.deepEqual(check.prepare('PRAGMA foreign_key_check').all(), []);
+  check.close();
 }));
 
 test('journal cancellation fences prepared dispatch and late receipt cannot reactivate a task', () => withDatabase(path => {
