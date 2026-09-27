@@ -38,7 +38,8 @@ established by the current fixture-only native or browser tests.
   [#16 local-save Stop fence accounting](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/16),
   [#17 portal action permits](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/17),
   [#18 existing-Chrome attachment](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/18),
-  [#19 Chrome native-host transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/19).
+  [#19 Chrome native-host transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/19),
+  [#20 managed-browser observation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/20).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current implementation branch is `codex/managed-browser-observation`,
   stacked on `codex/chrome-native-host-bridge`.
