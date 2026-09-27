@@ -26,7 +26,8 @@ Accessibility field; there is no general-purpose executor or release binary yet.
   stale-target tests pass; no native/browser adapter uses this gate yet.
 - A loopback-only synthetic invoice portal with duplicate titles, exact detail
   identities, a delayed download control and fixed downloads. Its HTTP tests pass;
-  no Playwright worker or real browser is connected yet.
+  a narrow Playwright worker now exercises search, open and download in an
+  isolated temporary Chromium profile. Existing Chrome is not connected.
 - Clarification and resume intent records bound to displayed prompts, task revisions,
   current observations and recovered checkpoints.
 - A macOS Unix-socket peer verifier that binds kernel audit-token identity to
@@ -41,10 +42,12 @@ is under `docs/specification/`.
 ## Development checks
 
 Use Node **26.5.0**, Python **3.14.6**, and Swift **6.4** on macOS for the environment
-tested here. No test below requests OS permissions or controls another app.
+tested here. Browser tests launch a fresh headless Chromium profile against the
+local synthetic portal; they do not touch existing Chrome or real accounts.
 
 ```sh
 npm ci --ignore-scripts
+npx playwright install --only-shell chromium
 npm run check
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-test.txt
@@ -80,8 +83,9 @@ the schema's existing golden digests unless the contract is intentionally revise
 Python and Swift remain independent checks of the TypeScript fixture output.
 
 CLM/ASR model downloads, release signing, microphone capture, native fixture
-editing, browser automation and remote inference are not part of the automated
-check commands above. The opt-in fixture test is separate. Do not add models
+editing, existing-Chrome automation and remote inference are not part of the automated
+check commands above. The automated browser check covers only the synthetic
+portal in an isolated profile. The opt-in native fixture test is separate. Do not add models
 to the effect path until scripted drivers and durable dispatch/Stop tests pass.
 
 ## Repository and publication

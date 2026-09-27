@@ -12,12 +12,15 @@ same parser, schema and digest fixtures before merging.
 | Ajv | 8.20.0 | Draft 2020-12 schema validation, MIT. Compile only the bundled schema; no remote refs, coercion or provider schemas. Replace behind `decodeMessage`. |
 | ajv-formats | 3.0.1 | Actual date-time assertions, MIT. Retain invalid-date tests on every update; same validator replacement seam. |
 | jsonc-parser | 3.3.1 | Microsoft's parser exposes duplicate keys and bounded traversal before JSON materialization, MIT. Comments/trailing commas are disabled. Replace behind `parseJSON`; keep malformed-input tests. |
+| Playwright | 1.63.0 | Managed Chromium driver and isolated browser tests, Apache-2.0. Exact npm lockfile and version-matched Chromium build are required; this driver uses a fresh temporary profile and a fixture-origin route restriction. Replace behind the browser adapter interface if needed. Browser binary redistribution, bundled licenses, security updates and clean-Mac packaging remain B01/B27 work. [Official browser/version guidance](https://playwright.dev/docs/browsers). |
 | TypeScript | 7.0.2 | Development-only type checks, Apache-2.0. Exact lockfile; never required from end users. |
 | @types/node | 26.6.3 | Development-only types, MIT. Runtime compatibility is tested separately. |
 | jsonschema | 4.26.0 with format-nongpl extra | Independent Python test oracle, MIT. All resolved test dependencies pinned in `requirements-test.txt`; no Python authorization service is shipped. |
 | Swift / Foundation / CryptoKit / Security / libbsm | Swift 6.4, macOS SDK supplied locally | Native digest and Unix-socket peer identity implementation using platform SHA-256, audit-token parsing and code-signing validation. No third-party runtime is added. SDK/build pins, release requirement policy and minimum app OS require qualification. |
 
-`npm install --ignore-scripts` was used. A lockfile records registry integrity; no
+`npm install --ignore-scripts` was used. Playwright 1.63.0 was added from the
+local npm cache; an existing version-matched Chromium/headless-shell build was
+used for tests, so this slice did not download a browser. A lockfile records registry integrity; no
 postinstall scripts are required. The initial npm audit reported zero advisories;
 this is time-specific dependency evidence, not an application-security certificate.
 Python dependency hashes and a complete distributable SBOM remain release work.

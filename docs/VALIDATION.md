@@ -180,3 +180,18 @@ states, duplicate titles, exact synthetic downloads, a delayed-link script,
 foreign Host rejection, write-method rejection, query escaping and HEAD behavior.
 No browser was launched and no user account, external site or profile was touched.
 The delayed control's actual browser behavior remains unverified.
+
+## First managed Chromium workflow, 27 September 2026
+
+Playwright **1.63.0** was installed from the local npm cache with
+`npm install --save-exact playwright@1.63.0 --ignore-scripts --offline --no-fund`.
+`npx playwright install --list` showed a pre-existing matching Chromium 1243 and
+headless-shell 1243; no browser binary was downloaded. The first isolated browser
+test exposed a mismatch between the portal's `data-page` values and the driver's
+state names. The mapping was corrected without weakening tests. The focused
+`node --test packages/browser/test/managed-portal.test.ts` run then passed 3/3
+with local execution permission: exact search/open/download, stale/unknown IDs,
+and rejection of non-fixture origins. The browser used an empty temporary profile
+and the synthetic loopback portal; it never accessed existing Chrome, accounts
+or external websites. The final full `npm run check` passed TypeScript typechecking
+and **130/130** Node tests with local loopback/browser execution permission.
