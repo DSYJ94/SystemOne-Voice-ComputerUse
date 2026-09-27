@@ -151,7 +151,7 @@ final class NativeMock: NSObject, NSApplicationDelegate {
         let trusted = AXIsProcessTrustedWithOptions(options)
         result?.stringValue = trusted
             ? "Accessibility is already granted to this mock build."
-            : "Grant access to SystemOne Mock if macOS prompts, then try Fill again."
+            : "This Mock build is not trusted. Grant it if macOS prompts; an older ad-hoc build's toggle does not prove access."
     }
 
     @objc private func fillFixtureName() {
@@ -165,7 +165,7 @@ final class NativeMock: NSObject, NSApplicationDelegate {
             return
         }
         guard AXIsProcessTrustedWithOptions(nil) else {
-            result?.stringValue = "Accessibility is not granted. Use Request Accessibility."
+            result?.stringValue = "This Mock build is not trusted. Use Request Accessibility; see the test guide if its toggle is already on."
             return
         }
         let running = NSRunningApplication.runningApplications(
