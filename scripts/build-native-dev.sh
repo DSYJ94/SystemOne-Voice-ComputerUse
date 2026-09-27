@@ -29,6 +29,7 @@ swiftc -swift-version 6 -parse-as-library -framework AppKit \
   "$repository_root/apps/native-dev/main.swift" \
   "$repository_root/packages/native-ax/Sources/NativeAX/Observation.swift" \
   "$repository_root/packages/native-ax/Sources/NativeAX/SystemAXBackend.swift" \
+  "$repository_root/packages/native-ax/Sources/NativeAX/ValueAction.swift" \
   -o "$binary"
 
 /usr/bin/python3 - "$contents/Info.plist" "$node_path" "$controller_path" <<'PY'

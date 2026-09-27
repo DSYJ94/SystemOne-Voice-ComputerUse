@@ -473,3 +473,25 @@ Accessibility permission was requested, no live native app was inspected, and
 no native action was dispatched. The synthetic test checks registry identity,
 truncation and stale-handle behavior, not TCC attribution, live AX timing,
 real application compatibility or a worker Stop barrier.
+
+## Restricted native field action source, 28 September 2026
+
+`npm run test:native-ax` passed both the pre-existing synthetic observation
+check and the new `NativeAXValueCheck`. The new check covers exact selected
+duplicate node, one-use send, Stop before send, Stop during blocked preflight,
+Stop acknowledgement during a blocked setter, stale descriptor, changed prior
+value, failed journal-boundary callback, secure-field rejection and a setter
+that changes the field before returning an error. The first Swift build found a
+missing `try` on a throwing value read; it was corrected before the passing
+check. These are synthetic backend behaviors, not live Accessibility action
+evidence. The native driver is linked into the development app but has no
+controller or UI action route. Journal integration, authenticated permits,
+live AX timing and real-app verification remain untested.
+After the final fence changes, `npm run check` passed **169/169** Node tests and
+`npm run build:native-dev` again passed AppKit compilation and strict ad-hoc
+codesign verification. The native action remains unexposed.
+`swift build --package-path packages/native-ax --cache-path
+/private/tmp/systemone-swift-cache` built the library and both check targets.
+The command-line-tools linker emitted warnings about missing framework/library
+search paths, but exited successfully. A matching value at preflight remains a
+read-only match, not evidence of a dispatched action or durable completion.

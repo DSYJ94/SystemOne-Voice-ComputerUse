@@ -101,6 +101,10 @@ user input. Labels and capabilities remain local; field values are not read.
 Compilation and synthetic registry checks pass; live observation remains
 unverified while the earlier manual browser test stays available. See
 [native inspection test](NATIVE_INSPECTION_TEST.md).
+The B11 source now includes a guarded native `AXValue` driver and synthetic
+Stop/interference checks. It is not connected to the UI, host journal or a
+signed worker permit, so there is still no native action in the development
+app. See [native action status](NATIVE_ACTION.md).
 It fences both stores on Stop. Stop distinguishes browser context closure from
 an independent local save still pending and reports an incomplete worker fence
 for the latter. Context closure does not prove an already-dispatched action had
