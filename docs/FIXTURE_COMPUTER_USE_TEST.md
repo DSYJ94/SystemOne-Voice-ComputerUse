@@ -4,6 +4,8 @@ This is a fixture-only macOS test. SystemOne Mock may change **only** the
 **Fixture Name** field in **SystemOne Fixture** through macOS Accessibility.
 There is no model, voice input, browser connection, clipboard use, personal-app
 control or remote service in this path. Use synthetic text.
+`npm run test:mac-peer` is a separate Terminal-only signing check and will not
+open either test app.
 
 1. The run command below stops only earlier SystemOne Mock and SystemOne Fixture
    test processes from this build path, then opens a fresh Mock. Any synthetic
@@ -18,7 +20,8 @@ control or remote service in this path. Use synthetic text.
 
 3. In SystemOne Mock, choose **Open Fixture**. Confirm a separate **SystemOne
    Fixture** window has an empty **Fixture Name** field. If **S1 Mock** is hidden
-   by a menu-bar manager, use the SystemOne Mock Dock icon to reopen its panel.
+   by a menu-bar manager, use Command-Tab to select **SystemOne Mock** or use
+   its Dock icon to reopen the panel.
 4. Return to **SystemOne Mock**. Enter `fixture-123` in **its** value field;
    typing directly in the fixture does not exercise computer use. If the mock
    says Accessibility is unavailable, choose **Request Accessibility**. If macOS
