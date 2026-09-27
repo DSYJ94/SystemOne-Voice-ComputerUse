@@ -135,3 +135,24 @@ Request Accessibility, Fill Fixture Name and Stop in the host panel. No TCC
 permission was granted, no AX setter was invoked by the product, and the
 effectful path remains **unverified** until the owner performs the opt-in test.
 See `docs/FIXTURE_COMPUTER_USE_TEST.md`.
+
+## Fixture action and attempt journal, 27 September 2026
+
+On the local macOS 26.6.2 arm64 host, the user-granted Accessibility path was
+exercised with a synthetic value. A direct fixture entry of `fixture-123` was
+cleared by Reset. The separate SystemOne Mock then reported "Verified" after
+Fill Fixture Name, and an independent Accessibility read of SystemOne Fixture
+showed `fixture-123`. This verifies one local fixture-only action, not a general
+native adapter, TCC update behavior, or production signing. The rebuilt fixture
+now gives explicit Reset feedback; that new UI text has compiled but has not yet
+been interactively retested in a restarted app.
+
+`npm run build:native-mock` succeeded after the guide change. `npm run check`
+passed TypeScript typechecking and **113/113** Node tests, zero skipped. The five
+new file-backed SQLite tests cover crash before/after the dispatch boundary,
+conservative unresolved recovery, Stop fencing at the journal, late receipt,
+one writer slot, permit-reference replay and impossible outcome dimensions.
+No browser, model, microphone, account or non-fixture app was controlled.
+The journal is not yet connected to the native app or an authenticated host;
+therefore its tests do not qualify a real Stop barrier, exactly-once delivery or
+safe resume.
