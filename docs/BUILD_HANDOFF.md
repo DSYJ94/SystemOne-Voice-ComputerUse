@@ -41,8 +41,8 @@ established by the current fixture-only native or browser tests.
   [#19 Chrome native-host transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/19),
   [#20 managed-browser observation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/20).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/managed-browser-observation`,
-  stacked on `codex/chrome-native-host-bridge`.
+- The current implementation branch is `codex/managed-browser-fill-authority`,
+  stacked on `codex/managed-browser-observation`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -81,10 +81,13 @@ managed-browser task now accepts only a one-use admission from the bound final
 input session and checks its exact fixture contract. Each scripted action requires
 a short-lived in-process permit bound to task revision, stage, effect and a fresh
 portal observation before its journal dispatch boundary.
-Separately, a general read-only managed-Chromium observer now opens an exact
+Separately, a general managed-Chromium observer now opens an exact
 approved origin in an isolated profile and returns bounded main-document
-controls with explicit frame/shadow/truncation gaps. It issues no action permit
-and is not connected to the app or durable task controller.
+controls with explicit frame/shadow/truncation gaps. One admitted `FILL` task
+now uses a one-use in-process permit, private DOM handle revalidation, a
+durable dispatch boundary and current field-value verification. Its Stop fences
+the journal and closes the isolated context, while any dispatched uncertainty
+remains unresolved. It is not connected to the app or an OS-authenticated worker.
 It fences both stores on Stop. Stop distinguishes browser context closure from
 an independent local save still pending and reports an incomplete worker fence
 for the latter. Context closure does not prove an already-dispatched action had

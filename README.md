@@ -31,8 +31,11 @@ Accessibility field; there is no general-purpose executor or release binary yet.
   a narrow Playwright worker now exercises search, open and download in an
   isolated temporary Chromium profile. A separate general managed-Chromium
   observer can open an explicitly scoped URL in a fresh isolated profile and
-  return bounded main-document semantic controls. It cannot execute actions or
-  complete tasks. Existing Chrome is not connected.
+  return bounded main-document semantic controls. One admitted `FILL` task can
+  now replace and verify a supported text field through an in-process permit
+  and durable attempt journal. It is not connected to the app, does not support
+  general browser actions, and is not an authenticated worker. Existing Chrome
+  is not connected.
 - An initial existing-Chrome Manifest V3 extension source requires a toolbar
   click, binds a read-only DOM observation to one exact tab/document and revokes
   on navigation or native-port disconnect. A Swift native-messaging host passes
