@@ -5,9 +5,10 @@ This is a fixture-only macOS test. SystemOne Mock may change **only** the
 There is no model, voice input, browser connection, clipboard use, personal-app
 control or remote service in this path. Use synthetic text.
 
-1. If an earlier build is running, quit SystemOne Mock and SystemOne Fixture
-   from the Dock before rebuilding. If the fixture-capable mock is already open,
-   you can use it directly.
+1. The run command below stops only earlier SystemOne Mock and SystemOne Fixture
+   test processes from this build path, then opens a fresh Mock. Any synthetic
+   value left in the Fixture will be lost. This avoids reopening an older process
+   after its bundle has been rebuilt.
 2. In Terminal, run:
 
    ```sh
@@ -16,7 +17,8 @@ control or remote service in this path. Use synthetic text.
    ```
 
 3. In SystemOne Mock, choose **Open Fixture**. Confirm a separate **SystemOne
-   Fixture** window has an empty **Fixture Name** field.
+   Fixture** window has an empty **Fixture Name** field. If **S1 Mock** is hidden
+   by a menu-bar manager, use the SystemOne Mock Dock icon to reopen its panel.
 4. Return to **SystemOne Mock**. Enter `fixture-123` in **its** value field;
    typing directly in the fixture does not exercise computer use. If the mock
    says Accessibility is unavailable, choose **Request Accessibility**. If macOS
@@ -42,3 +44,7 @@ denied Accessibility permission, changed target identity or missing control
 will stop before the setter is called. Permission may need to be granted again
 after rebuilding an ad-hoc-signed development app. Do not grant access to a
 different app merely because its name looks similar.
+
+If either test app exits unexpectedly, stop the test and report which app
+disappeared. `npm run run:native-mock` is the clean restart path; direct
+`npm run build:native-mock` now refuses to overwrite a running test bundle.

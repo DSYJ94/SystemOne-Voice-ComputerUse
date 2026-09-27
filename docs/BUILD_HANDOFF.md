@@ -41,6 +41,10 @@ synthetic fixture field through Accessibility and independently re-observed it.
 The revised Reset feedback is compiled but awaits the owner's renewed manual
 test. The owner has the [exact test steps](FIXTURE_COMPUTER_USE_TEST.md); record
 their result separately from automated evidence.
+The local launcher now restarts the two exact-path synthetic processes before a
+rebuild and refuses direct in-place builds while they run. A fresh Fixture
+reopened without a crash after the 27 September incident; the owner's in-Mock
+click and Reset feedback are still pending.
 
 `npm run check` is the TypeScript/Node suite; `npm run build:native-mock`
 compiles the two ad-hoc-signed local bundles. `npm run test:mac-peer` checks a

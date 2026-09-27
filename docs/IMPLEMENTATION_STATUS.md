@@ -127,6 +127,14 @@ is still awaiting their observation; continue independent implementation and
 synthetic checks while that result is pending. The exact steps are in
 `docs/FIXTURE_COMPUTER_USE_TEST.md`.
 
+The 27 September reopen crash was in SystemOne Fixture, not the Mock. Two
+diagnostic reports show the same reopen-handler crash after an older Fixture
+process survived a bundle rebuild. The launcher now stops only exact-path
+synthetic processes before rebuilding/reopening, and a direct build refuses to
+overwrite a running test bundle. Generated app-bundle extended attributes from
+the OneDrive checkout are cleared before ad-hoc signing. A fresh fixture opened
+and reopened without a new crash; the owner's in-Mock click remains to be checked.
+
 The local invoice portal now supplies deterministic search results, duplicate
 titles under distinct IDs/accounts, exact detail pages and a download link that
 appears after a short client-side delay. It binds only an ephemeral 127.0.0.1
