@@ -25,10 +25,10 @@ fixtures. Supported operations and limitations must be stated explicitly.
 | B05 fixtures | In progress | Fifteen schema messages, shared digest/Unicode fixtures, one resettable synthetic native text field, and a loopback-only invoice portal with duplicate titles, exact detail routes and fixed downloads. A narrow managed-browser driver uses the portal; broader native and adversarial fixtures remain. |
 | B26 conformance | In progress | Python oracle and TypeScript tests pass; standalone Swift digest check passes. XCTest cannot run with the installed SDK. Full cross-language negative fixtures, property/fuzz/race tests and CI remain. |
 | B05/B07 native fixture slice | Local test build | A synthetic AppKit fixture exposes one editable field. On this local Mac, the mock changed `Fixture Name` through Accessibility and the value was independently re-observed. This is one fixture action, not general native support. No shortcut, focus capture, voice, TCC attribution or production signing. |
-| B09 host dispatch gate foundation | In progress | A fixture-scoped TypeScript gate binds a selected candidate to the admitted task, exact observation, policy, target, argument provenance and one-use in-process permit. Synthetic drivers prove Stop before send, unresolved send after Stop, expiry and stale-target refusal. The separate scripted portal task now closes its managed Chromium context on Stop; that path is not yet joined to the host permit/journal or a general worker barrier. |
+| B09 host dispatch gate foundation | In progress | A fixture-scoped TypeScript gate binds a selected candidate to the admitted task, exact observation, policy, target, argument provenance and one-use in-process permit. Synthetic drivers prove Stop before send, unresolved send after Stop, expiry and stale-target refusal. The scripted portal task now journals its own attempts and closes Chromium on Stop, but does not use this gate's host-issued permits or an authenticated worker. |
 | B10 native observation foundation | In progress | A separate Swift package provides a read-only Accessibility tree walker with node/depth/time limits, observation-scoped handles, target PID/bundle/path/launch identity, and stale-node checks. Synthetic registry checks pass. It has not observed a live non-fixture app, is not wired to the host, and does not provide execution authority, a Stop barrier or a production privacy projection. |
 | B12 managed Chromium worker | In progress | Playwright 1.63.0 launches a fresh temporary Chromium profile and a narrow scripted portal driver. Headless tests search, open an exact duplicate and download a fixed document. Stop closes this isolated context; a delayed-control test sees no download request after cancellation. General DOM snapshots, tabs/frames, uploads, headed UX, authenticated dispatch integration and packaging remain. |
-| B15 attempt journal foundation | In progress | SQLite records prepared attempts, the dispatch boundary, outcomes, cancellation, restart pause and verified multi-step task completion. An unknown settled effect remains visible and blocks a new task across restart; the prior task schema migrates with foreign keys checked. A separate fixture-only SQLite task record keeps portal progress and also blocks a new task after unresolved Stop. The stores are not yet joined to one host or signed supervisor; explicit unknown-effect recovery remains. |
+| B15 attempt journal foundation | In progress | SQLite records prepared attempts, the dispatch boundary, outcomes, cancellation, restart pause and host-verified task completion. The fixture portal task now writes all four scripted action attempts and Stop fences both the journal and task record; a simulated restart leaves an in-flight browser boundary paused and blocks replay. The two tables share a database but not one transaction. No authenticated host permit, signed supervisor or explicit unknown-effect recovery is connected. |
 | B16 portal outcome predicates | In progress | The managed portal re-observes exact invoice ID/title/account for LOCATE and OPEN, and requires a session-owned download receipt plus unchanged file bytes for DOWNLOAD. A scripted task uses those predicates across search/open/download/save; its output is private fixture data. No general outcome engine or authenticated task actor is connected. |
 | All other tickets | Not started | No qualified signed UX, general native action adapter, ASR, existing-Chrome bridge, model service or release artifact. |
 
@@ -169,13 +169,13 @@ Headless tests pass. The fixture Stop path now records cancellation before
 closing the context, and a delayed-control test confirms no download request
 after its close. This is not a general browser executor, an offline-network
 qualification, an OS-level network sandbox, or a Stop barrier integrated with
-the host permit/journal. The production headed build, installer and existing-
+the host permit gate. The production headed build, installer and existing-
 Chrome extension are still separate work.
 
 ## Next sequence
 
-1. Connect the fixture-only scripted task and attempt journal through one
-   authenticated host authority; prove the browser close fence at that dispatch
+1. Move the now-journaled fixture portal task behind one authenticated host
+   authority and one-use permits. Prove the browser close fence at that dispatch
    boundary and preserve already-dispatched uncertainty. Add
    B10/B11 semantic native observations/actions with explicit scope; move beyond
    single-field fixtures without treating unverified effects as safe.

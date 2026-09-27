@@ -34,8 +34,10 @@ Accessibility field; there is no general-purpose executor or release binary yet.
   the general host controller or a production completion engine.
 - A fixture-scoped durable task runs portal search/open/download/save one action
   at a time, keeping verified progress and pausing after unknown in-flight
-  outcomes. Output is confined to a private fixture directory. This is not yet
-  the host-authorized native/browser controller.
+  outcomes. Each scripted action now writes an attempt and dispatch boundary to
+  the host-private journal before its browser call; Stop fences both records.
+  Output is confined to a private fixture directory. This is still in-process
+  fixture authority, not authenticated production dispatch.
 - A read-only native Accessibility observation package with bounded traversal,
   private observation-scoped handles and synthetic stale-target checks. It is
   not yet connected to the app or its task controller.

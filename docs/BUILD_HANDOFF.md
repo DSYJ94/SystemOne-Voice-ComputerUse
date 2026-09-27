@@ -68,10 +68,12 @@ observation package and runs synthetic registry checks. It does not attach to
 the Mock or observe any live app. It was built without changing the currently
 granted Mock binary.
 
-The native mock does not use the TypeScript journal/dispatch gate. Managed
-Playwright now has a fixture-only context-close Stop fence, but it is not joined
-to the host permit/journal and cannot prove an already-dispatched action had no
-effect. Existing Chrome is not connected. Host/helper release identity, TCC attribution after installation and
+The native mock does not use the TypeScript journal/dispatch gate. The scripted
+managed-browser task now journals each action before its Playwright call and
+fences both stores on Stop. Its context-close fence does not prove an already-
+dispatched action had no effect; the two stores lack one atomic transaction and
+the path has no authenticated host permit. Existing Chrome is not connected.
+Host/helper release identity, TCC attribution after installation and
 update, voice, CLM inference, privacy review, crash recovery across real workers,
 packaging/notarization and clean-Mac installation are unverified. Treat effects
 that may have crossed a worker boundary as unknown until re-observed; Stop cannot
@@ -79,11 +81,11 @@ undo an already-dispatched effect.
 
 ## Next implementation order
 
-1. Join the new fixture-only durable portal task to authenticated B03/B09/B15
-   host authority and prove the context-close fence at its dispatch boundary.
-   The journal now represents verified terminal completion and retains unknown
-   effects across restart; the scripted task still calls Playwright directly
-   and does not share that journal or host permit authority.
+1. Put the now-journaled fixture portal task behind authenticated B03/B09/B15
+   host authority and one-use permits. The scripted task still calls Playwright
+   directly from trusted in-process code; its candidate/argument digests are
+   durable, but they are not host-issued execution authority. Preserve the
+   already-dispatched uncertainty and make Stop's worker fence measurable.
    Extend the B10 read-only native observer to an approved live fixture under
    the authenticated host; build B11 actions only after authority/Stop tests.
 2. Integrate B03/B09/B15 host authority, authenticated worker identity, durable
