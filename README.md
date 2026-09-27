@@ -35,6 +35,13 @@ Accessibility field; there is no general-purpose executor or release binary yet.
   at a time, keeping verified progress and pausing after unknown in-flight
   outcomes. Output is confined to a private fixture directory. This is not yet
   the host-authorized native/browser controller.
+- A read-only native Accessibility observation package with bounded traversal,
+  private observation-scoped handles and synthetic stale-target checks. It is
+  not yet connected to the app or its task controller.
+- A fixture-only managed-browser Stop path cancels the task record and closes
+  the isolated Chromium context. A delayed-control test confirms no download
+  request after Stop; already-dispatched effects remain uncertain and block a
+  new scripted task until an explicit recovery path is built.
 - Clarification and resume intent records bound to displayed prompts, task revisions,
   current observations and recovered checkpoints.
 - A macOS Unix-socket peer verifier that binds kernel audit-token identity to
@@ -61,6 +68,7 @@ python3 -m venv .venv
 .venv/bin/python packages/protocol/validate_contract.py
 npm run test:swift
 npm run test:mac-peer
+npm run test:native-ax
 ```
 
 `npm run test:mac-peer` checks a signing/peer-identity fixture in Terminal;
@@ -75,15 +83,14 @@ Preview only has no effect. The build also offers one **fixture-only** action: s
 the `Fixture Name` field of a synthetic app through macOS Accessibility. It has no
 general computer-control capability. See `docs/FIXTURE_COMPUTER_USE_TEST.md` for
 the opt-in local steps and exact limits.
-On 27 September, the local fixture test succeeded: SystemOne Mock set
-`fixture-123` through Accessibility and the separate fixture showed that value.
-The guided steps now distinguish the mock's input from the target field.
-The owner is revisiting the manual fixture test; its result is pending. Follow
-the exact steps in `docs/FIXTURE_COMPUTER_USE_TEST.md` and report the Mock status.
+On 27 September, the owner confirmed the current Mock set `fixture-123` through
+Accessibility and the separate Fixture showed that value. Reset feedback has
+not yet been observed. The guided steps distinguish the mock's input from the
+target field.
 On 27 September, the current ad-hoc-signed Mock reported untrusted despite an
 enabled macOS toggle after a rebuild. Its grant was reset for this bundle ID
-only; the current build still needs a fresh user grant. This Mac has no valid
-development signing identity, so rebuilds may require renewed approval until
+only; the owner then granted the current build and confirmed Fill. This Mac has
+no valid development signing identity, so rebuilds may require renewed approval until
 stable development signing is configured.
 
 The XCTest suite requires an SDK providing XCTest; it could not run with this

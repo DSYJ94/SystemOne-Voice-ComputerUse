@@ -34,6 +34,7 @@ export interface ScriptedPortalRecord extends ScriptedPortalContract {
 
 interface PortalSession {
   readonly origin: string;
+  stop(): Promise<{ workerFenced: boolean }>;
   observe(): Promise<PortalObservation>;
   search(query: string): Promise<PortalObservation>;
   openInvoice(id: string, revision: number): Promise<PortalObservation>;
@@ -59,8 +60,9 @@ export class ScriptedPortalStore {
         destination_path TEXT, state TEXT NOT NULL, stage TEXT NOT NULL,
         in_flight TEXT, reason TEXT
       );
-      CREATE UNIQUE INDEX IF NOT EXISTS one_open_scripted_portal_task
-      ON scripted_portal_tasks ((1)) WHERE state IN ('active', 'paused');`);
+      CREATE UNIQUE INDEX IF NOT EXISTS one_unresolved_scripted_portal_task
+      ON scripted_portal_tasks ((1))
+      WHERE state IN ('active', 'paused') OR in_flight IS NOT NULL;`);
   }
 
   close(): void { this.#db.close(); }
@@ -68,6 +70,10 @@ export class ScriptedPortalStore {
   start(contract: ScriptedPortalContract): ScriptedPortalRecord {
     validateContract(contract);
     this.#assertOutputScope(contract);
+    if (this.#db.prepare(`SELECT 1 FROM scripted_portal_tasks
+      WHERE state IN ('active', 'paused') OR in_flight IS NOT NULL`).get()) {
+      throw new Error('earlier scripted task is active or has an unresolved action');
+    }
     this.#db.prepare(`INSERT INTO scripted_portal_tasks VALUES
       (?, ?, ?, ?, ?, ?, ?, ?, 'active', 'admitted', NULL, NULL)`)
       .run(contract.taskId, contract.origin, contract.outcomeKind,
@@ -163,7 +169,15 @@ export class ScriptedPortalTask {
     if (!task || task.origin !== session.origin) throw new Error('scripted task origin mismatch');
   }
 
-  stop(): ScriptedPortalRecord { return this.#store.stop(this.#taskId); }
+  async stop(): Promise<{ record: ScriptedPortalRecord; workerFenced: boolean }> {
+    // Persist cancellation before waiting for Playwright to close. A successful
+    // worker fence never changes an in-flight action into "not dispatched".
+    const record = this.#store.stop(this.#taskId);
+    let workerFenced = false;
+    try { workerFenced = (await this.#session.stop()).workerFenced; }
+    catch { /* The task remains cancelled; worker outcome stays unknown. */ }
+    return Object.freeze({ record, workerFenced });
+  }
 
   async advance(): Promise<ScriptedPortalRecord> {
     const task = this.#store.get(this.#taskId)!;
