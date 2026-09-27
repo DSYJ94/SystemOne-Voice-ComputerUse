@@ -26,8 +26,9 @@ fixtures. Supported operations and limitations must be stated explicitly.
 | B26 conformance | In progress | Python oracle and TypeScript tests pass; standalone Swift digest check passes. XCTest cannot run with the installed SDK. Full cross-language negative fixtures, property/fuzz/race tests and CI remain. |
 | B05/B07 native fixture slice | Local test build | A synthetic AppKit fixture exposes one editable field. On this local Mac, the mock changed `Fixture Name` through Accessibility and the value was independently re-observed. This is one fixture action, not general native support. No shortcut, focus capture, voice, TCC attribution or production signing. |
 | B09 host dispatch gate foundation | In progress | A fixture-scoped TypeScript gate binds a selected candidate to the admitted task, exact observation, policy, target, argument provenance and one-use in-process permit. Synthetic drivers prove Stop before send, unresolved send after Stop, expiry and stale-target refusal. No OS/browser worker barrier has been qualified. |
+| B12 managed Chromium worker | In progress | Playwright 1.63.0 launches a fresh temporary Chromium profile and a narrow scripted portal driver. Headless tests search, open an exact duplicate and download a fixed document. General DOM snapshots, tabs/frames, uploads, headed UX, Stop barrier and packaging remain. |
 | B15 attempt journal foundation | In progress | SQLite records prepared attempts, the dispatch boundary, outcomes, cancellation and restart pause. Crash, late-receipt and replay scenarios pass synthetic tests. It is not connected to the native mock or a signed supervisor yet. |
-| All other tickets | Not started | No qualified signed UX, general native adapter, ASR, browser worker, model service or release artifact. |
+| All other tickets | Not started | No qualified signed UX, general native adapter, ASR, existing-Chrome bridge, model service or release artifact. |
 
 These slices are staged across draft PRs; they do not mark the entire contracts-and-fixtures stage
 or any of B01/B03/B05/B26 complete. The private GitHub remote is configured.
@@ -130,7 +131,20 @@ appears after a short client-side delay. It binds only an ephemeral 127.0.0.1
 port, rejects a foreign Host header and write methods, escapes search text and
 serves fixed synthetic documents. HTTP tests distinguish finding a result from
 opening its detail and downloading its exact file. Browser rendering, actionability
-and download handling remain unverified until B12's managed Chromium worker.
+and download handling are now covered for this portal by B12's first managed Chromium tests.
+
+`ManagedPortalSession` launches Playwright's version-matched Chromium with an empty
+temporary profile, blocks service workers, routes page requests only to the exact
+loopback portal origin, and never attaches to the user's Chrome profile. The
+driver exposes only fixed search, exact-ID open and exact-ID download operations.
+It observes DOM page identity and result rows, rejects stale result revisions,
+waits for the delayed download link, validates the final URL, filename and exact
+synthetic document contents, saves
+inside its private temporary directory and removes that directory on close.
+Headless tests pass. This is not a general browser executor, an offline-network
+qualification, an OS-level network sandbox, or a proven Stop barrier during
+Playwright actionability waits. The production headed build, installer and
+existing-Chrome extension are still separate work.
 
 ## Next sequence
 
