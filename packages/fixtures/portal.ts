@@ -15,10 +15,10 @@ const INVOICES: readonly Invoice[] = Object.freeze([
   { id: 'INV-106', title: 'May Service Statement', account: 'Northstar Studio', issued: '2026-05-03' },
 ]);
 
-const SCRIPT = `document.addEventListener('DOMContentLoaded', () => {
+function script(downloadDelayMs: number): string { return `document.addEventListener('DOMContentLoaded', () => {
   const link = document.getElementById('delayed-download');
-  if (link) window.setTimeout(() => { link.hidden = false; }, 250);
-});\n`;
+  if (link) window.setTimeout(() => { link.hidden = false; }, ${downloadDelayMs});
+});\n`; }
 
 const STYLE = `body{font:16px system-ui,sans-serif;max-width:760px;margin:3rem auto;padding:0 1rem;color:#202124}
 a{color:#174ea6}label{display:block;margin-bottom:.4rem}input{font:inherit;padding:.35rem}
@@ -28,12 +28,17 @@ th,td{border:1px solid #ccd0d5;text-align:left;padding:.6rem}caption{text-align:
 
 export interface PortalFixture {
   readonly url: string;
+  requestCount(path: string): number;
   close(): Promise<void>;
 }
 
 /** Isolated, read-only fixture: never accepts uploads, credentials or user files. */
-export async function startPortalFixture(): Promise<PortalFixture> {
+export async function startPortalFixture(options: { downloadDelayMs?: number } = {}): Promise<PortalFixture> {
+  const downloadDelayMs = options.downloadDelayMs ?? 250;
+  if (!Number.isSafeInteger(downloadDelayMs) || downloadDelayMs < 0
+    || downloadDelayMs > 10_000) throw new Error('invalid fixture download delay');
   let expectedHost = '';
+  const requests = new Map<string, number>();
   const server = createServer((request, response) => {
     if (request.headers.host !== expectedHost) {
       respond(response, 421, 'text/plain; charset=utf-8', 'Wrong fixture host.\n', request.method);
@@ -51,8 +56,9 @@ export async function startPortalFixture(): Promise<PortalFixture> {
       return;
     }
     const path = url.pathname;
+    requests.set(path, (requests.get(path) ?? 0) + 1);
     if (path === '/portal.js') {
-      respond(response, 200, 'text/javascript; charset=utf-8', SCRIPT, request.method);
+      respond(response, 200, 'text/javascript; charset=utf-8', script(downloadDelayMs), request.method);
     } else if (path === '/portal.css') {
       respond(response, 200, 'text/css; charset=utf-8', STYLE, request.method);
     } else if (path === '/') {
@@ -123,6 +129,7 @@ export async function startPortalFixture(): Promise<PortalFixture> {
   expectedHost = `127.0.0.1:${address.port}`;
   return Object.freeze({
     url: `http://${expectedHost}`,
+    requestCount: (path: string) => requests.get(path) ?? 0,
     close: async () => { server.close(); await once(server, 'close'); },
   });
 }

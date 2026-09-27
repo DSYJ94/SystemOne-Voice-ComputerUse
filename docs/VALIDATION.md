@@ -285,3 +285,14 @@ was changed" and the separate SystemOne Fixture displaying `fixture-123`.
 This verifies the current ad-hoc build's one supported AX setter after the
 permission repair. The screenshot does not show Reset feedback, a non-fixture
 app, crash recovery, or production signing; those remain unverified.
+
+## Fixture managed-browser Stop fence, 27 September 2026
+
+`node --test packages/browser/test/scripted-portal-task.test.ts` passed 6/6
+tests, including a delayed download control: Stop persisted cancellation,
+closed the isolated Chromium context, and the local portal received no download
+request. The pending task did not become completed. `npm run check` passed
+typechecking and **137/137** Node tests with local loopback access. This proves
+that one fixture scenario was fenced; a click or download already dispatched
+before Stop may still have had an effect and remains unresolved. The path is
+not connected to the host permit/journal, native app, or existing Chrome.

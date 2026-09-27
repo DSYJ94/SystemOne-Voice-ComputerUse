@@ -25,9 +25,9 @@ fixtures. Supported operations and limitations must be stated explicitly.
 | B05 fixtures | In progress | Fifteen schema messages, shared digest/Unicode fixtures, one resettable synthetic native text field, and a loopback-only invoice portal with duplicate titles, exact detail routes and fixed downloads. A narrow managed-browser driver uses the portal; broader native and adversarial fixtures remain. |
 | B26 conformance | In progress | Python oracle and TypeScript tests pass; standalone Swift digest check passes. XCTest cannot run with the installed SDK. Full cross-language negative fixtures, property/fuzz/race tests and CI remain. |
 | B05/B07 native fixture slice | Local test build | A synthetic AppKit fixture exposes one editable field. On this local Mac, the mock changed `Fixture Name` through Accessibility and the value was independently re-observed. This is one fixture action, not general native support. No shortcut, focus capture, voice, TCC attribution or production signing. |
-| B09 host dispatch gate foundation | In progress | A fixture-scoped TypeScript gate binds a selected candidate to the admitted task, exact observation, policy, target, argument provenance and one-use in-process permit. Synthetic drivers prove Stop before send, unresolved send after Stop, expiry and stale-target refusal. No OS/browser worker barrier has been qualified. |
+| B09 host dispatch gate foundation | In progress | A fixture-scoped TypeScript gate binds a selected candidate to the admitted task, exact observation, policy, target, argument provenance and one-use in-process permit. Synthetic drivers prove Stop before send, unresolved send after Stop, expiry and stale-target refusal. The separate scripted portal task now closes its managed Chromium context on Stop; that path is not yet joined to the host permit/journal or a general worker barrier. |
 | B10 native observation foundation | In progress | A separate Swift package provides a read-only Accessibility tree walker with node/depth/time limits, observation-scoped handles, target PID/bundle/path/launch identity, and stale-node checks. Synthetic registry checks pass. It has not observed a live non-fixture app, is not wired to the host, and does not provide execution authority, a Stop barrier or a production privacy projection. |
-| B12 managed Chromium worker | In progress | Playwright 1.63.0 launches a fresh temporary Chromium profile and a narrow scripted portal driver. Headless tests search, open an exact duplicate and download a fixed document. General DOM snapshots, tabs/frames, uploads, headed UX, Stop barrier and packaging remain. |
+| B12 managed Chromium worker | In progress | Playwright 1.63.0 launches a fresh temporary Chromium profile and a narrow scripted portal driver. Headless tests search, open an exact duplicate and download a fixed document. Stop closes this isolated context; a delayed-control test sees no download request after cancellation. General DOM snapshots, tabs/frames, uploads, headed UX, authenticated dispatch integration and packaging remain. |
 | B15 attempt journal foundation | In progress | SQLite records prepared attempts, the dispatch boundary, outcomes, cancellation and restart pause. A separate fixture-only SQLite task record keeps verified portal progress and pauses unknown in-flight actions on restart. Neither store is connected to the native mock or a signed supervisor. |
 | B16 portal outcome predicates | In progress | The managed portal re-observes exact invoice ID/title/account for LOCATE and OPEN, and requires a session-owned download receipt plus unchanged file bytes for DOWNLOAD. A scripted task uses those predicates across search/open/download/save; its output is private fixture data. No general outcome engine or authenticated task actor is connected. |
 | All other tickets | Not started | No qualified signed UX, general native action adapter, ASR, existing-Chrome bridge, model service or release artifact. |
@@ -123,9 +123,8 @@ policy for an unknown settled effect across a new task. The host must connect th
 existing reply boundary and require fresh observation before allowing a related
 action after an uncertain result.
 
-The owner is revisiting the interactive fixture test. The revised Reset feedback
-is still awaiting their observation; continue independent implementation and
-synthetic checks while that result is pending. The exact steps are in
+The owner confirmed Fill after renewing the current Mock's grant. The revised
+Reset feedback is still awaiting observation. The exact steps are in
 `docs/FIXTURE_COMPUTER_USE_TEST.md`.
 
 The 27 September reopen crash was in SystemOne Fixture, not the Mock. Two
@@ -166,15 +165,18 @@ It observes DOM page identity and result rows, rejects stale result revisions,
 waits for the delayed download link, validates the final URL, filename and exact
 synthetic document contents, saves
 inside its private temporary directory and removes that directory on close.
-Headless tests pass. This is not a general browser executor, an offline-network
-qualification, an OS-level network sandbox, or a proven Stop barrier during
-Playwright actionability waits. The production headed build, installer and
-existing-Chrome extension are still separate work.
+Headless tests pass. The fixture Stop path now records cancellation before
+closing the context, and a delayed-control test confirms no download request
+after its close. This is not a general browser executor, an offline-network
+qualification, an OS-level network sandbox, or a Stop barrier integrated with
+the host permit/journal. The production headed build, installer and existing-
+Chrome extension are still separate work.
 
 ## Next sequence
 
 1. Connect the fixture-only scripted task and attempt journal through one
-   authenticated host authority and a real browser worker Stop barrier. Add
+   authenticated host authority; prove the browser close fence at that dispatch
+   boundary and preserve already-dispatched uncertainty. Add
    B10/B11 semantic native observations/actions with explicit scope; move beyond
    single-field fixtures without treating unverified effects as safe.
 2. Finish B03 durable authority and supervisor peer-identity integration. Connect

@@ -67,8 +67,9 @@ the Mock or observe any live app. It was built without changing the currently
 granted Mock binary.
 
 The native mock does not use the TypeScript journal/dispatch gate. Managed
-Playwright operations have no qualified Stop boundary. Existing Chrome is not
-connected. Host/helper release identity, TCC attribution after installation and
+Playwright now has a fixture-only context-close Stop fence, but it is not joined
+to the host permit/journal and cannot prove an already-dispatched action had no
+effect. Existing Chrome is not connected. Host/helper release identity, TCC attribution after installation and
 update, voice, CLM inference, privacy review, crash recovery across real workers,
 packaging/notarization and clean-Mac installation are unverified. Treat effects
 that may have crossed a worker boundary as unknown until re-observed; Stop cannot
@@ -77,7 +78,8 @@ undo an already-dispatched effect.
 ## Next implementation order
 
 1. Join the new fixture-only durable portal task to authenticated B03/B09/B15
-   host authority and a real browser worker Stop barrier. The scripted task now
+   host authority and prove the context-close fence at its dispatch boundary.
+   The scripted task now
    preserves explicit parameters and verified progress across search/open/
    download/save, but its direct Playwright calls are not production dispatch.
    Extend the B10 read-only native observer to an approved live fixture under

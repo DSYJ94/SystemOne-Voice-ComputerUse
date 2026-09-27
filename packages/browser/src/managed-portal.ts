@@ -54,6 +54,7 @@ export class ManagedPortalSession {
   readonly #page: Page;
   #revision = 0;
   #closed = false;
+  #stopPromise: Promise<boolean> | undefined;
   readonly #downloads = new Map<string, { receipt: PortalDownload; revision: number }>();
 
   get origin(): string { return this.#origin; }
@@ -151,6 +152,7 @@ export class ManagedPortalSession {
     this.#exactURL();
     if (query.length > 100) throw new Error('search term too long');
     await this.#page.getByRole('textbox', { name: 'Find invoice' }).fill(query);
+    this.#assertOpen();
     await this.#page.getByRole('button', { name: 'Search' }).click();
     const observation = await this.observe();
     if (observation.kind !== 'results' || new URL(observation.url).pathname !== '/invoices') {
@@ -167,6 +169,7 @@ export class ManagedPortalSession {
       || before.rows.filter(row => row.id === id).length !== 1) {
       throw new Error('invoice is not uniquely present in the current results');
     }
+    this.#assertOpen();
     const row = this.#page.locator(`tr[data-invoice-id="${id}"]`);
     await row.getByRole('link', { name: `Open ${id}`, exact: true }).click();
     const after = await this.observe();
@@ -184,9 +187,11 @@ export class ManagedPortalSession {
       || before.invoiceId !== id) {
       throw new Error('download target is not the current exact invoice');
     }
-    const event = this.#page.waitForEvent('download');
-    await this.#page.getByRole('link', { name: `Download ${id}`, exact: true }).click();
-    const download = await event;
+    this.#assertOpen();
+    const [download] = await Promise.all([
+      this.#page.waitForEvent('download', { timeout: 3_000 }),
+      this.#page.getByRole('link', { name: `Download ${id}`, exact: true }).click(),
+    ]);
     const filename = `${id}.txt`;
     if (download.url() !== `${this.#origin}/downloads/${id}`
       || download.suggestedFilename() !== filename) {
@@ -254,11 +259,22 @@ export class ManagedPortalSession {
     return { status: 'matched', revision: current.revision };
   }
 
-  async close(): Promise<void> {
-    if (this.#closed) return;
+  /** Fences this isolated context. A successful close prevents later Playwright
+   * dispatch, but does not undo an action that already reached the page. */
+  stop(): Promise<{ workerFenced: boolean }> {
+    if (this.#stopPromise) return this.#stopPromise.then(workerFenced => ({ workerFenced }));
     this.#closed = true;
-    try { await this.#context.close(); }
-    finally { rmSync(this.#root, { recursive: true, force: true }); }
+    this.#stopPromise = this.#context.close({ reason: 'SystemOne task stopped' })
+      .then(() => {
+        rmSync(this.#root, { recursive: true, force: true });
+        return true;
+      }, () => false);
+    return this.#stopPromise.then(workerFenced => ({ workerFenced }));
+  }
+
+  async close(): Promise<void> {
+    const result = await this.stop();
+    if (!result.workerFenced) throw new Error('managed browser close was not confirmed');
   }
 
   #assertOpen(): void {

@@ -34,6 +34,7 @@ export interface ScriptedPortalRecord extends ScriptedPortalContract {
 
 interface PortalSession {
   readonly origin: string;
+  stop(): Promise<{ workerFenced: boolean }>;
   observe(): Promise<PortalObservation>;
   search(query: string): Promise<PortalObservation>;
   openInvoice(id: string, revision: number): Promise<PortalObservation>;
@@ -163,7 +164,15 @@ export class ScriptedPortalTask {
     if (!task || task.origin !== session.origin) throw new Error('scripted task origin mismatch');
   }
 
-  stop(): ScriptedPortalRecord { return this.#store.stop(this.#taskId); }
+  async stop(): Promise<{ record: ScriptedPortalRecord; workerFenced: boolean }> {
+    // Persist cancellation before waiting for Playwright to close. A successful
+    // worker fence never changes an in-flight action into "not dispatched".
+    const record = this.#store.stop(this.#taskId);
+    let workerFenced = false;
+    try { workerFenced = (await this.#session.stop()).workerFenced; }
+    catch { /* The task remains cancelled; worker outcome stays unknown. */ }
+    return Object.freeze({ record, workerFenced });
+  }
 
   async advance(): Promise<ScriptedPortalRecord> {
     const task = this.#store.get(this.#taskId)!;
