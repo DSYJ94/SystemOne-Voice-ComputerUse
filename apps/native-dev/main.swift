@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Foundation
 
 @MainActor
@@ -9,6 +10,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     private var labelField: NSTextField?
     private var valueField: NSTextField?
     private var statusField: NSTextField?
+    private var nativeBundleField: NSTextField?
+    private var nativeOutput: NSTextView?
+    private var inspectionEpoch = 0
+    private var inspectionPending = false
     private var controller: Process?
     private var controllerInput: Pipe?
     private var controllerOutput: Pipe?
@@ -55,7 +60,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     }
 
     private func makePanel() {
-        let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 350),
+        let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 620),
                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "SystemOne Dev"
         window.isFloatingPanel = true
@@ -96,7 +101,38 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         let actions = NSStackView(views: [fill, stopButton, hide])
         actions.orientation = .horizontal
         actions.spacing = 8
-        let stack = NSStackView(views: [heading, explanation, url, label, value, status, actions])
+
+        let nativeHeading = NSTextField(labelWithString: "Native app — read-only inspection")
+        nativeHeading.font = .boldSystemFont(ofSize: 16)
+        let nativeExplanation = NSTextField(wrappingLabelWithString:
+            "Enter one running app's exact bundle ID. Accessibility labels and supported actions stay in this local panel; field values are not read.")
+        nativeExplanation.textColor = .secondaryLabelColor
+        let bundle = NSTextField()
+        bundle.placeholderString = "App bundle ID, e.g. com.aurium.systemone.fixture"
+        bundle.setAccessibilityLabel("Native app bundle ID")
+        nativeBundleField = bundle
+        let access = NSButton(title: "Request Accessibility", target: self,
+                              action: #selector(requestAccessibility))
+        let inspect = NSButton(title: "Inspect app", target: self,
+                               action: #selector(inspectNativeApp))
+        let nativeActions = NSStackView(views: [access, inspect])
+        nativeActions.orientation = .horizontal
+        nativeActions.spacing = 8
+        let output = NSTextView()
+        output.isEditable = false
+        output.isSelectable = true
+        output.drawsBackground = false
+        output.font = .systemFont(ofSize: 12)
+        output.string = "No native app inspected."
+        nativeOutput = output
+        let scroll = NSScrollView()
+        scroll.documentView = output
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
+        scroll.heightAnchor.constraint(equalToConstant: 120).isActive = true
+        let stack = NSStackView(views: [heading, explanation, url, label, value,
+                                        status, actions, nativeHeading,
+                                        nativeExplanation, bundle, nativeActions, scroll])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 9
@@ -111,6 +147,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             value.widthAnchor.constraint(equalTo: stack.widthAnchor),
             status.widthAnchor.constraint(equalTo: stack.widthAnchor),
             explanation.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            nativeExplanation.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            bundle.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            scroll.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
         panel = window
     }
@@ -234,7 +273,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
 
     @objc private func startFill() {
         guard let input = controllerInput, controller?.isRunning == true,
-              activeRequestID == nil, stopRequestID == nil else {
+              activeRequestID == nil, stopRequestID == nil,
+              !inspectionPending else {
             statusField?.stringValue = "Controller unavailable or a task is active."
             return
         }
@@ -272,6 +312,12 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     }
 
     @objc private func stop() {
+        if inspectionPending {
+            inspectionEpoch += 1
+            inspectionPending = false
+            nativeOutput?.string = "Inspection stopped. No native action was sent."
+            return
+        }
         guard let target = activeRequestID, let input = controllerInput else {
             statusField?.stringValue = "No active task to stop."
             return
@@ -297,6 +343,71 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             try pipe.fileHandleForWriting.write(contentsOf: data + Data([10]))
             return true
         } catch { return false }
+    }
+
+    @objc private func requestAccessibility() {
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        nativeOutput?.string = AXIsProcessTrustedWithOptions(options)
+            ? "Accessibility is granted to this SystemOne Dev build."
+            : "Accessibility is not yet granted to this build. Grant it in macOS settings if prompted."
+    }
+
+    @objc private func inspectNativeApp() {
+        guard !inspectionPending, activeRequestID == nil else {
+            nativeOutput?.string = "Another task is active. Stop it first."
+            return
+        }
+        guard AXIsProcessTrustedWithOptions(nil) else {
+            nativeOutput?.string = "Accessibility is not granted to this SystemOne Dev build."
+            return
+        }
+        let bundleID = nativeBundleField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard bundleID.range(of: "^[A-Za-z0-9.-]{3,160}$", options: .regularExpression) != nil else {
+            nativeOutput?.string = "Enter one exact app bundle ID."
+            return
+        }
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+            .filter { !$0.isTerminated && $0.bundleURL != nil && $0.launchDate != nil }
+        guard running.count == 1, let app = running.first,
+              let bundleURL = app.bundleURL, let launchDate = app.launchDate else {
+            nativeOutput?.string = "Exactly one running app with that bundle ID is required."
+            return
+        }
+        let target = AXTarget(pid: app.processIdentifier, bundleID: bundleID,
+                              bundleURL: bundleURL, launchDate: launchDate,
+                              scopeRef: "native-observe:\(UUID().uuidString)")
+        inspectionEpoch += 1
+        let epoch = inspectionEpoch
+        inspectionPending = true
+        nativeOutput?.string = "Inspecting the Accessibility tree off the UI thread…"
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let result: String
+            do {
+                let registry = try NativeAXObservationRegistry(backend: SystemAXBackend(),
+                    maxNodes: 80, maxDepth: 5, budget: .seconds(2))
+                let observation = try registry.observe(target)
+                let controls = observation.nodes.filter {
+                    !$0.description.secure && !$0.description.label.isEmpty
+                }
+                let lines = controls.prefix(12).map { node in
+                    let detail = node.description
+                    let capabilities = detail.capabilities.isEmpty
+                        ? "read-only" : detail.capabilities.joined(separator: ", ")
+                    return "\(detail.role): \(detail.label) [\(capabilities)]"
+                }
+                result = "Observed \(observation.nodes.count) nodes; "
+                    + (observation.complete ? "coverage complete" : "coverage incomplete")
+                    + ". No field values read.\n" + lines.joined(separator: "\n")
+            } catch {
+                result = "Native observation unavailable: \(error). No action was sent."
+            }
+            await MainActor.run { [weak self] in
+                guard let self, self.inspectionPending,
+                      self.inspectionEpoch == epoch else { return }
+                self.inspectionPending = false
+                self.nativeOutput?.string = result
+            }
+        }
     }
 
     @objc private func hidePanel() { panel?.orderOut(nil) }

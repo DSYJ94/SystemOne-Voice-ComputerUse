@@ -55,8 +55,10 @@ field fill. There is no general-purpose executor or release binary yet.
   Output is confined to a private fixture directory. This is still in-process
   fixture authority, not authenticated production dispatch.
 - A read-only native Accessibility observation package with bounded traversal,
-  private observation-scoped handles and synthetic stale-target checks. It is
-  not yet connected to the app or its task controller.
+  private observation-scoped handles and synthetic stale-target checks. The
+  development AppKit panel can now inspect one explicitly named running app
+  off its UI thread and show local labels/capabilities without field values.
+  It is not yet connected to task admission, action dispatch or the controller.
 - A fixture-only managed-browser Stop path cancels the task record and closes
   the isolated Chromium context. A delayed-control test confirms no download
   request after Stop. Stop reports an incomplete worker fence when a local save
@@ -125,6 +127,8 @@ native-host work.
 For the current native-to-managed-browser development test, follow
 `docs/NATIVE_MANAGED_TEST.md`. It uses only the synthetic portal and needs no
 Accessibility permission.
+The separate [native inspection test](docs/NATIVE_INSPECTION_TEST.md) exercises
+read-only Accessibility observations and requires a grant to the current Dev build.
 For the current PR stack, open gates and next implementation order, see
 `docs/BUILD_HANDOFF.md`.
 
