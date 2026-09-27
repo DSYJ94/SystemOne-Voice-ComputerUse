@@ -156,3 +156,16 @@ No browser, model, microphone, account or non-fixture app was controlled.
 The journal is not yet connected to the native app or an authenticated host;
 therefore its tests do not qualify a real Stop barrier, exactly-once delivery or
 safe resume.
+
+## Fixture-scoped host dispatch gate, 27 September 2026
+
+`npm run check` typechecked the project and passed **123/123** Node tests after
+adding ten synthetic dispatch-gate cases. The cases cover legal one-use dispatch,
+forged/cloned permits, invented or stale candidate selections, Stop during
+effect-free preparation, in-flight Stop and late result, changed target state,
+send failure, expiry before and during preparation, invalid success evidence and
+forbidden effect admission.
+The journal now stores candidate, observation, policy and lease bindings. No new
+dependencies were installed. This was a synthetic test run only; the owner has
+parked further interactive fixture testing. No native or browser UI was operated
+for this slice, and no OS worker cancellation barrier is claimed.

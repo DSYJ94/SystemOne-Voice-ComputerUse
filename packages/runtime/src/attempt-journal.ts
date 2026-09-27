@@ -11,7 +11,12 @@ export interface PreparedAttempt {
   readonly taskEpoch: number;
   readonly goalRevision: number;
   readonly scopeRef: string;
+  readonly observationId: string;
+  readonly candidateId: string;
+  readonly candidateSetDigest: string;
   readonly actionDigest: string;
+  readonly policyRevision: string;
+  readonly leaseGeneration: number;
 }
 
 export interface AttemptOutcome {
@@ -40,7 +45,12 @@ interface AttemptRow {
   task_epoch: number;
   goal_revision: number;
   scope_ref: string;
+  observation_id: string;
+  candidate_id: string;
+  candidate_set_digest: string;
   action_digest: string;
+  policy_revision: string;
+  lease_generation: number;
   phase: JournalAttempt['phase'];
   delivery_status: AttemptOutcome['deliveryStatus'] | null;
   effect_status: AttemptOutcome['effectStatus'] | null;
@@ -77,7 +87,12 @@ export class AttemptJournal {
         task_epoch INTEGER NOT NULL,
         goal_revision INTEGER NOT NULL,
         scope_ref TEXT NOT NULL,
+        observation_id TEXT NOT NULL,
+        candidate_id TEXT NOT NULL,
+        candidate_set_digest TEXT NOT NULL,
         action_digest TEXT NOT NULL,
+        policy_revision TEXT NOT NULL,
+        lease_generation INTEGER NOT NULL,
         phase TEXT NOT NULL CHECK(phase IN ('prepared', 'at_dispatch_boundary', 'settled')),
         delivery_status TEXT,
         effect_status TEXT,
@@ -127,9 +142,13 @@ export class AttemptJournal {
       this.#assertActive(attempt);
       this.#db.prepare(`INSERT INTO attempts
         (execution_id, permit_ref, task_id, task_epoch, goal_revision, scope_ref,
-         action_digest, phase) VALUES (?, ?, ?, ?, ?, ?, ?, 'prepared')`)
+         observation_id, candidate_id, candidate_set_digest, action_digest,
+         policy_revision, lease_generation, phase)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'prepared')`)
         .run(attempt.executionId, attempt.permitRef, attempt.taskId,
-          attempt.taskEpoch, attempt.goalRevision, attempt.scopeRef, attempt.actionDigest);
+          attempt.taskEpoch, attempt.goalRevision, attempt.scopeRef,
+          attempt.observationId, attempt.candidateId, attempt.candidateSetDigest,
+          attempt.actionDigest, attempt.policyRevision, attempt.leaseGeneration);
       this.#event(attempt.executionId, 'prepared');
       return this.getAttempt(attempt.executionId)!;
     });
@@ -306,7 +325,10 @@ function fromRow(row: AttemptRow): JournalAttempt {
   const base: PreparedAttempt = {
     executionId: row.execution_id, permitRef: row.permit_ref, taskId: row.task_id,
     taskEpoch: row.task_epoch, goalRevision: row.goal_revision,
-    scopeRef: row.scope_ref, actionDigest: row.action_digest,
+    scopeRef: row.scope_ref, observationId: row.observation_id,
+    candidateId: row.candidate_id, candidateSetDigest: row.candidate_set_digest,
+    actionDigest: row.action_digest, policyRevision: row.policy_revision,
+    leaseGeneration: row.lease_generation,
   };
   validatePrepared(base);
   if (!['prepared', 'at_dispatch_boundary', 'settled'].includes(row.phase)) {
@@ -345,7 +367,13 @@ function validatePrepared(value: PreparedAttempt): void {
   assertCounter(value.taskEpoch, 'task epoch');
   assertCounter(value.goalRevision, 'goal revision');
   assertId(value.scopeRef, 'scope reference');
+  assertId(value.observationId, 'observation ID');
+  assertId(value.candidateId, 'candidate ID');
+  if (!DIGEST.test(value.candidateSetDigest)) throw new ContractError('invalid candidate set digest');
   if (!DIGEST.test(value.actionDigest)) throw new ContractError('invalid action digest');
+  assertId(value.policyRevision, 'policy revision');
+  assertCounter(value.leaseGeneration, 'lease generation');
+  if (value.leaseGeneration < 1) throw new ContractError('invalid lease generation');
 }
 
 function validateOutcome(value: AttemptOutcome): void {

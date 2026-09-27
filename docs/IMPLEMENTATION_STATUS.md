@@ -25,6 +25,7 @@ fixtures. Supported operations and limitations must be stated explicitly.
 | B05 fixtures | In progress | Fifteen schema messages, shared digest/Unicode fixtures, and one resettable synthetic native text field. The broader native fixture set and browser portal have not been built. |
 | B26 conformance | In progress | Python oracle and TypeScript tests pass; standalone Swift digest check passes. XCTest cannot run with the installed SDK. Full cross-language negative fixtures, property/fuzz/race tests and CI remain. |
 | B05/B07 native fixture slice | Local test build | A synthetic AppKit fixture exposes one editable field. On this local Mac, the mock changed `Fixture Name` through Accessibility and the value was independently re-observed. This is one fixture action, not general native support. No shortcut, focus capture, voice, TCC attribution or production signing. |
+| B09 host dispatch gate foundation | In progress | A fixture-scoped TypeScript gate binds a selected candidate to the admitted task, exact observation, policy, target, argument provenance and one-use in-process permit. Synthetic drivers prove Stop before send, unresolved send after Stop, expiry and stale-target refusal. No OS/browser worker barrier has been qualified. |
 | B15 attempt journal foundation | In progress | SQLite records prepared attempts, the dispatch boundary, outcomes, cancellation and restart pause. Crash, late-receipt and replay scenarios pass synthetic tests. It is not connected to the native mock or a signed supervisor yet. |
 | All other tickets | Not started | No qualified signed UX, general native adapter, ASR, browser worker, model service or release artifact. |
 
@@ -95,7 +96,7 @@ Native integration of the attempt journal, permit/approval dispatch, supervisor 
 fast independent Stop barriers, and non-fixture scopes are still pending.
 
 The separate TypeScript `AttemptJournal` now persists opaque task/permit/action
-identifiers and status dimensions in SQLite with a full-sync transaction before
+identifiers, candidate/observation/policy bindings and status dimensions in SQLite with a full-sync transaction before
 the adapter boundary. A crash before that marker is recorded as not dispatched;
 after it, delivery stays unresolved until evidence arrives. Stop prevents later
 journal dispatch but does not fence an adapter queue. One unsettled attempt can
@@ -104,10 +105,30 @@ cancelled task. This is a foundation only: the native fixture does not call it,
 no host-issued permit is validated here, and restart ownership/worker termination
 still need integration before non-fixture effects.
 
+`HostDispatchGate` connects that journal to a copied, fixture-scoped candidate
+set and an in-process one-use permit. A selected candidate ID alone cannot execute.
+An effect-free driver preparation step rechecks the exact target, surface,
+fingerprint and prior-value digest. The gate writes the dispatch-boundary marker
+before calling the driver's synchronous send entrypoint. Stop aborts preparation,
+fences journal dispatch and lists boundary-crossed calls as unresolved. Synthetic
+tests prove these properties, including late results after Stop. A real native or
+Playwright adapter must still prove that its preparation cannot cause an effect
+and that its send entrypoint cannot wait and dispatch after Stop. The gate is
+hard-limited to the synthetic fixture and does not authenticate a helper process.
+It also does not validate a model proposal's producer or establish a recovery
+policy for an unknown settled effect across a new task. The host must connect the
+existing reply boundary and require fresh observation before allowing a related
+action after an uncertain result.
+
+The owner parked further interactive fixture testing and will request instructions
+when ready. Continue implementation and synthetic checks without requiring that
+manual test in the meantime.
+
 ## Next sequence
 
 1. Finish B03 durable authority, supervisor peer-identity integration and Swift
-   typed message bindings. Add B05
+   typed message bindings. Connect the fixture-scoped gate only after qualifying
+   a native worker barrier. Add B05
    resettable portal/native fixtures and mock-only CI. Do not port the Python guard
    wholesale as host authorization code.
 2. B04/B07/B08/B09: signed native panel/PTT/dictation and independent Stop with mock

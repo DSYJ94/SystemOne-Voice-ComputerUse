@@ -21,6 +21,9 @@ Accessibility field; there is no general-purpose executor or release binary yet.
 - A SQLite attempt-journal foundation that preserves uncertain dispatch across
   restart and fences journal dispatch after cancellation; adapter and permit
   integration remain open.
+- A fixture-scoped host dispatch gate that binds a copied candidate, target and
+  argument to a one-use in-process permit and the journal. Synthetic Stop and
+  stale-target tests pass; no native/browser adapter uses this gate yet.
 - Clarification and resume intent records bound to displayed prompts, task revisions,
   current observations and recovered checkpoints.
 - A macOS Unix-socket peer verifier that binds kernel audit-token identity to
@@ -60,6 +63,7 @@ the opt-in local steps and exact limits.
 On 27 September, the local fixture test succeeded: SystemOne Mock set
 `fixture-123` through Accessibility and the separate fixture showed that value.
 The guided steps now distinguish the mock's input from the target field.
+The owner has parked further manual fixture testing until they ask to revisit it.
 
 The XCTest suite requires an SDK providing XCTest; it could not run with this
 machine's command-line-tools installation. The standalone parity check did pass:
