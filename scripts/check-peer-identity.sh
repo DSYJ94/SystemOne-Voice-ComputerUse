@@ -35,3 +35,4 @@ codesign --force --sign - --identifier com.aurium.systemone.peercheck "$wrong_ha
 "$expected"
 "$expected" --child "$wrong_identifier" --expect-reject 'signing identifier'
 "$expected" --child "$wrong_hash" --expect-reject 'CDHash'
+echo 'PASS: local peer identity checks completed; no app or browser was controlled.'

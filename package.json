@@ -11,6 +11,8 @@
     "check": "npm run typecheck && npm test",
     "test:swift": "swift test --package-path packages/protocol/swift",
     "test:mac-peer": "scripts/check-peer-identity.sh",
+    "build:native-mock": "scripts/build-native-mock.sh",
+    "run:native-mock": "scripts/run-native-mock.sh",
     "fixtures": "node scripts/export-fixtures.ts"
   },
   "dependencies": {
