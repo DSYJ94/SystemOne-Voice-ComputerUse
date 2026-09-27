@@ -195,3 +195,15 @@ and rejection of non-fixture origins. The browser used an empty temporary profil
 and the synthetic loopback portal; it never accessed existing Chrome, accounts
 or external websites. The final full `npm run check` passed TypeScript typechecking
 and **130/130** Node tests with local loopback/browser execution permission.
+
+## Fixture portal outcome predicates, 27 September 2026
+
+`npm run check` first typechecked successfully but reported 124/131 passing
+because the sandbox denied all seven loopback fixture tests with `listen EPERM`
+on 127.0.0.1. The same command, rerun with local loopback/browser permission,
+passed TypeScript typechecking and **131/131** Node tests. The new browser test
+checks exact duplicate identity, LOCATE versus OPEN versus DOWNLOAD, stale
+navigation evidence, missing or fabricated session receipts, and file tampering.
+The driver re-observes the current portal and re-reads saved bytes before
+reporting a fixture goal matched. This does not prove a general task actor,
+non-fixture browser control, Stop, or production completion.

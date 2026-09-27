@@ -28,6 +28,9 @@ Accessibility field; there is no general-purpose executor or release binary yet.
   identities, a delayed download control and fixed downloads. Its HTTP tests pass;
   a narrow Playwright worker now exercises search, open and download in an
   isolated temporary Chromium profile. Existing Chrome is not connected.
+- Fixture-scoped outcome checks re-observe the portal and distinguish an exact
+  search result, an opened detail and a saved document. These are not wired to
+  a persistent task actor or general completion engine.
 - Clarification and resume intent records bound to displayed prompts, task revisions,
   current observations and recovered checkpoints.
 - A macOS Unix-socket peer verifier that binds kernel audit-token identity to

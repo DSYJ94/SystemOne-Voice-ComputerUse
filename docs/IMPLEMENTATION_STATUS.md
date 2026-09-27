@@ -28,6 +28,7 @@ fixtures. Supported operations and limitations must be stated explicitly.
 | B09 host dispatch gate foundation | In progress | A fixture-scoped TypeScript gate binds a selected candidate to the admitted task, exact observation, policy, target, argument provenance and one-use in-process permit. Synthetic drivers prove Stop before send, unresolved send after Stop, expiry and stale-target refusal. No OS/browser worker barrier has been qualified. |
 | B12 managed Chromium worker | In progress | Playwright 1.63.0 launches a fresh temporary Chromium profile and a narrow scripted portal driver. Headless tests search, open an exact duplicate and download a fixed document. General DOM snapshots, tabs/frames, uploads, headed UX, Stop barrier and packaging remain. |
 | B15 attempt journal foundation | In progress | SQLite records prepared attempts, the dispatch boundary, outcomes, cancellation and restart pause. Crash, late-receipt and replay scenarios pass synthetic tests. It is not connected to the native mock or a signed supervisor yet. |
+| B16 portal outcome predicates | In progress | The managed portal re-observes exact invoice ID/title/account for LOCATE and OPEN, and requires a session-owned download receipt plus unchanged file bytes for DOWNLOAD. Stale revision, missing receipt and tampering tests pass. No general task actor or other outcome kinds are connected. |
 | All other tickets | Not started | No qualified signed UX, general native adapter, ASR, existing-Chrome bridge, model service or release artifact. |
 
 These slices are staged across draft PRs; they do not mark the entire contracts-and-fixtures stage
@@ -149,9 +150,9 @@ existing-Chrome extension are still separate work.
 
 ## Next sequence
 
-1. Add B16 deterministic outcome predicates for the existing scripted portal;
-   distinguish found, opened and downloaded identities, duplicates and stale
-   evidence. Keep the task model-free.
+1. Extend the B16 fixture outcome checks into an admitted, persistent scripted
+   task: preserve explicit ID/title/account parameters and verified progress
+   across search, open and download. Keep the task model-free.
 2. Finish B03 durable authority and supervisor peer-identity integration. Connect
    B09/B15 to native and managed-browser workers only after proving actual Stop
    barriers and unknown-outcome handling. Expand B05 interference fixtures and CI.

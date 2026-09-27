@@ -56,10 +56,11 @@ undo an already-dispatched effect.
 
 ## Next implementation order
 
-1. Add deterministic B16 outcome predicates and fixture workflow contracts on
-   top of exact observations. Distinguish found, opened and downloaded states,
-   exact invoice/account identity, duplicates and stale evidence; do not call
-   progress success. Keep this scripted and model-free.
+1. Extend the initial B16 portal outcome predicates into an admitted, persistent
+   scripted task. The current predicate distinguishes found, opened and saved
+   exact-invoice states; the next step must preserve explicit parameters and
+   verified progress across actions without calling progress success. Keep this
+   model-free.
 2. Integrate B03/B09/B15 host authority, authenticated worker identity, durable
    permit consumption and a real native/managed-browser Stop barrier. Qualify
    dispatch timing and unknown outcomes before broadening native or browser
