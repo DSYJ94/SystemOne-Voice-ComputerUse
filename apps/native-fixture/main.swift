@@ -4,11 +4,12 @@ import AppKit
 final class FixtureApp: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
     private var nameField: NSTextField?
+    private var resetStatus: NSTextField?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 180),
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 210),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -17,14 +18,17 @@ final class FixtureApp: NSObject, NSApplicationDelegate {
         window.center()
 
         let explanation = NSTextField(wrappingLabelWithString:
-            "Synthetic test app. Only the Fixture Name field is available to the computer-use demo.")
+            "Target app: enter the test value in SystemOne Mock, then choose Fill Fixture Name there. Use Reset here to clear the target field.")
         let label = NSTextField(labelWithString: "Fixture Name")
         let field = NSTextField()
         field.setAccessibilityLabel("Fixture Name")
         field.identifier = NSUserInterfaceItemIdentifier("fixture.name")
         nameField = field
         let reset = NSButton(title: "Reset", target: self, action: #selector(resetFixture))
-        let stack = NSStackView(views: [explanation, label, field, reset])
+        let status = NSTextField(labelWithString: "")
+        status.setAccessibilityLabel("Reset status")
+        resetStatus = status
+        let stack = NSStackView(views: [explanation, label, field, reset, status])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
@@ -49,7 +53,10 @@ final class FixtureApp: NSObject, NSApplicationDelegate {
         return true
     }
 
-    @objc private func resetFixture() { nameField?.stringValue = "" }
+    @objc private func resetFixture() {
+        nameField?.stringValue = ""
+        resetStatus?.stringValue = "Reset completed. Fixture Name is empty."
+    }
 }
 
 @main

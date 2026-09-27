@@ -17,7 +17,8 @@ control or remote service in this path. Use synthetic text.
 
 3. In SystemOne Mock, choose **Open Fixture**. Confirm a separate **SystemOne
    Fixture** window has an empty **Fixture Name** field.
-4. Enter `fixture-123` in the mock's value field. Choose **Request
+4. Return to **SystemOne Mock**. Enter `fixture-123` in **its** value field;
+   typing directly in the fixture does not exercise computer use. Choose **Request
    Accessibility**. If macOS asks, grant Accessibility to **SystemOne Mock** in
    System Settings. The prompt is controlled by macOS; granting it is your choice.
    The first check may still say access is unavailable because Apple's prompt is
@@ -25,7 +26,8 @@ control or remote service in this path. Use synthetic text.
 5. Choose **Fill Fixture Name**. A successful run changes the fixture field to
    `fixture-123` and reports that the value was re-observed. If it was already
    that value, the mock reports that no edit was sent. You can clear the field
-   with **Reset** in the fixture and try another synthetic value.
+   with **Reset** in the fixture and try another synthetic value. Reset should
+   display "Reset completed" and leave Fixture Name empty.
 
 **Stop** remains responsive while the Accessibility worker runs. If an edit was
 already dispatched, Stop cannot undo it. The status will say whether the value

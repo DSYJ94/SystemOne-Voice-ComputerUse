@@ -62,7 +62,7 @@ final class NativeMock: NSObject, NSApplicationDelegate {
         let title = NSTextField(labelWithString: "SystemOne — fixture test")
         title.font = .boldSystemFont(ofSize: 15)
         let explanation = NSTextField(wrappingLabelWithString:
-            "Synthetic computer-use test. Only the Fixture Name field can be changed.")
+            "Enter a synthetic value here, then choose Fill Fixture Name. Only the field in SystemOne Fixture can be changed.")
         explanation.textColor = .secondaryLabelColor
 
         let field = NSTextField()
