@@ -16,8 +16,9 @@ Accessibility field; there is no general-purpose executor or release binary yet.
 - A Swift digest library checked against the same Unicode and integrity fixtures.
 - Final-input routing with literal dictation separation, trusted-endpoint allowlists,
   and bounded request/reply correlation with monotonic deadlines and replay rejection.
-- Host-private task admission plus revision-, prompt-, actor-, presentation-, action-
-  and policy-bound approvals that are accepted and consumed once in mock tests.
+- Host-private task admission from an exact command issued by the bound final-input
+  session, plus revision-, prompt-, actor-, presentation-, action- and policy-bound
+  approvals that are accepted and consumed once in mock tests.
 - A SQLite attempt-journal foundation that preserves uncertain dispatch across
   restart, fences journal dispatch after cancellation, and records verified
   terminal task completion. Unknown settled effects still block a new task;
@@ -32,8 +33,8 @@ Accessibility field; there is no general-purpose executor or release binary yet.
 - Fixture-scoped outcome checks re-observe the portal and distinguish an exact
   search result, an opened detail and a saved document. These are not wired to
   the general host controller or a production completion engine.
-- A fixture-scoped durable task runs portal search/open/download/save one action
-  at a time, keeping verified progress and pausing after unknown in-flight
+- A fixture-scoped durable task accepts a one-use admitted contract and runs
+  portal search/open/download/save one action at a time, keeping verified progress and pausing after unknown in-flight
   outcomes. Each scripted action now writes an attempt and dispatch boundary to
   the host-private journal before its browser call; Stop fences both records.
   Output is confined to a private fixture directory. This is still in-process
