@@ -36,8 +36,8 @@ established by the current fixture-only native or browser tests.
   [#15 command-bound portal admission](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/15),
   [#16 local-save Stop fence accounting](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/16).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/portal-stop-local-fence`,
-  stacked on `codex/admission-input-provenance`.
+- The current implementation branch is `codex/portal-action-permits`,
+  stacked on `codex/portal-stop-local-fence`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -73,12 +73,14 @@ granted Mock binary.
 
 The native mock does not use the TypeScript journal/dispatch gate. The scripted
 managed-browser task now accepts only a one-use admission from the bound final
-input session and checks its exact fixture contract before journaling each action.
+input session and checks its exact fixture contract. Each scripted action requires
+a short-lived in-process permit bound to task revision, stage, effect and a fresh
+portal observation before its journal dispatch boundary.
 It fences both stores on Stop. Stop distinguishes browser context closure from
 an independent local save still pending and reports an incomplete worker fence
 for the latter. Context closure does not prove an already-dispatched action had
 no effect; the two stores lack one atomic transaction and
-the path has no authenticated host execution permit. Existing Chrome is not connected.
+the path has no OS-authenticated host/worker boundary. Existing Chrome is not connected.
 Host/helper release identity, TCC attribution after installation and
 update, voice, CLM inference, privacy review, crash recovery across real workers,
 packaging/notarization and clean-Mac installation are unverified. Treat effects
@@ -87,10 +89,10 @@ undo an already-dispatched effect.
 
 ## Next implementation order
 
-1. Route the now-admitted and journaled fixture portal task through authenticated
-   B03/B09/B15 host authority and one-use execution permits. The scripted task
-   still calls Playwright directly from trusted in-process code; its candidate/
-   argument digests are durable, but they are not host-issued execution authority. Preserve the
+1. Move the in-process portal permit issuer behind authenticated B03/B09/B15
+   host/worker IPC. The scripted task still calls Playwright directly from
+   trusted code in the same process; its durable candidate/argument digests and
+   one-use permits do not authenticate an OS peer. Preserve the
    already-dispatched uncertainty and make Stop's worker fence measurable.
    Extend the B10 read-only native observer to an approved live fixture under
    the authenticated host; build B11 actions only after authority/Stop tests.

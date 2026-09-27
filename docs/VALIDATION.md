@@ -351,3 +351,16 @@ successful close while the local save remains pending. Stop now reports
 late continuation cannot report task completion or write the output file.
 This accounts for the independent file path but does not prove a true OS worker
 barrier or undo any already-dispatched file effect.
+
+## Fixture portal action permits, 27 September 2026
+
+`npm run check` passed TypeScript typechecking and **152/152** Node tests with
+local loopback access. The new authority tests reject cloned, replayed, expired,
+revoked, wrong-stage, wrong-effect and wrong-origin permits. A task test changes
+the observation between planning and preflight; the task pauses without a
+browser dispatch or journal attempt. Stop during a held preflight also prevents
+a late browser action. The full four-action fixture workflow
+still completes with matching journal outcomes. These are in-process guarantees;
+they do not prove OS peer authentication, true Playwright dispatch timing,
+existing-Chrome behavior or production Stop latency. Native/Swift checks were
+not rerun because their sources were unchanged.
