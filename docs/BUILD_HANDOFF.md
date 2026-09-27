@@ -1,8 +1,9 @@
 # Build handoff
 
-Updated 27 September 2026. This is the current implementation handoff, not a
+Updated 28 September 2026. This is the current implementation handoff, not a
 release claim. Read this with [implementation status](IMPLEMENTATION_STATUS.md),
-the [fixture test](FIXTURE_COMPUTER_USE_TEST.md), and the reviewed
+the [fixture test](FIXTURE_COMPUTER_USE_TEST.md),
+[managed-browser status](MANAGED_BROWSER.md), and the reviewed
 [backlog](specification/BACKLOG.md). Keep this file and the README aligned as
 each implementation slice lands.
 
@@ -37,10 +38,11 @@ established by the current fixture-only native or browser tests.
   [#16 local-save Stop fence accounting](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/16),
   [#17 portal action permits](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/17),
   [#18 existing-Chrome attachment](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/18),
-  [#19 Chrome native-host transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/19).
+  [#19 Chrome native-host transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/19),
+  [#20 managed-browser observation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/20).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/chrome-native-host-bridge`,
-  stacked on `codex/existing-chrome-attach-foundation`.
+- The current implementation branch is `codex/managed-browser-observation`,
+  stacked on `codex/chrome-native-host-bridge`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -79,6 +81,10 @@ managed-browser task now accepts only a one-use admission from the bound final
 input session and checks its exact fixture contract. Each scripted action requires
 a short-lived in-process permit bound to task revision, stage, effect and a fresh
 portal observation before its journal dispatch boundary.
+Separately, a general read-only managed-Chromium observer now opens an exact
+approved origin in an isolated profile and returns bounded main-document
+controls with explicit frame/shadow/truncation gaps. It issues no action permit
+and is not connected to the app or durable task controller.
 It fences both stores on Stop. Stop distinguishes browser context closure from
 an independent local save still pending and reports an incomplete worker fence
 for the latter. Context closure does not prove an already-dispatched action had
