@@ -25,9 +25,11 @@ established by the current fixture-only native or browser tests.
   [#4 attempt journal](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/4),
   [#5 dispatch gate](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/5),
   [#6 portal fixture](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/6),
-  [#7 managed browser](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/7).
+  [#7 managed browser](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/7),
+  [#8 handoff and outcome checks](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/8).
   These are stacked drafts; evaluate or merge in dependency order.
-- The working branch for the next slice starts at `codex/managed-browser-driver`.
+- The current review branch is `codex/build-handoff-outcomes`, stacked on
+  `codex/managed-browser-driver`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
