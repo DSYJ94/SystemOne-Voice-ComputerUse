@@ -415,3 +415,17 @@ was not exercised. No external site, real account, existing Chrome profile or
 computer-use action was controlled. This observer has no host action authority,
 durable journal or completion verifier; page load itself may have site-defined
 effects even though SystemOne sends no action.
+
+## Managed-browser admitted FILL source, 28 September 2026
+
+`npm run check` passed TypeScript typechecking and **168/168** Node tests.
+Five new local-loopback tests exercise a real isolated Chromium field fill with
+an admitted final command, exact source-byte digest, one-use permit, private
+observation-scoped DOM handle and durable journal boundary. They reject a
+cloned permit and stale observation, prove Stop before dispatch prevents the
+send, preserve a late receipt only as history after Stop, and leave uncertain
+post-boundary outcomes blocking new tasks. The successful check verifies the
+current synthetic DOM field value; it does not prove a server save. Stop races
+after dispatch used an injected driver, not a live browser race. No app UI,
+external site, existing Chrome profile, OS-authenticated worker, headed
+workflow, CLM or signed distribution was tested.
