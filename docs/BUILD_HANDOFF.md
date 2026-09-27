@@ -30,8 +30,8 @@ established by the current fixture-only native or browser tests.
   [#9 native fixture launch recovery](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/9),
   [#10 scripted task and TCC development fix](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/10).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current review branch is `codex/scripted-task-controller`, stacked on
-  `codex/native-fixture-launch-recovery`.
+- The current implementation branch is `codex/native-ax-observation`, stacked
+  on `codex/scripted-task-controller`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -40,16 +40,19 @@ established by the current fixture-only native or browser tests.
 The synthetic protocol, journal, dispatch-gate, loopback portal and managed
 Chromium tests pass. On this Mac, an earlier user-authorized mock changed one
 synthetic fixture field through Accessibility and independently re-observed it.
-The revised Reset feedback is compiled but awaits the owner's renewed manual
-test. The owner has the [exact test steps](FIXTURE_COMPUTER_USE_TEST.md); record
-their result separately from automated evidence.
+The current owner-authorized Mock again changed one synthetic Fixture field
+through Accessibility after its grant was renewed. Revised Reset feedback is
+compiled but still awaits observation. The [exact test steps](FIXTURE_COMPUTER_USE_TEST.md)
+and result remain separate from automated evidence.
 The local launcher now restarts the two exact-path synthetic processes before a
 rebuild and refuses direct in-place builds while they run. A fresh Fixture
-reopened without a crash after the 27 September incident; the owner's in-Mock
-click and Reset feedback are still pending.
+reopened without a crash after the 27 September incident. The owner's in-Mock
+Fill succeeded; Reset feedback is still pending.
 An enabled Accessibility toggle did not grant the rebuilt ad-hoc Mock. Its
 current-binary grant was reset for this app only, and a fresh user grant is
-pending. No valid development signing identity is installed on this Mac; the
+now confirmed by the owner: the Mock reported Verified and the Fixture showed
+`fixture-123`. Reset feedback was not shown. No valid development signing
+identity is installed on this Mac; the
 build accepts `SYSTEMONE_CODESIGN_IDENTITY` when one becomes available.
 
 `npm run check` is the TypeScript/Node suite; `npm run build:native-mock`
@@ -57,6 +60,10 @@ compiles the two ad-hoc-signed local bundles. `npm run test:mac-peer` checks a
 temporary signing/audit-token identity fixture. Full commands, actual results
 and limitations are in [validation](VALIDATION.md). The Swift XCTest suite needs
 an SDK with XCTest; the installed command-line-tools SDK cannot run it.
+`npm run test:native-ax` compiles a separate B10 read-only Accessibility
+observation package and runs synthetic registry checks. It does not attach to
+the Mock or observe any live app. It was built without changing the currently
+granted Mock binary.
 
 The native mock does not use the TypeScript journal/dispatch gate. Managed
 Playwright operations have no qualified Stop boundary. Existing Chrome is not
@@ -72,7 +79,8 @@ undo an already-dispatched effect.
    host authority and a real browser worker Stop barrier. The scripted task now
    preserves explicit parameters and verified progress across search/open/
    download/save, but its direct Playwright calls are not production dispatch.
-   Build B10/B11 native semantic observations/actions next, with explicit scope.
+   Extend the B10 read-only native observer to an approved live fixture under
+   the authenticated host; build B11 actions only after authority/Stop tests.
 2. Integrate B03/B09/B15 host authority, authenticated worker identity, durable
    permit consumption and a real native/managed-browser Stop barrier. Qualify
    dispatch timing and unknown outcomes before broadening native or browser
