@@ -30,10 +30,11 @@ established by the current fixture-only native or browser tests.
   [#9 native fixture launch recovery](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/9),
   [#10 scripted task and TCC development fix](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/10),
   [#11 read-only native observation foundation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/11),
-  [#12 managed-browser Stop fence](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/12).
+  [#12 managed-browser Stop fence](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/12),
+  [#13 journal completion and unknown effects](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/13).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/managed-browser-stop-barrier`,
-  stacked on `codex/native-ax-observation`.
+- The current implementation branch is `codex/journal-completion`, stacked on
+  `codex/managed-browser-stop-barrier`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
