@@ -301,3 +301,17 @@ in-flight action blocks admission of a second task, while cancellation before
 any action permits a new task. The final `npm run check` passed typechecking
 and **138/138** Node tests. Explicit recovery of a truly unknown effect is still
 not implemented.
+
+## Journal task completion and unknown-effect persistence, 27 September 2026
+
+The focused Node journal and dispatch-gate tests cover verified multi-step
+completion, rejection of premature or unknown completion, a new task after
+completion, unknown-effect exclusion after reopening SQLite, and migration of
+the prior task-state schema while preserving a child event foreign key.
+`completeTask` records a host assertion backed by an opaque evidence reference;
+the journal cannot itself verify the real-world task predicate. The scripted
+portal task, native mock and authenticated host are not connected to this
+terminal state yet.
+`npm run check` passed TypeScript typechecking and **141/141** Node tests with
+local loopback fixture access. The native AX check was not rerun in this slice;
+its source was unchanged.

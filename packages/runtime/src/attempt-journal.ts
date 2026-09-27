@@ -35,7 +35,7 @@ export interface JournalAttempt extends PreparedAttempt {
 interface TaskRow {
   task_epoch: number;
   goal_revision: number;
-  state: 'active' | 'cancelled' | 'paused';
+  state: 'active' | 'cancelled' | 'paused' | 'completed';
 }
 
 interface AttemptRow {
@@ -72,13 +72,16 @@ export class AttemptJournal {
     this.#db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA synchronous = FULL;
-      PRAGMA foreign_keys = ON;
       PRAGMA busy_timeout = 1000;
+    `);
+    this.#migrateLegacyTasks();
+    this.#db.exec(`
+      PRAGMA foreign_keys = ON;
       CREATE TABLE IF NOT EXISTS tasks (
         task_id TEXT PRIMARY KEY,
         task_epoch INTEGER NOT NULL,
         goal_revision INTEGER NOT NULL,
-        state TEXT NOT NULL CHECK(state IN ('active', 'cancelled', 'paused'))
+        state TEXT NOT NULL CHECK(state IN ('active', 'cancelled', 'paused', 'completed'))
       );
       CREATE TABLE IF NOT EXISTS attempts (
         execution_id TEXT PRIMARY KEY,
@@ -114,6 +117,8 @@ export class AttemptJournal {
         recorded_at TEXT NOT NULL
       );
     `);
+    const broken = this.#db.prepare('PRAGMA foreign_key_check').get();
+    if (broken) throw new ContractError('journal foreign-key check failed');
   }
 
   close(): void { this.#db.close(); }
@@ -127,8 +132,9 @@ export class AttemptJournal {
         throw new ContractError('another task is active');
       }
       if (this.#db.prepare(`SELECT 1 FROM attempts
-        WHERE phase IN ('prepared', 'at_dispatch_boundary')`).get()) {
-        throw new ContractError('an earlier attempt is unresolved');
+        WHERE phase IN ('prepared', 'at_dispatch_boundary')
+          OR delivery_status = 'unknown' OR effect_status = 'unknown'`).get()) {
+        throw new ContractError('an earlier attempt is unresolved or unknown');
       }
       this.#db.prepare('INSERT INTO tasks VALUES (?, ?, ?, ?)')
         .run(taskId, taskEpoch, goalRevision, 'active');
@@ -209,6 +215,28 @@ export class AttemptJournal {
     });
   }
 
+  /** Records a host-verified terminal result. The caller must own and check the
+   * completion predicate; this journal cannot infer task success from an action
+   * receipt. Unknown or unmatched attempts cannot be silently completed. */
+  completeTask(taskId: string, completionEvidenceRef: string): void {
+    assertId(taskId, 'task ID');
+    assertId(completionEvidenceRef, 'completion evidence reference');
+    this.#transaction(() => {
+      const task = this.#task(taskId);
+      if (!task || task.state !== 'active') throw new ContractError('task is not active');
+      const count = this.#db.prepare('SELECT count(*) AS n FROM attempts WHERE task_id = ?')
+        .get(taskId) as { n: number };
+      if (count.n === 0 || this.#db.prepare(`SELECT 1 FROM attempts
+        WHERE task_id = ? AND (phase != 'settled' OR verification != 'matched'
+          OR delivery_status != 'dispatched' OR effect_status != 'applied')`).get(taskId)) {
+        throw new ContractError('task lacks settled verified attempts');
+      }
+      this.#db.prepare(`UPDATE tasks SET state = 'completed' WHERE task_id = ?`)
+        .run(taskId);
+      this.#taskEvent(taskId, `completed:${completionEvidenceRef}`);
+    });
+  }
+
   /** Call only after the new host has exclusive ownership of the journal. */
   recoverAfterRestart(): readonly JournalAttempt[] {
     return this.#transaction(() => {
@@ -238,9 +266,11 @@ export class AttemptJournal {
   unresolvedAttempts(taskId?: string): readonly JournalAttempt[] {
     if (taskId !== undefined) assertId(taskId, 'task ID');
     const rows = taskId === undefined
-      ? this.#db.prepare(`SELECT * FROM attempts WHERE phase = 'at_dispatch_boundary'`).all()
+      ? this.#db.prepare(`SELECT * FROM attempts WHERE phase = 'at_dispatch_boundary'
+          OR delivery_status = 'unknown' OR effect_status = 'unknown'`).all()
       : this.#db.prepare(`SELECT * FROM attempts
-          WHERE phase = 'at_dispatch_boundary' AND task_id = ?`).all(taskId);
+          WHERE task_id = ? AND (phase = 'at_dispatch_boundary'
+            OR delivery_status = 'unknown' OR effect_status = 'unknown')`).all(taskId);
     return Object.freeze((rows as unknown as AttemptRow[]).map(fromRow));
   }
 
@@ -261,6 +291,37 @@ export class AttemptJournal {
   #task(taskId: string): TaskRow | undefined {
     return this.#db.prepare('SELECT * FROM tasks WHERE task_id = ?')
       .get(taskId) as TaskRow | undefined;
+  }
+
+  #migrateLegacyTasks(): void {
+    const row = this.#db.prepare(`SELECT sql FROM sqlite_schema
+      WHERE type = 'table' AND name = 'tasks'`).get() as { sql: string } | undefined;
+    if (!row) return;
+    if (row.sql.includes("'completed'")) return;
+    if (!row.sql.includes("CHECK(state IN ('active', 'cancelled', 'paused'))")) {
+      throw new ContractError('unsupported journal task schema');
+    }
+    // SQLite's documented rebuild sequence keeps child FKs pointing at tasks.
+    // Do not rename the old table first: that would rewrite FK references.
+    this.#db.exec('PRAGMA foreign_keys = OFF; BEGIN IMMEDIATE');
+    try {
+      this.#db.exec(`
+        CREATE TABLE tasks_next (
+          task_id TEXT PRIMARY KEY, task_epoch INTEGER NOT NULL,
+          goal_revision INTEGER NOT NULL,
+          state TEXT NOT NULL CHECK(state IN ('active', 'cancelled', 'paused', 'completed'))
+        );
+        INSERT INTO tasks_next SELECT task_id, task_epoch, goal_revision, state FROM tasks;
+        DROP TABLE tasks;
+        ALTER TABLE tasks_next RENAME TO tasks;
+        COMMIT;
+      `);
+    } catch (error) {
+      this.#db.exec('ROLLBACK');
+      throw error;
+    } finally {
+      this.#db.exec('PRAGMA foreign_keys = ON');
+    }
   }
 
   #assertActive(attempt: Pick<PreparedAttempt, 'taskId' | 'taskEpoch' | 'goalRevision'>): void {

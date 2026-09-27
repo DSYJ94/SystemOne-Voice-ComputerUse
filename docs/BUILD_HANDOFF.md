@@ -80,9 +80,9 @@ undo an already-dispatched effect.
 
 1. Join the new fixture-only durable portal task to authenticated B03/B09/B15
    host authority and prove the context-close fence at its dispatch boundary.
-   The scripted task now
-   preserves explicit parameters and verified progress across search/open/
-   download/save, but its direct Playwright calls are not production dispatch.
+   The journal now represents verified terminal completion and retains unknown
+   effects across restart; the scripted task still calls Playwright directly
+   and does not share that journal or host permit authority.
    Extend the B10 read-only native observer to an approved live fixture under
    the authenticated host; build B11 actions only after authority/Stop tests.
 2. Integrate B03/B09/B15 host authority, authenticated worker identity, durable
