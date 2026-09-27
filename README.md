@@ -29,7 +29,10 @@ Accessibility field; there is no general-purpose executor or release binary yet.
 - A loopback-only synthetic invoice portal with duplicate titles, exact detail
   identities, a delayed download control and fixed downloads. Its HTTP tests pass;
   a narrow Playwright worker now exercises search, open and download in an
-  isolated temporary Chromium profile. Existing Chrome is not connected.
+  isolated temporary Chromium profile. A separate general managed-Chromium
+  observer can open an explicitly scoped URL in a fresh isolated profile and
+  return bounded main-document semantic controls. It cannot execute actions or
+  complete tasks. Existing Chrome is not connected.
 - An initial existing-Chrome Manifest V3 extension source requires a toolbar
   click, binds a read-only DOM observation to one exact tab/document and revokes
   on navigation or native-port disconnect. A Swift native-messaging host passes

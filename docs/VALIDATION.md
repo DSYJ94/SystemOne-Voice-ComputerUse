@@ -400,3 +400,18 @@ manifest was installed; no real Chrome profile or account was accessed. The
 SystemOne controller socket does not exist yet, and no Chrome-to-controller
 task action, Stop barrier, release signing, notarization or clean-Mac install
 was tested.
+
+## General managed-Chromium observation source, 28 September 2026
+
+`npm run check` passed TypeScript typechecking and **163/163** Node tests;
+`node --test packages/browser/test/managed-observation.test.ts` also passed
+in isolation. Three new synthetic
+tests use only loopback pages and an isolated headless Chromium profile. They
+verify semantic labels and observation-scoped IDs, duplicate-control context,
+omission of input/password values, explicit unobserved frame/shadow coverage,
+denial of a cross-origin request and a page-initiated POST, and rejection of
+unapproved start URLs. The production default is headed, but headed operation
+was not exercised. No external site, real account, existing Chrome profile or
+computer-use action was controlled. This observer has no host action authority,
+durable journal or completion verifier; page load itself may have site-defined
+effects even though SystemOne sends no action.
