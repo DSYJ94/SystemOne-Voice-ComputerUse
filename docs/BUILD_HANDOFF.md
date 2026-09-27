@@ -37,8 +37,8 @@ established by the current fixture-only native or browser tests.
   [#16 local-save Stop fence accounting](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/16),
   [#17 portal action permits](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/17).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/portal-action-permits`,
-  stacked on `codex/portal-stop-local-fence`.
+- The current implementation branch is `codex/existing-chrome-attach-foundation`,
+  stacked on `codex/portal-action-permits`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -81,7 +81,9 @@ It fences both stores on Stop. Stop distinguishes browser context closure from
 an independent local save still pending and reports an incomplete worker fence
 for the latter. Context closure does not prove an already-dispatched action had
 no effect; the two stores lack one atomic transaction and
-the path has no OS-authenticated host/worker boundary. Existing Chrome is not connected.
+the path has no OS-authenticated host/worker boundary. An existing-Chrome
+extension source now has explicit one-tab read-only grants and mocked host
+handshake tests; no native host is installed and no real Chrome action works.
 Host/helper release identity, TCC attribution after installation and
 update, voice, CLM inference, privacy review, crash recovery across real workers,
 packaging/notarization and clean-Mac installation are unverified. Treat effects
@@ -105,9 +107,10 @@ undo an already-dispatched effect.
    actions; add B12 headed managed workflows with explicit limits. Prove clean
    installation and TCC attribution on an authorized Mac.
 4. Complete B13 candidate projection, scripted B15-B17 multi-hop/recovery and
-   B18 transitions; then qualify CLM under B14. B19 existing-Chrome extension
-   and native-messaging bridge is a beta gate, with current-profile and
-   reconnect/revocation tests. Do not substitute managed Chromium for B19.
+   B18 transitions; then qualify CLM under B14. For B19, pair the new extension
+   with a signed native-messaging host and controller before a separate-profile
+   test, then qualify the owner's current-profile and reconnect/revocation
+   cases. Do not substitute managed Chromium for B19.
 
 Release gates G1-G6 remain unverified; consult the review handoff and status
 before changing scope. Optional model/training/vision research must not block a

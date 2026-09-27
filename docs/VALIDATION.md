@@ -364,3 +364,15 @@ still completes with matching journal outcomes. These are in-process guarantees;
 they do not prove OS peer authentication, true Playwright dispatch timing,
 existing-Chrome behavior or production Stop latency. Native/Swift checks were
 not rerun because their sources were unchanged.
+
+## Existing-Chrome extension attachment source, 27 September 2026
+
+`node --check extensions/chrome/service-worker.mjs` passed syntax validation.
+`npm run check` passed TypeScript typechecking and **157/157** Node tests, including
+five new extension tests. Mocked Chrome events cover a toolbar-initiated grant,
+native-port challenge acknowledgement, exact main-document read, unsupported
+actions and navigation revocation. The manifest test confirms no broad host,
+content-script, externally callable or debugger grant. No extension was loaded
+into Chrome, native-messaging host was installed, existing profile was read or
+real browser action was executed. Chrome API/runtime, enterprise policy and
+incognito behavior still require browser-level qualification.

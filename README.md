@@ -30,6 +30,10 @@ Accessibility field; there is no general-purpose executor or release binary yet.
   identities, a delayed download control and fixed downloads. Its HTTP tests pass;
   a narrow Playwright worker now exercises search, open and download in an
   isolated temporary Chromium profile. Existing Chrome is not connected.
+- An initial existing-Chrome Manifest V3 extension source requires a toolbar
+  click, binds a read-only DOM observation to one exact tab/document and revokes
+  on navigation or native-port disconnect. Its host handshake has only mocked
+  tests; no native host is installed and no existing Chrome action works yet.
 - Fixture-scoped outcome checks re-observe the portal and distinguish an exact
   search result, an opened detail and a saved document. These are not wired to
   the general host controller or a production completion engine.
@@ -105,6 +109,8 @@ machine's command-line-tools installation. The standalone parity check did pass:
 The peer-identity check is macOS-only and uses temporary ad-hoc-signed binaries;
 it does not require or qualify a release signing identity.
 See `docs/VALIDATION.md` for the actual commands and environment limitations.
+See `docs/EXISTING_CHROME.md` for the extension's grant model and remaining
+native-host work.
 For the current PR stack, open gates and next implementation order, see
 `docs/BUILD_HANDOFF.md`.
 
