@@ -5,7 +5,8 @@ import { ContractError, parseJSON } from './json.ts';
 import type { JSONValue } from './json.ts';
 
 export const MESSAGE_TYPES = [
-  'command', 'observation', 'decision_request', 'decision_proposal',
+  'command', 'approval', 'clarification_reply', 'resume_request',
+  'observation', 'decision_request', 'decision_proposal',
   'execution_request', 'execution_receipt', 'cancel', 'execution_permit',
   'cancel_ack', 'task_status',
 ] as const;

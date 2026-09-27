@@ -29,7 +29,7 @@ Review protocol 2.0 and run `validate_contract.py`; create Swift Codable and Typ
 
 Define host-private task admission and revision-bound clarification/approval/resume events before effectful tests. Bind dictation to a retained editable destination; specify whole-value versus range insertion behavior for the note workflow. Add authoritative registry comparison, safe numeric parsing and required date-time validation. An offline response check is not a pre-egress test.
 
-Done when: positive examples round-trip in both languages; invalid candidate IDs, stale revisions, out-of-order replies, oversized data, and nonfinite scores fail closed. Add fixtures for every protocol change. Port operation-specific parameters, effect/delivery tri-state, nonempty success evidence, provider projection, UTF-8 offsets, producer-role checks, one-use permits and cancel barriers. Reject protocol 1.0; hash round-trips must agree in Swift and TypeScript.
+Done when: positive examples round-trip in both languages; invalid candidate IDs, stale revisions, out-of-order replies, oversized data, and nonfinite scores fail closed. Add fixtures for every protocol change. Port operation-specific parameters, effect/delivery tri-state, nonempty success evidence, provider projection, UTF-8 offsets, producer-role checks, one-use permits and cancel barriers. Elevated approvals bind the authenticated actor/UI session, exact prompt and presentation, task revision, scope, observation, candidate set, action, policy revision and effects; stale, replayed, mismatched or non-UI approvals fail closed. Reject protocol 1.0; hash round-trips must agree in Swift and TypeScript.
 
 ### [ ] B04 - Prove native permissions and signing attribution
 Owner: MAC + RELEASE. Dependencies: B03.
@@ -178,7 +178,7 @@ Expand to tested menus, tab/window switching, file chooser boundaries, multiple 
 
 Done when: the first full support matrix names app/browser/OS versions and action families, with passing and unsupported cases; all hybrid release fixtures run end to end.
 
-M4 exit: public beta may be published with explicit exclusions, provided security and packaging prerequisites also pass.
+M4 exit: public beta requires native apps, managed Chromium and existing Chrome using the user's actual current profile, data and tabs (owner decision, 26 September 2026). B19/G4 remain mandatory; a fresh or copied profile is not a substitute. Publish explicit supported operation limits, and pass security and packaging prerequisites.
 
 ## M5 - Perception, open models, and improvement
 

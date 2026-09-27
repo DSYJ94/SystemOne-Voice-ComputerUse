@@ -36,3 +36,75 @@ operated and no model weights or OS permission grants were requested.
 The local Git repository is initialized on main. The owner subsequently selected
 Daryl <darylseow@hotmail.com> as commit author, a private GitHub repository, and MIT
 licensing. These repository administration changes do not alter the test results.
+
+## Input/reply foundation, 26 September 2026
+
+`npm run check`: TypeScript typecheck and **67/67 tests passed**, zero skipped.
+This adds 22 tests for input routing and producer/correlation/deadline boundaries.
+Cases include partial input, literal dictation, Unicode preservation, duplicate
+utterance/message IDs, endpoint impersonation by a different object, wrong task
+revisions, changed observation/projection digests, expired/replayed replies,
+session closure, clock faults, memory budgets and validation crossing a deadline.
+
+All producers and clocks in these tests are injected local fixtures. No process
+authentication, real pipe lifecycle, durable execution ledger, dispatch or Stop
+latency is qualified by these results. Existing Python/Swift files and schema were
+unchanged in this slice; the earlier Python/Swift results above are prior evidence,
+not newly executed platform tests.
+
+## Task admission and approval authority, 27 September 2026
+
+`npm run check`: TypeScript typecheck and **95/95 tests passed**, zero skipped.
+The new cases cover final-command-only task admission, outcome and parameter-source
+binding, exact endpoint identity, task/goal revision, actor and UI session, prompt
+and presentation, scope, observation, candidate set, action, policy revision,
+effect equality, one-use consumption, monotonic deadlines, wall-clock expiry,
+mutable caller inputs, replay and closure.
+
+`review-work/.venv/bin/python packages/protocol/validate_contract.py`:
+**110/110 synthetic contract checks passed** with jsonschema 4.26.0 and format
+extras. The added independent structural cases reject multi-use approvals, missing
+prompt identity, non-elevated approval effects, and execution/permit records without
+policy revisions.
+
+These are in-process and schema fixtures. They do not prove OS peer credentials,
+durable approval consumption, signed native UI provenance, permit minting, dispatch,
+Stop barriers or recovery after a crash. No application, browser, account, audio,
+model endpoint or macOS permission was exercised.
+
+## macOS peer identity probe, 27 September 2026
+
+Host: macOS 26.6.2 build 25G83 on arm64; Swift 6.4 with the command-line-tools
+MacOSX27.0 SDK. `security find-identity -v -p codesigning` reported **0 valid
+identities**, so Developer ID/Apple Development and Team ID qualification could not
+run.
+
+`scripts/check-peer-identity.sh` completed with exit status 0. It built the Swift
+peer verifier, ad-hoc signed temporary copies, and exercised live Unix-domain
+connections. The exact same signed binary was accepted. A differently identified
+binary was rejected for signing-identifier mismatch. A modified binary signed with
+the same identifier was rejected for CDHash mismatch.
+
+The kernel audit token reported the actual spawned client PID and a nonzero PID
+version. Security.framework resolved the signing identifier and validated the
+dynamic code before returning its CDHash. The first sandboxed socket attempt was
+denied by the execution sandbox; the documented check then ran with permission.
+
+This proves the primitive on this host only. Production still requires the signed
+app/helper topology, a configured Team ID or release requirement, supervisor
+integration, installed/update/revocation tests and TCC attribution. No TCC prompt,
+Accessibility API, browser automation, microphone, model or user account was used.
+
+## Clarification, resume and local tester, 27 September 2026
+
+`npm run check`: TypeScript typecheck and **108/108 tests passed**. New tests cover
+host-registered clarification options, changed observations, checkpoint identity,
+paused-state registration, actor/session and revision mismatch, expiry, closure and
+replay. `review-work/.venv/bin/python packages/protocol/validate_contract.py`:
+**115/115 checks passed**, including the two new positive examples and three new
+negative structure checks.
+
+`npm run test:mac-peer`: the local Apple Silicon test completed with exit status 0;
+the expected peer was accepted and impostors failed for the exact intended reasons.
+The command and expected output are in `docs/LOCAL_MAC_TEST.md`. This is a local
+code-signing/socket test; it does not start a menu-bar app or request TCC grants.
