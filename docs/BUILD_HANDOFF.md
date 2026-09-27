@@ -33,7 +33,8 @@ established by the current fixture-only native or browser tests.
   [#12 managed-browser Stop fence](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/12),
   [#13 journal completion and unknown effects](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/13),
   [#14 scripted portal journal integration](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/14),
-  [#15 command-bound portal admission](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/15).
+  [#15 command-bound portal admission](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/15),
+  [#16 local-save Stop fence accounting](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/16).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current implementation branch is `codex/portal-stop-local-fence`,
   stacked on `codex/admission-input-provenance`.
