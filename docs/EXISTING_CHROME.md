@@ -1,4 +1,4 @@
-# Existing Chrome bridge: first source slice
+# Existing Chrome bridge: source status
 
 Updated 27 September 2026. This is B19 implementation work, not a usable
 existing-profile computer-use release. No extension or native host has been
@@ -24,15 +24,40 @@ fields. These labels and the title can still be private task data, so the
 native host must apply the same disclosure policy before any model request.
 
 All action requests currently return `unsupported_operation`. The extension
-cannot yet drive the user's Chrome pages. The native messaging host
-`com.aurium.systemone.chrome` has not been packaged or registered; the host
-handshake is currently exercised only by a mocked Chrome API test. An unpacked
-extension without that host will show `OFF`. Do not claim existing-Chrome beta
-support from this test.
+cannot yet drive the user's Chrome pages. `packages/chrome-native-host/` now
+builds a Swift native-messaging executable. It reads a configuration staged next
+to the executable before bundle signing, checks Chrome's exact caller-origin
+argument, connects to the fixed per-user SystemOne controller socket, verifies
+that connected controller's audit-token/code-signing identity, and relays at most
+64 KiB per framed message. Its test-only socket override is excluded from a
+release build. `scripts/stage-chrome-native-host.mjs` writes an exact-origin
+Chrome manifest and release controller trust pins; it **does not register** that
+manifest with Chrome. The SystemOne controller listener and protocol handler do
+not yet exist. An unpacked extension without the installed host will show `OFF`.
 
-Before an owner-run current-profile test, implement and sign the native host,
-register a manifest allowing only the packaged extension ID, pair the host with
-the SystemOne task controller, and test the user-visible grant/revoke cycle.
+The host's origin argument and extension installation tag are not independent
+proof that Chrome launched the process or which profile owns a message: a local
+process can invoke a signed host with that argument. The future controller must
+authenticate the host peer, validate every protocol message and task permit,
+and treat tab/document bindings as scoped claims that require fresh checks.
+Neither the host nor the extension currently authorizes an effect.
+
+`npm run test:chrome-host` builds and ad-hoc signs a temporary host and
+synthetic controller, then checks framed round-trip, wrong caller origin,
+oversized input and wrong controller CDHash. A release-configured build compiles.
+These checks do not open Chrome, verify extension-to-host integration, exercise
+Stop, or establish a distributable signing identity.
+
+Release packaging must place the host at its final absolute path and run
+`node scripts/stage-chrome-native-host.mjs EXTENSION_ID HOST_PATH MANIFEST_PATH
+CONTROLLER_SIGNING_ID --team-id TEAM_ID` (or `--cdhash CDHASH`) before signing
+the bundle. The generated manifest must then be installed in Chrome's
+per-user native-host registration location. This is a packager instruction,
+not a current-profile test procedure; neither operation is automated yet.
+
+Before an owner-run current-profile test, package/sign the host with its exact
+extension manifest, register that manifest, pair the host with an authenticated
+SystemOne task controller, and test the user-visible grant/revoke cycle.
 Then add fixed semantic actions through host permits, fresh document checks,
 Stop/reconnect handling, unsupported trusted-input behavior and real Chrome
 profile cases. Keep file transfer disabled until its outbound and destination

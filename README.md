@@ -32,8 +32,9 @@ Accessibility field; there is no general-purpose executor or release binary yet.
   isolated temporary Chromium profile. Existing Chrome is not connected.
 - An initial existing-Chrome Manifest V3 extension source requires a toolbar
   click, binds a read-only DOM observation to one exact tab/document and revokes
-  on navigation or native-port disconnect. Its host handshake has only mocked
-  tests; no native host is installed and no existing Chrome action works yet.
+  on navigation or native-port disconnect. A Swift native-messaging host passes
+  a signed synthetic socket/framing check, but no host is installed, no
+  controller listener is connected, and no existing Chrome action works yet.
 - Fixture-scoped outcome checks re-observe the portal and distinguish an exact
   search result, an opened detail and a saved document. These are not wired to
   the general host controller or a production completion engine.
@@ -78,6 +79,7 @@ python3 -m venv .venv
 .venv/bin/python packages/protocol/validate_contract.py
 npm run test:swift
 npm run test:mac-peer
+npm run test:chrome-host
 npm run test:native-ax
 ```
 

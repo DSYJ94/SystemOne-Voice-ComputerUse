@@ -376,3 +376,27 @@ content-script, externally callable or debugger grant. No extension was loaded
 into Chrome, native-messaging host was installed, existing profile was read or
 real browser action was executed. Chrome API/runtime, enterprise policy and
 incognito behavior still require browser-level qualification.
+
+## Existing-Chrome native-host transport source, 27 September 2026
+
+`npm run check` passed TypeScript typechecking and **160/160** Node tests,
+including three native-host manifest-staging tests. The staging tests pin one
+extension ID and controller identity, reject a wildcard or unanchored trust
+input, refuse a symlinked executable and avoid leaving a new config behind when
+the manifest path already exists. `zsh -n scripts/check-chrome-native-host.sh`
+passed. `zsh scripts/check-chrome-native-host.sh` compiled the Swift host and
+synthetic controller, ad-hoc signed temporary copies, and reported `PASS: Chrome
+framing and controller peer checks; no browser was opened`. Its synthetic
+cases exchanged a framed message and rejected a wrong extension origin, an
+oversized Chrome frame and a wrong controller CDHash. The Swift production
+configuration compiled with `swift build -c release --package-path
+packages/chrome-native-host --cache-path /private/tmp/systemone-swift-cache
+--product SystemOneChromeNativeHost` (with module caches under `/private/tmp`).
+The installed command-line-tools SDK emitted missing framework/library search
+path warnings but all builds completed.
+
+This is local transport evidence only. No Chrome extension or native-host
+manifest was installed; no real Chrome profile or account was accessed. The
+SystemOne controller socket does not exist yet, and no Chrome-to-controller
+task action, Stop barrier, release signing, notarization or clean-Mac install
+was tested.
