@@ -33,8 +33,10 @@ Accessibility field; there is no general-purpose executor or release binary yet.
   observer can open an explicitly scoped URL in a fresh isolated profile and
   return bounded main-document semantic controls. One admitted `FILL` task can
   now replace and verify a supported text field through an in-process permit
-  and durable attempt journal. It is not connected to the app, does not support
-  general browser actions, and is not an authenticated worker. Existing Chrome
+  and durable attempt journal. A development AppKit panel can now send one
+  explicitly entered field-fill request over private pipes to a persistent
+  controller, show verification, and Stop the isolated browser. This is not a
+  general browser executor or an authenticated release worker. Existing Chrome
   is not connected.
 - An initial existing-Chrome Manifest V3 extension source requires a toolbar
   click, binds a read-only DOM observation to one exact tab/document and revokes
@@ -119,6 +121,9 @@ it does not require or qualify a release signing identity.
 See `docs/VALIDATION.md` for the actual commands and environment limitations.
 See `docs/EXISTING_CHROME.md` for the extension's grant model and remaining
 native-host work.
+For the current native-to-managed-browser development test, follow
+`docs/NATIVE_MANAGED_TEST.md`. It uses only the synthetic portal and needs no
+Accessibility permission.
 For the current PR stack, open gates and next implementation order, see
 `docs/BUILD_HANDOFF.md`.
 

@@ -429,3 +429,24 @@ current synthetic DOM field value; it does not prove a server save. Stop races
 after dispatch used an injected driver, not a live browser race. No app UI,
 external site, existing Chrome profile, OS-authenticated worker, headed
 workflow, CLM or signed distribution was tested.
+## Native panel to managed-browser development bridge, 28 September 2026
+
+`npm run typecheck` passed. The first unprivileged run of
+`node --test packages/runtime/test/native-managed-controller.test.ts` could not
+bind the isolated fixture to `127.0.0.1` (`listen EPERM` in the sandbox); it
+was rerun with local-loopback permission and passed. After final edits,
+`npm run check` passed TypeScript checking and **169/169** Node tests, including
+the process-level private-pipe test. That test rejects a mismatched final
+command before any fixture GET, fills a field through a spawned controller and
+headless isolated Chromium, keeps the verified page alive until Stop, then
+repeats in the same controller process. `npm run build:native-dev` compiled
+the AppKit panel, ad-hoc signed it and passed strict codesign verification on
+this Mac. The first build run emitted a sandbox `ps` denial while checking for
+a running app; the build script now fails closed if process inspection fails,
+and the escalated rerun completed without that warning.
+
+The manual headed panel/Chromium test in [native managed test](NATIVE_MANAGED_TEST.md)
+still needs owner observation. The app uses absolute external Node/source paths;
+the child is not OS-authenticated or packaged for distribution. No native-app
+workflow, existing Chrome action, voice, CLM, arbitrary-site compatibility,
+clean install or release signature is validated by these checks.

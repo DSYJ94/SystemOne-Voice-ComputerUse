@@ -7,7 +7,8 @@ supplies an exact start URL and 1–16 approved origins; only HTTPS and exact
 `127.0.0.1` HTTP origins are accepted. It creates a temporary private Chromium
 profile, defaults to a visible browser, blocks requests outside that scope,
 page-initiated POSTs and WebSockets, and disables downloads and service workers.
-Closing the session removes that temporary profile.
+Closing the session removes that temporary profile after browser closure is
+confirmed; a failed close retains the profile and blocks a success claim.
 
 The snapshot is limited to 80 visible labelled controls in the first 5,000
 main-document elements. It omits input values and password controls, gives
@@ -29,7 +30,13 @@ boundary remains unknown and blocks a new task. No model response or plain
 candidate ID can call the driver through this task object, but the permit and
 admission are still in-process, with no authenticated OS worker boundary.
 
-No app command reaches this path yet. It cannot press, navigate by task action,
+The development AppKit panel now reaches this one FILL path through a persistent
+Node controller over private inherited pipes. The native parent supplies a
+structured final command and explicit field/value; the controller verifies the
+binding and admits it before the browser action. A successful fill leaves the
+isolated browser open for inspection until Stop. This is a source-level
+development bridge, not a bundled or OS-authenticated release worker.
+It cannot press, navigate by task action,
 upload, download or verify a broader goal. Automatic page code can still run on navigation, and
 the network policy does not establish a production privacy or security boundary
 for arbitrary sites. Before release, add a supervised worker, authenticated

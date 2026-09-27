@@ -53,6 +53,11 @@ export interface PreparedManagedFill {
   release(): void;
 }
 
+export class ManagedLaunchFailure extends Error {
+  readonly browserFenced = false;
+  constructor() { super('managed browser startup fence could not be confirmed'); }
+}
+
 function approvedOrigins(origins: readonly string[]): Set<string> {
   if (origins.length < 1 || origins.length > MAX_ORIGINS) {
     throw new Error('managed browser needs 1–16 approved origins');
@@ -147,7 +152,8 @@ export class ManagedObservationSession {
       await session.observe();
       return session;
     } catch (error) {
-      await context?.close().catch(() => {});
+      try { await context?.close(); }
+      catch { throw new ManagedLaunchFailure(); }
       rmSync(root, { recursive: true, force: true });
       throw error;
     }
@@ -369,7 +375,7 @@ export class ManagedObservationSession {
     this.#handles = new Map();
     void Promise.allSettled([...handles.values()].map(handle => handle.dispose()));
     this.#closePromise = this.#context.close()
-      .finally(() => { rmSync(this.#root, { recursive: true, force: true }); });
+      .then(() => { rmSync(this.#root, { recursive: true, force: true }); });
     return this.#closePromise;
   }
 }
