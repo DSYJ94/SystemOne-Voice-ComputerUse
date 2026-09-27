@@ -24,6 +24,9 @@ Accessibility field; there is no general-purpose executor or release binary yet.
 - A fixture-scoped host dispatch gate that binds a copied candidate, target and
   argument to a one-use in-process permit and the journal. Synthetic Stop and
   stale-target tests pass; no native/browser adapter uses this gate yet.
+- A loopback-only synthetic invoice portal with duplicate titles, exact detail
+  identities, a delayed download control and fixed downloads. Its HTTP tests pass;
+  no Playwright worker or real browser is connected yet.
 - Clarification and resume intent records bound to displayed prompts, task revisions,
   current observations and recovered checkpoints.
 - A macOS Unix-socket peer verifier that binds kernel audit-token identity to

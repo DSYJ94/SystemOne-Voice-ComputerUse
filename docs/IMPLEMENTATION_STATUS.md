@@ -22,7 +22,7 @@ fixtures. Supported operations and limitations must be stated explicitly.
 |---|---|---|
 | B01 source/dependency pins | In progress | Node/test dependency locks and CLM source metadata recorded. Actual model bytes, encoder/tokenizer revisions and release license clearance remain unverified. |
 | B03 protocol | In progress | TypeScript schema/parser/framing, Swift digest parity, endpoint allowlists, bounded reply correlation/deadlines, final-input routing, host-private task admission, one-use approvals, clarification/resume intent records and a Swift audit-token/code-signing peer verifier. Production supervisor integration, release-identity qualification, typed Swift messages and permit/dispatch authority remain. |
-| B05 fixtures | In progress | Fifteen schema messages, shared digest/Unicode fixtures, and one resettable synthetic native text field. The broader native fixture set and browser portal have not been built. |
+| B05 fixtures | In progress | Fifteen schema messages, shared digest/Unicode fixtures, one resettable synthetic native text field, and a loopback-only invoice portal with duplicate titles, exact detail routes and fixed downloads. Browser-driver interaction and broader native fixtures remain. |
 | B26 conformance | In progress | Python oracle and TypeScript tests pass; standalone Swift digest check passes. XCTest cannot run with the installed SDK. Full cross-language negative fixtures, property/fuzz/race tests and CI remain. |
 | B05/B07 native fixture slice | Local test build | A synthetic AppKit fixture exposes one editable field. On this local Mac, the mock changed `Fixture Name` through Accessibility and the value was independently re-observed. This is one fixture action, not general native support. No shortcut, focus capture, voice, TCC attribution or production signing. |
 | B09 host dispatch gate foundation | In progress | A fixture-scoped TypeScript gate binds a selected candidate to the admitted task, exact observation, policy, target, argument provenance and one-use in-process permit. Synthetic drivers prove Stop before send, unresolved send after Stop, expiry and stale-target refusal. No OS/browser worker barrier has been qualified. |
@@ -123,6 +123,14 @@ action after an uncertain result.
 The owner parked further interactive fixture testing and will request instructions
 when ready. Continue implementation and synthetic checks without requiring that
 manual test in the meantime.
+
+The local invoice portal now supplies deterministic search results, duplicate
+titles under distinct IDs/accounts, exact detail pages and a download link that
+appears after a short client-side delay. It binds only an ephemeral 127.0.0.1
+port, rejects a foreign Host header and write methods, escapes search text and
+serves fixed synthetic documents. HTTP tests distinguish finding a result from
+opening its detail and downloading its exact file. Browser rendering, actionability
+and download handling remain unverified until B12's managed Chromium worker.
 
 ## Next sequence
 

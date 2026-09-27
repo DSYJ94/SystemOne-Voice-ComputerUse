@@ -169,3 +169,14 @@ The journal now stores candidate, observation, policy and lease bindings. No new
 dependencies were installed. This was a synthetic test run only; the owner has
 parked further interactive fixture testing. No native or browser UI was operated
 for this slice, and no OS worker cancellation barrier is claimed.
+
+## Loopback invoice portal fixture, 27 September 2026
+
+The first sandboxed `npm run check` passed typechecking and 123 existing tests
+but four new portal tests failed because the sandbox denied `listen` on
+127.0.0.1 with `EPERM`. The same command, rerun with local loopback permission,
+passed **127/127** Node tests. The portal tests cover separate search/detail
+states, duplicate titles, exact synthetic downloads, a delayed-link script,
+foreign Host rejection, write-method rejection, query escaping and HEAD behavior.
+No browser was launched and no user account, external site or profile was touched.
+The delayed control's actual browser behavior remains unverified.
