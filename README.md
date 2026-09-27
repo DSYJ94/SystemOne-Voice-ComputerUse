@@ -17,6 +17,9 @@ decision model. There is no application binary or live executor yet.
   and bounded request/reply correlation with monotonic deadlines and replay rejection.
 - Host-private task admission plus revision-, prompt-, actor-, presentation-, action-
   and policy-bound approvals that are accepted and consumed once in mock tests.
+- A macOS Unix-socket peer verifier that binds kernel audit-token identity to
+  dynamically validated signing identity and an Apple-anchored Team ID requirement
+  or pinned CDHash.
 
 Schema validity and hashes do not confer execution authority. The Python guard is
 an illustrative oracle, not our production security implementation. The next work
@@ -35,11 +38,14 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-test.txt
 .venv/bin/python packages/protocol/validate_contract.py
 npm run test:swift
+scripts/check-peer-identity.sh
 ```
 
 The XCTest suite requires an SDK providing XCTest; it could not run with this
 machine's command-line-tools installation. The standalone parity check did pass:
 `swift run --package-path packages/protocol/swift DigestCheck tests/fixtures/digests.json`.
+The peer-identity check is macOS-only and uses temporary ad-hoc-signed binaries;
+it does not require or qualify a release signing identity.
 See `docs/VALIDATION.md` for the actual commands and environment limitations.
 
 `npm run fixtures` regenerates shared digest vectors. Fixture changes must preserve

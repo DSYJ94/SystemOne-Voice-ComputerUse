@@ -21,7 +21,7 @@ fixtures. Supported operations and limitations must be stated explicitly.
 | Backlog | State | Evidence and remaining work |
 |---|---|---|
 | B01 source/dependency pins | In progress | Node/test dependency locks and CLM source metadata recorded. Actual model bytes, encoder/tokenizer revisions and release license clearance remain unverified. |
-| B03 protocol | In progress | TypeScript schema/parser/framing, Swift digest parity, endpoint allowlists, bounded reply correlation/deadlines, final-input routing, host-private task admission and one-use approval records. OS peer authentication, typed Swift messages, clarification/resume events and permit/dispatch authority remain. |
+| B03 protocol | In progress | TypeScript schema/parser/framing, Swift digest parity, endpoint allowlists, bounded reply correlation/deadlines, final-input routing, host-private task admission, one-use approvals and a Swift audit-token/code-signing peer verifier. Production supervisor integration, release-identity qualification, typed Swift messages, clarification/resume events and permit/dispatch authority remain. |
 | B05 fixtures | In progress | Twelve schema messages and shared digest/Unicode fixtures. Resettable native fixture app and browser portal have not been built. |
 | B26 conformance | In progress | Python oracle and TypeScript tests pass; standalone Swift digest check passes. XCTest cannot run with the installed SDK. Full cross-language negative fixtures, property/fuzz/race tests and CI remain. |
 | All other tickets | Not started | No signed UX, ASR, adapter, browser worker, model service, durable journal or release artifact. |
@@ -61,10 +61,19 @@ scope, completion verifier, policy revision and approved effects. Dictation cann
 admit a task and `UNKNOWN` effects fail closed. A future workflow-specific admission
 UI still needs to select these fields; no natural-language interpreter is implied.
 
+The Swift peer-identity primitive now reads `LOCAL_PEERTOKEN` from an active local
+socket, cross-checks effective UID/GID, validates the running code through
+Security.framework, and enforces an Apple-anchored Team ID requirement or pinned-
+CDHash trust anchor in addition to the signing identifier. A bounded local check
+accepts the same ad-hoc-signed binary and rejects both a different identifier and a
+same-identifier/different-hash binary. This host has no valid development or
+distribution identity, so the actual
+app/helper Team ID, installed path, update behavior and TCC attribution are untested.
+
 ## Next sequence
 
-1. Finish B03 clarification/resume contracts, durable authority, actual peer
-   authentication and Swift typed bindings. Add B05
+1. Finish B03 clarification/resume contracts, durable authority, supervisor peer-
+   identity integration and Swift typed message bindings. Add B05
    resettable portal/native fixtures and mock-only CI. Do not port the Python guard
    wholesale as host authorization code.
 2. B04/B07/B08/B09: signed native panel/PTT/dictation and independent Stop with mock

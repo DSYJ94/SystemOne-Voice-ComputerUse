@@ -71,3 +71,26 @@ These are in-process and schema fixtures. They do not prove OS peer credentials,
 durable approval consumption, signed native UI provenance, permit minting, dispatch,
 Stop barriers or recovery after a crash. No application, browser, account, audio,
 model endpoint or macOS permission was exercised.
+
+## macOS peer identity probe, 27 September 2026
+
+Host: macOS 26.6.2 build 25G83 on arm64; Swift 6.4 with the command-line-tools
+MacOSX27.0 SDK. `security find-identity -v -p codesigning` reported **0 valid
+identities**, so Developer ID/Apple Development and Team ID qualification could not
+run.
+
+`scripts/check-peer-identity.sh` completed with exit status 0. It built the Swift
+peer verifier, ad-hoc signed temporary copies, and exercised live Unix-domain
+connections. The exact same signed binary was accepted. A differently identified
+binary was rejected for signing-identifier mismatch. A modified binary signed with
+the same identifier was rejected for CDHash mismatch.
+
+The kernel audit token reported the actual spawned client PID and a nonzero PID
+version. Security.framework resolved the signing identifier and validated the
+dynamic code before returning its CDHash. The first sandboxed socket attempt was
+denied by the execution sandbox; the documented check then ran with permission.
+
+This proves the primitive on this host only. Production still requires the signed
+app/helper topology, a configured Team ID or release requirement, supervisor
+integration, installed/update/revocation tests and TCC attribution. No TCC prompt,
+Accessibility API, browser automation, microphone, model or user account was used.

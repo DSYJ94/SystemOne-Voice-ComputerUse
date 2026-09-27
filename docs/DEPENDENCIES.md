@@ -14,7 +14,7 @@ same parser, schema and digest fixtures before merging.
 | TypeScript | 7.0.2 | Development-only type checks, Apache-2.0. Exact lockfile; never required from end users. |
 | @types/node | 26.6.3 | Development-only types, MIT. Runtime compatibility is tested separately. |
 | jsonschema | 4.26.0 with format-nongpl extra | Independent Python test oracle, MIT. All resolved test dependencies pinned in `requirements-test.txt`; no Python authorization service is shipped. |
-| Swift / Foundation / CryptoKit | Swift 6.4, macOS SDK supplied locally | Native digest implementation using platform SHA-256. SDK/build pins and minimum app OS require release qualification. |
+| Swift / Foundation / CryptoKit / Security / libbsm | Swift 6.4, macOS SDK supplied locally | Native digest and Unix-socket peer identity implementation using platform SHA-256, audit-token parsing and code-signing validation. No third-party runtime is added. SDK/build pins, release requirement policy and minimum app OS require qualification. |
 
 `npm install --ignore-scripts` was used. A lockfile records registry integrity; no
 postinstall scripts are required. The initial npm audit reported zero advisories;
