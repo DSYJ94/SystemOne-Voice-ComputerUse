@@ -69,7 +69,8 @@ the opt-in local steps and exact limits.
 On 27 September, the local fixture test succeeded: SystemOne Mock set
 `fixture-123` through Accessibility and the separate fixture showed that value.
 The guided steps now distinguish the mock's input from the target field.
-The owner has parked further manual fixture testing until they ask to revisit it.
+The owner is revisiting the manual fixture test; its result is pending. Follow
+the exact steps in `docs/FIXTURE_COMPUTER_USE_TEST.md` and report the Mock status.
 
 The XCTest suite requires an SDK providing XCTest; it could not run with this
 machine's command-line-tools installation. The standalone parity check did pass:
@@ -77,6 +78,8 @@ machine's command-line-tools installation. The standalone parity check did pass:
 The peer-identity check is macOS-only and uses temporary ad-hoc-signed binaries;
 it does not require or qualify a release signing identity.
 See `docs/VALIDATION.md` for the actual commands and environment limitations.
+For the current PR stack, open gates and next implementation order, see
+`docs/BUILD_HANDOFF.md`.
 
 `npm run fixtures` regenerates shared digest vectors. Fixture changes must preserve
 the schema's existing golden digests unless the contract is intentionally revised.

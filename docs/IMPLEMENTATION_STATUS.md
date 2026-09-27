@@ -21,8 +21,8 @@ fixtures. Supported operations and limitations must be stated explicitly.
 | Backlog | State | Evidence and remaining work |
 |---|---|---|
 | B01 source/dependency pins | In progress | Node/test dependency locks and CLM source metadata recorded. Actual model bytes, encoder/tokenizer revisions and release license clearance remain unverified. |
-| B03 protocol | In progress | TypeScript schema/parser/framing, Swift digest parity, endpoint allowlists, bounded reply correlation/deadlines, final-input routing, host-private task admission, one-use approvals, clarification/resume intent records and a Swift audit-token/code-signing peer verifier. Production supervisor integration, release-identity qualification, typed Swift messages and permit/dispatch authority remain. |
-| B05 fixtures | In progress | Fifteen schema messages, shared digest/Unicode fixtures, one resettable synthetic native text field, and a loopback-only invoice portal with duplicate titles, exact detail routes and fixed downloads. Browser-driver interaction and broader native fixtures remain. |
+| B03 protocol | In progress | TypeScript schema/parser/framing, Swift digest parity, endpoint allowlists, bounded reply correlation/deadlines, final-input routing, host-private task admission, one-use approvals, clarification/resume intent records and a Swift audit-token/code-signing peer verifier. Production supervisor integration, release-identity qualification, typed Swift messages and production permit/dispatch authority remain. |
+| B05 fixtures | In progress | Fifteen schema messages, shared digest/Unicode fixtures, one resettable synthetic native text field, and a loopback-only invoice portal with duplicate titles, exact detail routes and fixed downloads. A narrow managed-browser driver uses the portal; broader native and adversarial fixtures remain. |
 | B26 conformance | In progress | Python oracle and TypeScript tests pass; standalone Swift digest check passes. XCTest cannot run with the installed SDK. Full cross-language negative fixtures, property/fuzz/race tests and CI remain. |
 | B05/B07 native fixture slice | Local test build | A synthetic AppKit fixture exposes one editable field. On this local Mac, the mock changed `Fixture Name` through Accessibility and the value was independently re-observed. This is one fixture action, not general native support. No shortcut, focus capture, voice, TCC attribution or production signing. |
 | B09 host dispatch gate foundation | In progress | A fixture-scoped TypeScript gate binds a selected candidate to the admitted task, exact observation, policy, target, argument provenance and one-use in-process permit. Synthetic drivers prove Stop before send, unresolved send after Stop, expiry and stale-target refusal. No OS/browser worker barrier has been qualified. |
@@ -121,9 +121,10 @@ policy for an unknown settled effect across a new task. The host must connect th
 existing reply boundary and require fresh observation before allowing a related
 action after an uncertain result.
 
-The owner parked further interactive fixture testing and will request instructions
-when ready. Continue implementation and synthetic checks without requiring that
-manual test in the meantime.
+The owner is revisiting the interactive fixture test. The revised Reset feedback
+is still awaiting their observation; continue independent implementation and
+synthetic checks while that result is pending. The exact steps are in
+`docs/FIXTURE_COMPUTER_USE_TEST.md`.
 
 The local invoice portal now supplies deterministic search results, duplicate
 titles under distinct IDs/accounts, exact detail pages and a download link that
@@ -148,16 +149,18 @@ existing-Chrome extension are still separate work.
 
 ## Next sequence
 
-1. Finish B03 durable authority, supervisor peer-identity integration and Swift
-   typed message bindings. Connect the fixture-scoped gate only after qualifying
-   a native worker barrier. Add B05
-   resettable portal/native fixtures and mock-only CI. Do not port the Python guard
-   wholesale as host authorization code.
-2. B04/B07/B08/B09: signed native panel/PTT/dictation and independent Stop with mock
-   effects. Prove TCC attribution and clean installation on an authorized test Mac.
-3. B10–B13 plus B15–B17 foundations: scripted native and managed-browser workflows,
-   durable attempts, exact completion predicates and Stop/crash/interference tests.
-4. B14 inserts qualified CLM only after those drivers and dispatch gates pass.
+1. Add B16 deterministic outcome predicates for the existing scripted portal;
+   distinguish found, opened and downloaded identities, duplicates and stale
+   evidence. Keep the task model-free.
+2. Finish B03 durable authority and supervisor peer-identity integration. Connect
+   B09/B15 to native and managed-browser workers only after proving actual Stop
+   barriers and unknown-outcome handling. Expand B05 interference fixtures and CI.
+3. B04/B07/B08 plus B10–B13 and B15–B17: signed native panel/PTT/dictation,
+   general semantic adapters, headed managed browser, multi-hop scripted tasks,
+   exact completion and crash/interference tests. Prove TCC attribution and clean
+   installation on an authorized test Mac.
+4. B14 inserts qualified CLM after drivers and dispatch gates pass. B18/B19 must
+   qualify transitions and the existing-Chrome profile before beta.
 
 G1–G6 remain unverified. Local CLM, Laya, Jev and vision do not become enabled by
 creating this repository. Server-first versus offline-first release and insertion
