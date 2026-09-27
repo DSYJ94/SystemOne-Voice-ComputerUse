@@ -32,7 +32,8 @@ established by the current fixture-only native or browser tests.
   [#11 read-only native observation foundation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/11),
   [#12 managed-browser Stop fence](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/12),
   [#13 journal completion and unknown effects](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/13),
-  [#14 scripted portal journal integration](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/14).
+  [#14 scripted portal journal integration](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/14),
+  [#15 command-bound portal admission](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/15).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current implementation branch is `codex/admission-input-provenance`,
   stacked on `codex/portal-journal-integration`.
