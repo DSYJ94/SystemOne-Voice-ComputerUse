@@ -5,7 +5,11 @@ script_dir=${0:A:h}
 repository_root=${script_dir:h}
 app_dir="$repository_root/.build/native-mock/SystemOne Mock.app"
 binary="$app_dir/Contents/MacOS/SystemOneMock"
-if [[ ! -x "$binary" || "$repository_root/apps/native-mock/main.swift" -nt "$binary" ||
+fixture_binary="$repository_root/.build/native-mock/SystemOne Fixture.app/Contents/MacOS/SystemOneFixture"
+if [[ ! -x "$binary" || ! -x "$fixture_binary" ||
+      "$repository_root/apps/native-mock/main.swift" -nt "$binary" ||
+      "$repository_root/apps/native-mock/FixtureAX.swift" -nt "$binary" ||
+      "$repository_root/apps/native-fixture/main.swift" -nt "$fixture_binary" ||
       "$script_dir/build-native-mock.sh" -nt "$binary" ]]; then
   "$script_dir/build-native-mock.sh"
 fi

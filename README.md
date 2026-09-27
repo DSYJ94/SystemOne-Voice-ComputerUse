@@ -3,7 +3,8 @@
 A native macOS voice/text computer-use product in early development. The intended
 app is a background/menu-bar agent with a transient command panel, one persistent
 task controller, semantic Accessibility/DOM adapters, and CLM as its primary
-decision model. There is no application binary or live executor yet.
+decision model. Two local development app bundles now exercise one synthetic
+Accessibility field; there is no general-purpose executor or release binary yet.
 
 ## Current implementation
 
@@ -47,10 +48,12 @@ To try the available macOS host test yourself, run `npm run test:mac-peer` from
 this repository. The expected result lines are shown in
 `docs/LOCAL_MAC_TEST.md`.
 
-For a visual, no-effects menu-bar mock, run `npm run run:native-mock`, then choose
-**Open Command Panel** under **S1 Mock**. It accepts text and demonstrates Stop,
-but it does not control apps or browsers. The current command-line self-check and
-this UI mock exercise different pieces of the intended product.
+For the local native test build, run `npm run run:native-mock`. Its panel opens on
+launch; the Dock icon can reopen it if a menu-bar manager hides **S1 Mock**.
+Preview only has no effect. The build also offers one **fixture-only** action: set and verify
+the `Fixture Name` field of a synthetic app through macOS Accessibility. It has no
+general computer-control capability. See `docs/FIXTURE_COMPUTER_USE_TEST.md` for
+the opt-in local steps and exact limits.
 
 The XCTest suite requires an SDK providing XCTest; it could not run with this
 machine's command-line-tools installation. The standalone parity check did pass:
@@ -63,8 +66,9 @@ See `docs/VALIDATION.md` for the actual commands and environment limitations.
 the schema's existing golden digests unless the contract is intentionally revised.
 Python and Swift remain independent checks of the TypeScript fixture output.
 
-CLM/ASR model downloads, signing, microphone capture, native control, browser
-automation and remote inference are not part of these commands. Do not add models
+CLM/ASR model downloads, release signing, microphone capture, native fixture
+editing, browser automation and remote inference are not part of the automated
+check commands above. The opt-in fixture test is separate. Do not add models
 to the effect path until scripted drivers and durable dispatch/Stop tests pass.
 
 ## Repository and publication
