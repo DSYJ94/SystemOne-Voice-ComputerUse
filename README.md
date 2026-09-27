@@ -44,8 +44,13 @@ npm run test:mac-peer
 ```
 
 To try the available macOS host test yourself, run `npm run test:mac-peer` from
-this repository. The three expected result lines are shown in
+this repository. The expected result lines are shown in
 `docs/LOCAL_MAC_TEST.md`.
+
+For a visual, no-effects menu-bar mock, run `npm run run:native-mock`, then choose
+**Open Command Panel** under **S1 Mock**. It accepts text and demonstrates Stop,
+but it does not control apps or browsers. The current command-line self-check and
+this UI mock exercise different pieces of the intended product.
 
 The XCTest suite requires an SDK providing XCTest; it could not run with this
 machine's command-line-tools installation. The standalone parity check did pass:

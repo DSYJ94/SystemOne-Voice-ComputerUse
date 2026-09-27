@@ -108,3 +108,12 @@ negative structure checks.
 the expected peer was accepted and impostors failed for the exact intended reasons.
 The command and expected output are in `docs/LOCAL_MAC_TEST.md`. This is a local
 code-signing/socket test; it does not start a menu-bar app or request TCC grants.
+
+## Native UI mock, 27 September 2026
+
+`scripts/build-native-mock.sh` compiled an AppKit menu-bar bundle and ad-hoc signed
+it on macOS 26.6.2 arm64. `codesign --verify --deep --strict` and `plutil -lint`
+passed. `scripts/run-native-mock.sh` returned successfully after invoking `open`.
+The UI inspection service timed out, so panel appearance and button behaviour
+still require a human visual check. This mock requests no TCC permissions and
+cannot execute actions. It does not satisfy B04/B07 release acceptance.

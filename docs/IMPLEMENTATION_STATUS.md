@@ -24,7 +24,8 @@ fixtures. Supported operations and limitations must be stated explicitly.
 | B03 protocol | In progress | TypeScript schema/parser/framing, Swift digest parity, endpoint allowlists, bounded reply correlation/deadlines, final-input routing, host-private task admission, one-use approvals, clarification/resume intent records and a Swift audit-token/code-signing peer verifier. Production supervisor integration, release-identity qualification, typed Swift messages and permit/dispatch authority remain. |
 | B05 fixtures | In progress | Fifteen schema messages and shared digest/Unicode fixtures. Resettable native fixture app and browser portal have not been built. |
 | B26 conformance | In progress | Python oracle and TypeScript tests pass; standalone Swift digest check passes. XCTest cannot run with the installed SDK. Full cross-language negative fixtures, property/fuzz/race tests and CI remain. |
-| All other tickets | Not started | No signed UX, ASR, adapter, browser worker, model service, durable journal or release artifact. |
+| B07 UX shell | Mock only | A local ad-hoc-signed AppKit menu-bar shell can display a translucent command panel and Stop without dispatch. It lacks shortcut, focus capture, voice, TCC qualification and production signing. |
+| All other tickets | Not started | No qualified signed UX, ASR, adapter, browser worker, model service, durable journal or release artifact. |
 
 These slices advance PR1; they do not mark the entire contracts-and-fixtures stage
 or any of B01/B03/B05/B26 complete. The private GitHub remote is configured.
@@ -77,6 +78,11 @@ observations, actor/session, prompt presentation, checkpoint and expired respons
 fail closed. Free-text corrections use a new committed `Command` and goal revision.
 The ledger does not change task state, replay an attempt or issue a permit; B15/B17
 must connect it to durable recovery and revalidation.
+
+The local UI mock provides a runnable menu-bar panel for human feedback while B04
+signing and permission attribution remain open. Its Preview button only updates
+status text; Stop clears the mock input. It has no task controller or execution
+path and is not evidence for native-app or browser support.
 
 ## Next sequence
 
