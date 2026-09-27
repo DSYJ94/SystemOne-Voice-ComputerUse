@@ -39,7 +39,8 @@ established by the current fixture-only native or browser tests.
   [#17 portal action permits](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/17),
   [#18 existing-Chrome attachment](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/18),
   [#19 Chrome native-host transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/19),
-  [#20 managed-browser observation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/20).
+  [#20 managed-browser observation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/20),
+  [#21 admitted managed-browser fill](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/21).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current implementation branch is `codex/managed-browser-fill-authority`,
   stacked on `codex/managed-browser-observation`.
