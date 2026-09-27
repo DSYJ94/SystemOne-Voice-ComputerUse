@@ -45,13 +45,15 @@ cd '/Users/daryl/Library/CloudStorage/OneDrive-Personal/Shared GitHub Repos/Syst
 scripts/run-native-mock.sh
 ```
 
-Look for **S1 Mock** in the menu bar. Choose **Open Command Panel**, type any
-request and select **Preview only**. The panel should say it received a preview
+The command panel now opens on launch, and the mock also appears in the Dock.
+If your menu-bar manager shows **S1 Mock**, its menu also has **Open Command Panel**.
+Type any request and select **Preview only**. The panel should say it received a preview
 and sent no action. **Stop** clears the text; **Hide** closes the panel without
-quitting; **Quit Mock** is in the menu-bar menu. This build has no shortcut,
+quitting; **Quit Mock** is in the menu-bar menu, or you can quit from the Dock.
+This build has no shortcut,
 microphone, model, Accessibility adapter or browser connection. It will not act
 on the typed request. The mock is ad-hoc signed locally and asks for no TCC grants.
 
 The app lives under `.build/native-mock/` and is rebuilt when the command runs.
-If it does not appear in the menu bar, check for a hidden menu-bar item or run
-`open '.build/native-mock/SystemOne Mock.app'` from the repository directory.
+If the menu-bar item is hidden, click the **SystemOne Mock** Dock icon to reopen
+the panel. Quit the running mock before rebuilding after source changes.

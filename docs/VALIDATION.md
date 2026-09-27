@@ -114,6 +114,10 @@ code-signing/socket test; it does not start a menu-bar app or request TCC grants
 `scripts/build-native-mock.sh` compiled an AppKit menu-bar bundle and ad-hoc signed
 it on macOS 26.6.2 arm64. `codesign --verify --deep --strict` and `plutil -lint`
 passed. `scripts/run-native-mock.sh` returned successfully after invoking `open`.
-The UI inspection service timed out, so panel appearance and button behaviour
-still require a human visual check. This mock requests no TCC permissions and
-cannot execute actions. It does not satisfy B04/B07 release acceptance.
+The first UI inspection attempt timed out; a later read-only check showed that
+the initial background-only build was absent from the app inventory while its
+process was alive. The revised regular-app build appeared as running and exposed
+its command panel, text field, Preview, Stop and Hide controls through macOS
+Accessibility. Button behaviour still needs a human check. This mock requests no
+TCC permissions and cannot execute actions. It does not satisfy B04/B07 release
+acceptance.

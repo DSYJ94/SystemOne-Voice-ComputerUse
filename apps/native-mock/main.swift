@@ -8,7 +8,9 @@ final class NativeMock: NSObject, NSApplicationDelegate {
     private var result: NSTextField?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        // Keep a Dock fallback in this test build: menu-bar managers can hide
+        // third-party status items, leaving an accessory-only mock unreachable.
+        NSApp.setActivationPolicy(.regular)
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "S1 Mock"
@@ -21,18 +23,23 @@ final class NativeMock: NSObject, NSApplicationDelegate {
         item.menu = menu
         statusItem = item
         makePanel()
+        openPanel()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication,
+        hasVisibleWindows flag: Bool) -> Bool {
+        openPanel()
+        return true
     }
 
     private func makePanel() {
         let window = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 190),
-            styleMask: [.titled, .closable, .fullSizeContentView],
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 210),
+            styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
         window.title = "SystemOne Mock"
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
         window.isFloatingPanel = true
         window.isOpaque = false
         window.backgroundColor = .clear
