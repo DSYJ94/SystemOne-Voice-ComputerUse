@@ -7,7 +7,7 @@
   "engines": { "node": ">=26.5.0 <27" },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test packages/protocol/test/*.test.ts packages/runtime/test/*.test.ts",
+    "test": "node --test packages/protocol/test/*.test.ts packages/runtime/test/*.test.ts packages/fixtures/test/*.test.ts",
     "check": "npm run typecheck && npm test",
     "test:swift": "swift test --package-path packages/protocol/swift",
     "test:mac-peer": "scripts/check-peer-identity.sh",
