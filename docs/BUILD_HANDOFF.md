@@ -35,8 +35,8 @@ established by the current fixture-only native or browser tests.
   [#14 scripted portal journal integration](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/14),
   [#15 command-bound portal admission](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/15).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/admission-input-provenance`,
-  stacked on `codex/portal-journal-integration`.
+- The current implementation branch is `codex/portal-stop-local-fence`,
+  stacked on `codex/admission-input-provenance`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -73,8 +73,10 @@ granted Mock binary.
 The native mock does not use the TypeScript journal/dispatch gate. The scripted
 managed-browser task now accepts only a one-use admission from the bound final
 input session and checks its exact fixture contract before journaling each action.
-It fences both stores on Stop. Its context-close fence does not prove an already-
-dispatched action had no effect; the two stores lack one atomic transaction and
+It fences both stores on Stop. Stop distinguishes browser context closure from
+an independent local save still pending and reports an incomplete worker fence
+for the latter. Context closure does not prove an already-dispatched action had
+no effect; the two stores lack one atomic transaction and
 the path has no authenticated host execution permit. Existing Chrome is not connected.
 Host/helper release identity, TCC attribution after installation and
 update, voice, CLM inference, privacy review, crash recovery across real workers,

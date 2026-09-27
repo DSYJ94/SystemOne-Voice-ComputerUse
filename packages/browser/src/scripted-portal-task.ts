@@ -185,6 +185,7 @@ export class ScriptedPortalTask {
   readonly #taskId: string;
   readonly #admission: TaskAdmission;
   #receipt: PortalDownload | undefined;
+  #localSaveActive = false;
 
   constructor(store: ScriptedPortalStore, journal: AttemptJournal,
     session: PortalSession, admission: TaskAdmission, started: ScriptedPortalRecord) {
@@ -207,7 +208,8 @@ export class ScriptedPortalTask {
   }
 
   async stop(): Promise<{ record: ScriptedPortalRecord; journalFenced: boolean;
-    workerFenced: boolean; unresolvedExecutionIds: readonly string[] }> {
+    workerFenced: boolean; browserFenced: boolean; localSaveFenced: boolean;
+    unresolvedExecutionIds: readonly string[] }> {
     // Persist cancellation before waiting for Playwright to close. A successful
     // worker fence never changes an in-flight action into "not dispatched".
     const record = this.#store.stop(this.#taskId);
@@ -221,10 +223,14 @@ export class ScriptedPortalTask {
       unresolvedExecutionIds = this.#journal.unresolvedAttempts(this.#taskId)
         .map(attempt => attempt.executionId);
     }
-    let workerFenced = false;
-    try { workerFenced = (await this.#session.stop()).workerFenced; }
+    let browserFenced = false;
+    try { browserFenced = (await this.#session.stop()).workerFenced; }
     catch { /* The task remains cancelled; worker outcome stays unknown. */ }
-    return Object.freeze({ record, journalFenced, workerFenced,
+    // A browser close cannot fence an independent local file operation that
+    // already crossed its dispatch boundary. Report an incomplete barrier.
+    const localSaveFenced = !this.#localSaveActive;
+    return Object.freeze({ record, journalFenced,
+      workerFenced: browserFenced && localSaveFenced, browserFenced, localSaveFenced,
       unresolvedExecutionIds: Object.freeze(unresolvedExecutionIds) });
   }
 
@@ -254,27 +260,31 @@ export class ScriptedPortalTask {
       if (!detail || !this.#receipt) {
         return this.#store.pause(task.taskId, 'temporary download evidence is unavailable');
       }
-      return this.#action(task, 'save', 'saved', true, async () => {
-        const goal = goalFor(task, 'DOWNLOAD');
-        const verified = await this.#session.verifyGoal(goal, observed.revision, this.#receipt);
-        if (verified.status !== 'matched') throw new Error('temporary download changed');
-        this.#assertTaskActive(task.taskId);
-        const bytes = await readFile(this.#receipt!.path);
-        this.#assertTaskActive(task.taskId);
-        const output = await open(task.destinationPath!, 'wx', 0o600);
-        try {
+      this.#localSaveActive = true;
+      try {
+        return await this.#action(task, 'save', 'saved', true, async () => {
+          const goal = goalFor(task, 'DOWNLOAD');
+          const verified = await this.#session.verifyGoal(goal, observed.revision, this.#receipt);
+          if (verified.status !== 'matched') throw new Error('temporary download changed');
           this.#assertTaskActive(task.taskId);
-          await output.writeFile(bytes);
-        }
-        finally { await output.close(); }
-        this.#assertTaskActive(task.taskId);
-        const saved = await readFile(task.destinationPath!);
-        this.#assertTaskActive(task.taskId);
-        if (createHash('sha256').update(saved).digest('hex') !== this.#receipt!.sha256) {
-          throw new Error('saved document changed');
-        }
-        return `saved-${this.#receipt!.sha256}`;
-      }, observed);
+          const bytes = await readFile(this.#receipt!.path);
+          this.#assertTaskActive(task.taskId);
+          const output = await open(task.destinationPath!, 'wx', 0o600);
+          try {
+            this.#assertTaskActive(task.taskId);
+            await output.writeFile(bytes);
+          }
+          finally { await output.close(); }
+          this.#assertTaskActive(task.taskId);
+          const saved = await readFile(task.destinationPath!);
+          this.#assertTaskActive(task.taskId);
+          if (createHash('sha256').update(saved).digest('hex') !== this.#receipt!.sha256) {
+            throw new Error('saved document changed');
+          }
+          return `saved-${this.#receipt!.sha256}`;
+        }, observed);
+      }
+      finally { this.#localSaveActive = false; }
     }
     if (detail) {
       const verified = await this.#session.verifyGoal(goalFor(task, 'OPEN'), observed.revision);
