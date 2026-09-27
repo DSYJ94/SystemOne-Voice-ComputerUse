@@ -9,7 +9,9 @@ import type { PreparedAttempt } from '../src/attempt-journal.ts';
 const attempt: PreparedAttempt = {
   executionId: 'execution-1', permitRef: 'permit-1', taskId: 'task-1',
   taskEpoch: 1, goalRevision: 1, scopeRef: 'fixture-only',
-  actionDigest: 'a'.repeat(64),
+  observationId: 'observation-1', candidateId: 'candidate-1',
+  candidateSetDigest: 'b'.repeat(64), actionDigest: 'a'.repeat(64),
+  policyRevision: 'fixture-policy-1', leaseGeneration: 1,
 };
 
 function withDatabase(run: (path: string) => void): void {
