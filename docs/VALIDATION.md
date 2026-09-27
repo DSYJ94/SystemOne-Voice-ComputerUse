@@ -121,3 +121,6 @@ its command panel, text field, Preview, Stop and Hide controls through macOS
 Accessibility. Button behaviour still needs a human check. This mock requests no
 TCC permissions and cannot execute actions. It does not satisfy B04/B07 release
 acceptance.
+
+The tester command was rerun against the live corrected build; it reopened the
+existing bundle without recompiling or modifying its running executable.

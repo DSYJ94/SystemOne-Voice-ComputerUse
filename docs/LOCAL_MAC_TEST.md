@@ -54,6 +54,7 @@ This build has no shortcut,
 microphone, model, Accessibility adapter or browser connection. It will not act
 on the typed request. The mock is ad-hoc signed locally and asks for no TCC grants.
 
-The app lives under `.build/native-mock/` and is rebuilt when the command runs.
+The app lives under `.build/native-mock/`; the command rebuilds it when its source
+changes, then opens it. Repeating the command with the current build reopens it.
 If the menu-bar item is hidden, click the **SystemOne Mock** Dock icon to reopen
 the panel. Quit the running mock before rebuilding after source changes.
