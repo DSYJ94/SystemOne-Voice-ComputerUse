@@ -59,12 +59,14 @@ npm run test:swift
 npm run test:mac-peer
 ```
 
-To try the available macOS host test yourself, run `npm run test:mac-peer` from
-this repository. The expected result lines are shown in
-`docs/LOCAL_MAC_TEST.md`.
+`npm run test:mac-peer` checks a signing/peer-identity fixture in Terminal;
+it does **not** launch the SystemOne Mock window. Its expected result lines
+are shown in `docs/LOCAL_MAC_TEST.md`.
 
-For the local native test build, run `npm run run:native-mock`. Its panel opens on
-launch; the Dock icon can reopen it if a menu-bar manager hides **S1 Mock**.
+For the local native test build, run `npm run run:native-mock`. It stops earlier
+synthetic Mock/Fixture processes from this build path before opening a fresh
+Mock, so any synthetic Fixture value is reset. Its panel opens on launch; the
+Dock icon can reopen it if a menu-bar manager hides **S1 Mock**.
 Preview only has no effect. The build also offers one **fixture-only** action: set and verify
 the `Fixture Name` field of a synthetic app through macOS Accessibility. It has no
 general computer-control capability. See `docs/FIXTURE_COMPUTER_USE_TEST.md` for

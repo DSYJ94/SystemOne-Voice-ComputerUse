@@ -26,10 +26,11 @@ established by the current fixture-only native or browser tests.
   [#5 dispatch gate](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/5),
   [#6 portal fixture](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/6),
   [#7 managed browser](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/7),
-  [#8 handoff and outcome checks](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/8).
+  [#8 handoff and outcome checks](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/8),
+  [#9 native fixture launch recovery](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/9).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current review branch is `codex/build-handoff-outcomes`, stacked on
-  `codex/managed-browser-driver`.
+- The current review branch is `codex/native-fixture-launch-recovery`, stacked
+  on `codex/build-handoff-outcomes`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -41,6 +42,10 @@ synthetic fixture field through Accessibility and independently re-observed it.
 The revised Reset feedback is compiled but awaits the owner's renewed manual
 test. The owner has the [exact test steps](FIXTURE_COMPUTER_USE_TEST.md); record
 their result separately from automated evidence.
+The local launcher now restarts the two exact-path synthetic processes before a
+rebuild and refuses direct in-place builds while they run. A fresh Fixture
+reopened without a crash after the 27 September incident; the owner's in-Mock
+click and Reset feedback are still pending.
 
 `npm run check` is the TypeScript/Node suite; `npm run build:native-mock`
 compiles the two ad-hoc-signed local bundles. `npm run test:mac-peer` checks a

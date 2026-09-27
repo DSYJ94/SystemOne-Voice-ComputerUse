@@ -207,3 +207,26 @@ navigation evidence, missing or fabricated session receipts, and file tampering.
 The driver re-observes the current portal and re-reads saved bytes before
 reporting a fixture goal matched. This does not prove a general task actor,
 non-fixture browser control, Stop, or production completion.
+
+## Native fixture reopen failure and launch guard, 27 September 2026
+
+The user's 21:20 report matches `SystemOneFixture-2026-09-27-212008.ips`:
+`EXC_BAD_ACCESS` in `FixtureApp.applicationShouldHandleReopen`, with the process
+launched at 17:31 before the 17:36 bundle rebuild. A 17:31 report has the same
+reopen stack. `ps` also showed a Mock process launched before that rebuild.
+The previous `run:native-mock` used `open`, which reused the old process; it did
+not guarantee a fresh binary. The exact-path process test passed, and a direct
+`npm run build:native-mock` correctly refused to overwrite the two running
+synthetic bundles. The first corrected `npm run run:native-mock` stopped both
+processes but failed during signing because OneDrive had attached Finder/file-
+provider extended attributes to the generated Mock bundle. After clearing only
+the generated bundles' attributes before signing, the same command built and
+opened the Mock successfully. Two `open` calls against the fresh Fixture left
+one live Fixture process and no new crash report. This confirms the launch/
+reopen path, not the owner's full manual Fill/Reset test or a release update path.
+`npm run test:mac-launch` passed the exact-path stop and unrelated-process
+preservation test. `zsh -n` passed for all changed scripts, `npm run check`
+passed TypeScript typechecking and **131/131** Node tests, and a second
+`npm run run:native-mock` stopped both fresh synthetic processes and left only
+a newly launched Mock running. The owner has not yet repeated the in-Mock
+Open Fixture/Fill/Reset sequence against this build.
