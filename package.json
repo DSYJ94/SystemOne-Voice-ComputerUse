@@ -18,6 +18,9 @@
     "test:mac-launch": "zsh scripts/test-native-mock-processes.sh",
     "build:native-mock": "scripts/build-native-mock.sh",
     "run:native-mock": "scripts/run-native-mock.sh",
+    "build:native-dev": "zsh scripts/build-native-dev.sh",
+    "run:native-dev": "zsh scripts/run-native-dev.sh",
+    "run:portal-fixture": "node scripts/run-portal-fixture.ts",
     "fixtures": "node scripts/export-fixtures.ts"
   },
   "dependencies": {

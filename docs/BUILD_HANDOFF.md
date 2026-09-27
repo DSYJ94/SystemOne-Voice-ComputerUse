@@ -40,10 +40,11 @@ established by the current fixture-only native or browser tests.
   [#18 existing-Chrome attachment](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/18),
   [#19 Chrome native-host transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/19),
   [#20 managed-browser observation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/20),
-  [#21 admitted managed-browser fill](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/21).
+  [#21 admitted managed-browser fill](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/21),
+  [#22 native-to-managed development bridge](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/22).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/managed-browser-fill-authority`,
-  stacked on `codex/managed-browser-observation`.
+- The current implementation branch is `codex/native-managed-input-bridge`,
+  stacked on `codex/managed-browser-fill-authority`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -86,9 +87,13 @@ Separately, a general managed-Chromium observer now opens an exact
 approved origin in an isolated profile and returns bounded main-document
 controls with explicit frame/shadow/truncation gaps. One admitted `FILL` task
 now uses a one-use in-process permit, private DOM handle revalidation, a
-durable dispatch boundary and current field-value verification. Its Stop fences
-the journal and closes the isolated context, while any dispatched uncertainty
-remains unresolved. It is not connected to the app or an OS-authenticated worker.
+durable dispatch boundary and current field-value verification. A development
+AppKit panel sends that one action to a persistent Node controller over
+inherited private pipes. A successful fill leaves Chromium open for inspection;
+Stop fences the journal and closes the isolated context, while any dispatched
+uncertainty remains unresolved. The development bundle points to external
+source and Node paths; its child is not authenticated as a release worker.
+See [native managed test](NATIVE_MANAGED_TEST.md).
 It fences both stores on Stop. Stop distinguishes browser context closure from
 an independent local save still pending and reports an incomplete worker fence
 for the latter. Context closure does not prove an already-dispatched action had
