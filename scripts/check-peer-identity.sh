@@ -33,5 +33,5 @@ install_name_tool -add_rpath @executable_path/variant "$wrong_hash"
 codesign --force --sign - --identifier com.aurium.systemone.peercheck "$wrong_hash"
 
 "$expected"
-"$expected" --child "$wrong_identifier" --expect-reject
-"$expected" --child "$wrong_hash" --expect-reject
+"$expected" --child "$wrong_identifier" --expect-reject 'signing identifier'
+"$expected" --child "$wrong_hash" --expect-reject 'CDHash'

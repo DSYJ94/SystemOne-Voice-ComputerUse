@@ -17,6 +17,8 @@ decision model. There is no application binary or live executor yet.
   and bounded request/reply correlation with monotonic deadlines and replay rejection.
 - Host-private task admission plus revision-, prompt-, actor-, presentation-, action-
   and policy-bound approvals that are accepted and consumed once in mock tests.
+- Clarification and resume intent records bound to displayed prompts, task revisions,
+  current observations and recovered checkpoints.
 - A macOS Unix-socket peer verifier that binds kernel audit-token identity to
   dynamically validated signing identity and an Apple-anchored Team ID requirement
   or pinned CDHash.
@@ -38,8 +40,12 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-test.txt
 .venv/bin/python packages/protocol/validate_contract.py
 npm run test:swift
-scripts/check-peer-identity.sh
+npm run test:mac-peer
 ```
+
+To try the available macOS host test yourself, run `npm run test:mac-peer` from
+this repository. The three expected result lines are shown in
+`docs/LOCAL_MAC_TEST.md`.
 
 The XCTest suite requires an SDK providing XCTest; it could not run with this
 machine's command-line-tools installation. The standalone parity check did pass:

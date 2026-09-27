@@ -40,8 +40,8 @@ The script builds the Swift target, copies it only into a private temporary
 directory, and applies ad-hoc signatures. It verifies:
 
 1. the exact same signed binary is accepted;
-2. a binary with a different signing identifier is rejected; and
-3. a changed binary with the same identifier but a different CDHash is rejected.
+2. a binary with a different signing identifier is rejected for that mismatch; and
+3. a changed binary with the same identifier is rejected for its different CDHash.
 
 Ad-hoc signing does not establish a Team ID, Developer ID trust, notarization or
 TCC responsibility. The check requests no Accessibility, microphone or screen

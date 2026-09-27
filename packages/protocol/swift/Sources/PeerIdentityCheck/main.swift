@@ -48,7 +48,7 @@ private func verifyRequirementGuards() throws {
     }
 }
 
-private func server(childPath: String, expectRejection: Bool) throws {
+private func server(childPath: String, expectedRejection: String?) throws {
     try verifyRequirementGuards()
     let path = "/private/tmp/systemone-peer-\(getpid()).sock"
     unlink(path)
@@ -105,8 +105,11 @@ private func server(childPath: String, expectRejection: Bool) throws {
     guard process.terminationStatus == 0 else {
         throw PeerIdentityError.requirementMismatch("client termination")
     }
-    if expectRejection {
-        guard rejected != nil else { throw PeerIdentityError.requirementMismatch("impostor accepted") }
+    if let expectedRejection {
+        guard case let PeerIdentityError.requirementMismatch(actual)? = rejected,
+              actual == expectedRejection else {
+            throw PeerIdentityError.requirementMismatch("unexpected rejection reason or impostor accepted")
+        }
     } else if let rejected {
         throw rejected
     }
@@ -118,21 +121,21 @@ do {
         try client(path: arguments[2])
     }
     var childPath = arguments[0]
-    var expectRejection = false
+    var expectedRejection: String?
     var index = 1
     while index < arguments.count {
         switch arguments[index] {
         case "--child" where index + 1 < arguments.count:
             childPath = arguments[index + 1]
             index += 2
-        case "--expect-reject":
-            expectRejection = true
-            index += 1
+        case "--expect-reject" where index + 1 < arguments.count:
+            expectedRejection = arguments[index + 1]
+            index += 2
         default:
             throw PeerIdentityError.invalidRequirement
         }
     }
-    try server(childPath: childPath, expectRejection: expectRejection)
+    try server(childPath: childPath, expectedRejection: expectedRejection)
 } catch {
     FileHandle.standardError.write(Data("PeerIdentityCheck failed: \(error)\n".utf8))
     exit(1)

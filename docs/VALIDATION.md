@@ -94,3 +94,17 @@ This proves the primitive on this host only. Production still requires the signe
 app/helper topology, a configured Team ID or release requirement, supervisor
 integration, installed/update/revocation tests and TCC attribution. No TCC prompt,
 Accessibility API, browser automation, microphone, model or user account was used.
+
+## Clarification, resume and local tester, 27 September 2026
+
+`npm run check`: TypeScript typecheck and **108/108 tests passed**. New tests cover
+host-registered clarification options, changed observations, checkpoint identity,
+paused-state registration, actor/session and revision mismatch, expiry, closure and
+replay. `review-work/.venv/bin/python packages/protocol/validate_contract.py`:
+**115/115 checks passed**, including the two new positive examples and three new
+negative structure checks.
+
+`npm run test:mac-peer`: the local Apple Silicon test completed with exit status 0;
+the expected peer was accepted and impostors failed for the exact intended reasons.
+The command and expected output are in `docs/LOCAL_MAC_TEST.md`. This is a local
+code-signing/socket test; it does not start a menu-bar app or request TCC grants.

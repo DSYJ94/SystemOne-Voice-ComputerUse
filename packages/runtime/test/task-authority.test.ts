@@ -36,7 +36,7 @@ function admissionDraft(): TaskAdmissionDraft {
 }
 
 function approvalMessage() {
-  return structuredClone(schema.examples.at(-1));
+  return structuredClone(schema.examples.find((value: any) => value.type === 'approval'));
 }
 
 function approvalBinding(): ApprovalBinding {
