@@ -261,6 +261,13 @@ export class AttemptJournal {
     return row && fromRow(row);
   }
 
+  attemptsForTask(taskId: string): readonly JournalAttempt[] {
+    assertId(taskId, 'task ID');
+    const rows = this.#db.prepare(`SELECT * FROM attempts
+      WHERE task_id = ? ORDER BY rowid`).all(taskId) as unknown as AttemptRow[];
+    return Object.freeze(rows.map(fromRow));
+  }
+
   unresolvedAttempts(taskId?: string): readonly JournalAttempt[] {
     if (taskId !== undefined) assertId(taskId, 'task ID');
     const rows = taskId === undefined

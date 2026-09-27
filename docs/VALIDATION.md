@@ -316,3 +316,17 @@ terminal state yet.
 `npm run check` passed TypeScript typechecking and **142/142** Node tests with
 local loopback fixture access. The native AX check was not rerun in this slice;
 its source was unchanged.
+
+## Scripted portal attempt-journal integration, 27 September 2026
+
+The portal task now records one prepared attempt and dispatch-boundary event
+before each scripted search, open, download and save operation. A completed
+four-step fixture task has four matched journal outcomes and a completed journal
+task state. A delayed browser Stop leaves both records cancelled and the action
+unresolved; Stop during save verification prevents a subsequent file write. A
+simulated host restart after a browser boundary pauses both records and blocks
+new task admission. The focused browser suite passed 9/9 tests. These are
+fixture-only in-process checks, not authenticated host permits or atomic
+cross-table commits. `npm run check` passed typechecking and **144/144** Node
+tests with local loopback access. The native AX check was not rerun; its source
+was unchanged.

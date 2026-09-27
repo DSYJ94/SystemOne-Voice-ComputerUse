@@ -1,8 +1,11 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { open, readFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute } from 'node:path';
 import { realpathSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
+import { digest } from '../../protocol/src/json.ts';
+import { AttemptJournal } from '../../runtime/src/attempt-journal.ts';
+import type { PreparedAttempt } from '../../runtime/src/attempt-journal.ts';
 import type { PortalDownload, PortalGoal, PortalGoalResult, PortalObservation } from './managed-portal.ts';
 
 type GoalKind = PortalGoal['kind'];
@@ -157,26 +160,48 @@ export class ScriptedPortalStore {
  * qualified Stop barrier; Stop records uncertainty and never reports undo. */
 export class ScriptedPortalTask {
   readonly #store: ScriptedPortalStore;
+  readonly #journal: AttemptJournal;
   readonly #session: PortalSession;
   readonly #taskId: string;
   #receipt: PortalDownload | undefined;
 
-  constructor(store: ScriptedPortalStore, session: PortalSession, taskId: string) {
+  constructor(store: ScriptedPortalStore, journal: AttemptJournal,
+    session: PortalSession, taskId: string) {
     this.#store = store;
+    this.#journal = journal;
     this.#session = session;
     this.#taskId = taskId;
     const task = store.get(taskId);
-    if (!task || task.origin !== session.origin) throw new Error('scripted task origin mismatch');
+    if (!task || task.origin !== session.origin || task.state !== 'active') {
+      throw new Error('scripted task origin or state mismatch');
+    }
+    try { journal.startTask(taskId, 1, 1); }
+    catch (error) {
+      store.pause(taskId, 'journal admission failed');
+      throw error;
+    }
   }
 
-  async stop(): Promise<{ record: ScriptedPortalRecord; workerFenced: boolean }> {
+  async stop(): Promise<{ record: ScriptedPortalRecord; journalFenced: boolean;
+    workerFenced: boolean; unresolvedExecutionIds: readonly string[] }> {
     // Persist cancellation before waiting for Playwright to close. A successful
     // worker fence never changes an in-flight action into "not dispatched".
     const record = this.#store.stop(this.#taskId);
+    let journalFenced = false;
+    let unresolvedExecutionIds: readonly string[] = [];
+    try {
+      unresolvedExecutionIds = this.#journal.cancelTask(this.#taskId)
+        .map(attempt => attempt.executionId);
+      journalFenced = true;
+    } catch {
+      unresolvedExecutionIds = this.#journal.unresolvedAttempts(this.#taskId)
+        .map(attempt => attempt.executionId);
+    }
     let workerFenced = false;
     try { workerFenced = (await this.#session.stop()).workerFenced; }
     catch { /* The task remains cancelled; worker outcome stays unknown. */ }
-    return Object.freeze({ record, workerFenced });
+    return Object.freeze({ record, journalFenced, workerFenced,
+      unresolvedExecutionIds: Object.freeze(unresolvedExecutionIds) });
   }
 
   async advance(): Promise<ScriptedPortalRecord> {
@@ -209,21 +234,29 @@ export class ScriptedPortalTask {
         const goal = goalFor(task, 'DOWNLOAD');
         const verified = await this.#session.verifyGoal(goal, observed.revision, this.#receipt);
         if (verified.status !== 'matched') throw new Error('temporary download changed');
+        this.#assertTaskActive(task.taskId);
         const bytes = await readFile(this.#receipt!.path);
+        this.#assertTaskActive(task.taskId);
         const output = await open(task.destinationPath!, 'wx', 0o600);
-        try { await output.writeFile(bytes); }
+        try {
+          this.#assertTaskActive(task.taskId);
+          await output.writeFile(bytes);
+        }
         finally { await output.close(); }
+        this.#assertTaskActive(task.taskId);
         const saved = await readFile(task.destinationPath!);
+        this.#assertTaskActive(task.taskId);
         if (createHash('sha256').update(saved).digest('hex') !== this.#receipt!.sha256) {
           throw new Error('saved document changed');
         }
-      });
+        return `saved-${this.#receipt!.sha256}`;
+      }, observed);
     }
     if (detail) {
       const verified = await this.#session.verifyGoal(goalFor(task, 'OPEN'), observed.revision);
       if (verified.status !== 'matched') return this.#store.pause(task.taskId, 'exact detail unavailable');
       if (task.outcomeKind === 'OPEN') {
-        this.#store.verified(task.taskId, 'opened', true);
+        this.#completeWithoutAction(task, 'opened', `portal-open-${observed.revision}`);
         return this.#store.get(task.taskId)!;
       }
       if (task.outcomeKind === 'LOCATE') return this.#store.pause(task.taskId, 'locate evidence is no longer current');
@@ -232,20 +265,22 @@ export class ScriptedPortalTask {
         const outcome = await this.#session.verifyGoal(goalFor(task, 'DOWNLOAD'),
           observed.revision, this.#receipt);
         if (outcome.status !== 'matched') throw new Error('download was not verified');
-      });
+        return `portal-download-${outcome.revision}`;
+      }, observed);
     }
     if (exact && observed.kind === 'results') {
       const verified = await this.#session.verifyGoal(goalFor(task, 'LOCATE'), observed.revision);
       if (verified.status !== 'matched') return this.#store.pause(task.taskId, 'exact result unavailable');
       if (task.outcomeKind === 'LOCATE') {
-        this.#store.verified(task.taskId, 'located', true);
+        this.#completeWithoutAction(task, 'located', `portal-locate-${observed.revision}`);
         return this.#store.get(task.taskId)!;
       }
       return this.#action(task, 'open', 'opened', task.outcomeKind === 'OPEN', async () => {
         const after = await this.#session.openInvoice(task.invoiceId, observed.revision);
         const outcome = await this.#session.verifyGoal(goalFor(task, 'OPEN'), after.revision);
         if (outcome.status !== 'matched') throw new Error('opened detail was not verified');
-      });
+        return `portal-open-${outcome.revision}`;
+      }, observed);
     }
     if (observed.kind === 'detail') {
       return this.#store.pause(task.taskId, 'a different invoice is open');
@@ -254,19 +289,94 @@ export class ScriptedPortalTask {
       const after = await this.#session.search(task.query);
       const outcome = await this.#session.verifyGoal(goalFor(task, 'LOCATE'), after.revision);
       if (outcome.status !== 'matched') throw new Error('exact invoice was not found');
-    });
+      return `portal-locate-${outcome.revision}`;
+    }, observed);
   }
 
   async #action(task: ScriptedPortalRecord, action: Action, stage: Stage,
-    completed: boolean, body: () => Promise<void>): Promise<ScriptedPortalRecord> {
-    this.#store.begin(task.taskId, action);
+    completed: boolean, body: () => Promise<string>,
+    observed: PortalObservation): Promise<ScriptedPortalRecord> {
+    const attempt = this.#attempt(task, action, observed);
+    try { this.#journal.prepare(attempt); }
+    catch { return this.#store.pause(task.taskId, `${action} journal preparation failed`); }
     try {
-      await body();
-      this.#store.verified(task.taskId, stage, completed, action);
+      this.#store.begin(task.taskId, action);
+      // No await between the durable marker and the browser call. The marker
+      // means an effect is possible, including during Playwright auto-waiting.
+      this.#journal.markDispatchBoundary(attempt.executionId);
     } catch {
-      this.#store.pause(task.taskId, `${action} outcome uncertain; re-observe before any retry`);
+      if (this.#journal.getAttempt(attempt.executionId)?.phase === 'prepared') {
+        this.#journal.recordNotDispatched(attempt.executionId);
+      }
+      return this.#store.pause(task.taskId, `${action} was not dispatched`);
+    }
+    let evidenceRef: string;
+    try { evidenceRef = await body(); }
+    catch {
+      this.#recordUnknown(attempt.executionId);
+      return this.#store.pause(task.taskId, `${action} outcome uncertain; re-observe before any retry`);
+    }
+    try {
+      this.#journal.recordOutcome(attempt.executionId, {
+        deliveryStatus: 'dispatched', effectStatus: 'applied',
+        verification: 'matched', evidenceRef,
+      });
+      if (this.#journal.getTaskState(task.taskId) === 'active'
+        && this.#store.get(task.taskId)?.state === 'active') {
+        if (completed) this.#journal.completeTask(task.taskId, evidenceRef);
+        this.#store.verified(task.taskId, stage, completed, action);
+      }
+    } catch {
+      return this.#store.pause(task.taskId, `${action} journal outcome uncertain`);
     }
     return this.#store.get(task.taskId)!;
+  }
+
+  #completeWithoutAction(task: ScriptedPortalRecord, stage: Stage, evidenceRef: string): void {
+    try {
+      this.#assertTaskActive(task.taskId);
+      this.#journal.completeTask(task.taskId, evidenceRef);
+      this.#store.verified(task.taskId, stage, true);
+    } catch {
+      this.#store.pause(task.taskId, 'terminal verification could not be recorded');
+    }
+  }
+
+  #attempt(task: ScriptedPortalRecord, action: Action,
+    observed: PortalObservation): PreparedAttempt {
+    const observationRecord = observed.kind === 'results'
+      ? { kind: observed.kind, revision: observed.revision, url: observed.url,
+          rows: observed.rows.map(row => ({ id: row.id, title: row.title,
+            account: row.account })) }
+      : observed.kind === 'detail'
+        ? { kind: observed.kind, revision: observed.revision, url: observed.url,
+            invoiceId: observed.invoiceId, title: observed.title,
+            account: observed.account }
+        : { kind: observed.kind, revision: observed.revision, url: observed.url };
+    const actionRecord = { action, taskId: task.taskId, origin: task.origin,
+      invoiceId: task.invoiceId, query: task.query,
+      destinationPath: task.destinationPath ?? null, observation: observationRecord };
+    return Object.freeze({ executionId: randomUUID(), permitRef: randomUUID(),
+      taskId: task.taskId, taskEpoch: 1, goalRevision: 1,
+      scopeRef: 'synthetic-portal-only',
+      observationId: `portal-${digest(observationRecord).slice(0, 32)}`,
+      candidateId: `scripted-${action}`,
+      candidateSetDigest: digest([actionRecord]),
+      actionDigest: digest(actionRecord), policyRevision: 'portal-policy-1',
+      leaseGeneration: 1 });
+  }
+
+  #recordUnknown(executionId: string): void {
+    try { this.#journal.recordOutcome(executionId, {
+      deliveryStatus: 'unknown', effectStatus: 'unknown', verification: 'unavailable',
+    }); } catch { /* Keep the durable dispatch boundary unresolved. */ }
+  }
+
+  #assertTaskActive(taskId: string): void {
+    if (this.#store.get(taskId)?.state !== 'active'
+      || this.#journal.getTaskState(taskId) !== 'active') {
+      throw new Error('task was stopped before the next file operation');
+    }
   }
 }
 
