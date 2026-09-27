@@ -56,6 +56,8 @@ export class ManagedPortalSession {
   #closed = false;
   readonly #downloads = new Map<string, { receipt: PortalDownload; revision: number }>();
 
+  get origin(): string { return this.#origin; }
+
   private constructor(origin: string, root: string, context: BrowserContext, page: Page) {
     this.#origin = origin;
     this.#root = root;

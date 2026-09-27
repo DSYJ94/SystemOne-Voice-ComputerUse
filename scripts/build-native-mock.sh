@@ -66,6 +66,11 @@ PLIST
 # These are disposable local test outputs, so clear only their xattrs before
 # applying the ad-hoc development signatures.
 /usr/bin/xattr -cr "$app_dir" "$fixture_dir"
-codesign --force --deep --sign - "$app_dir"
-codesign --force --deep --sign - "$fixture_dir"
+signing_identity=${SYSTEMONE_CODESIGN_IDENTITY:--}
+codesign --force --deep --sign "$signing_identity" "$app_dir"
+codesign --force --deep --sign "$signing_identity" "$fixture_dir"
+if [[ "$signing_identity" == '-' ]]; then
+  print -u2 'Development bundles use ad-hoc signatures. Their Accessibility grant may need renewal after a rebuild.'
+  print -u2 'Set SYSTEMONE_CODESIGN_IDENTITY to a valid local development signing identity for stable update testing.'
+fi
 echo "Built $app_dir and $fixture_dir"

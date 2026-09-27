@@ -27,10 +27,11 @@ established by the current fixture-only native or browser tests.
   [#6 portal fixture](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/6),
   [#7 managed browser](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/7),
   [#8 handoff and outcome checks](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/8),
-  [#9 native fixture launch recovery](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/9).
+  [#9 native fixture launch recovery](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/9),
+  [#10 scripted task and TCC development fix](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/10).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current review branch is `codex/native-fixture-launch-recovery`, stacked
-  on `codex/build-handoff-outcomes`.
+- The current review branch is `codex/scripted-task-controller`, stacked on
+  `codex/native-fixture-launch-recovery`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -46,6 +47,10 @@ The local launcher now restarts the two exact-path synthetic processes before a
 rebuild and refuses direct in-place builds while they run. A fresh Fixture
 reopened without a crash after the 27 September incident; the owner's in-Mock
 click and Reset feedback are still pending.
+An enabled Accessibility toggle did not grant the rebuilt ad-hoc Mock. Its
+current-binary grant was reset for this app only, and a fresh user grant is
+pending. No valid development signing identity is installed on this Mac; the
+build accepts `SYSTEMONE_CODESIGN_IDENTITY` when one becomes available.
 
 `npm run check` is the TypeScript/Node suite; `npm run build:native-mock`
 compiles the two ad-hoc-signed local bundles. `npm run test:mac-peer` checks a
@@ -63,11 +68,11 @@ undo an already-dispatched effect.
 
 ## Next implementation order
 
-1. Extend the initial B16 portal outcome predicates into an admitted, persistent
-   scripted task. The current predicate distinguishes found, opened and saved
-   exact-invoice states; the next step must preserve explicit parameters and
-   verified progress across actions without calling progress success. Keep this
-   model-free.
+1. Join the new fixture-only durable portal task to authenticated B03/B09/B15
+   host authority and a real browser worker Stop barrier. The scripted task now
+   preserves explicit parameters and verified progress across search/open/
+   download/save, but its direct Playwright calls are not production dispatch.
+   Build B10/B11 native semantic observations/actions next, with explicit scope.
 2. Integrate B03/B09/B15 host authority, authenticated worker identity, durable
    permit consumption and a real native/managed-browser Stop barrier. Qualify
    dispatch timing and unknown outcomes before broadening native or browser

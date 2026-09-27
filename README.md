@@ -30,7 +30,11 @@ Accessibility field; there is no general-purpose executor or release binary yet.
   isolated temporary Chromium profile. Existing Chrome is not connected.
 - Fixture-scoped outcome checks re-observe the portal and distinguish an exact
   search result, an opened detail and a saved document. These are not wired to
-  a persistent task actor or general completion engine.
+  the general host controller or a production completion engine.
+- A fixture-scoped durable task runs portal search/open/download/save one action
+  at a time, keeping verified progress and pausing after unknown in-flight
+  outcomes. Output is confined to a private fixture directory. This is not yet
+  the host-authorized native/browser controller.
 - Clarification and resume intent records bound to displayed prompts, task revisions,
   current observations and recovered checkpoints.
 - A macOS Unix-socket peer verifier that binds kernel audit-token identity to
@@ -76,6 +80,11 @@ On 27 September, the local fixture test succeeded: SystemOne Mock set
 The guided steps now distinguish the mock's input from the target field.
 The owner is revisiting the manual fixture test; its result is pending. Follow
 the exact steps in `docs/FIXTURE_COMPUTER_USE_TEST.md` and report the Mock status.
+On 27 September, the current ad-hoc-signed Mock reported untrusted despite an
+enabled macOS toggle after a rebuild. Its grant was reset for this bundle ID
+only; the current build still needs a fresh user grant. This Mac has no valid
+development signing identity, so rebuilds may require renewed approval until
+stable development signing is configured.
 
 The XCTest suite requires an SDK providing XCTest; it could not run with this
 machine's command-line-tools installation. The standalone parity check did pass:

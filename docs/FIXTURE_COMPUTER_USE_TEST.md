@@ -48,6 +48,18 @@ will stop before the setter is called. Permission may need to be granted again
 after rebuilding an ad-hoc-signed development app. Do not grant access to a
 different app merely because its name looks similar.
 
+If the macOS toggle is **on** but the Mock reports "Accessibility is not
+granted," the current ad-hoc build may no longer match the earlier approval.
+The narrow development reset is `tccutil reset Accessibility
+com.aurium.systemone.native-mock`; then relaunch with `npm run run:native-mock`,
+choose **Request Accessibility**, and grant the current Mock when macOS asks.
+The reset removes only this test app's Accessibility decision; it does not grant
+access. A valid development signing identity can be supplied with
+`SYSTEMONE_CODESIGN_IDENTITY` to test stable identity across builds. Production
+signing and update attribution remain separate release work.
+Apple documents the [per-app reset command](https://developer.apple.com/documentation/xcode/resetting-access-to-protected-resources-in-macos)
+and notes that [Accessibility prompting is asynchronous](https://developer.apple.com/documentation/applicationservices/1459186-axisprocesstrustedwithoptions).
+
 If either test app exits unexpectedly, stop the test and report which app
 disappeared. `npm run run:native-mock` is the clean restart path; direct
 `npm run build:native-mock` now refuses to overwrite a running test bundle.

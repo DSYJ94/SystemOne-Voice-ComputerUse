@@ -1,0 +1,282 @@
+import { createHash } from 'node:crypto';
+import { open, readFile } from 'node:fs/promises';
+import { basename, dirname, isAbsolute } from 'node:path';
+import { realpathSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
+import type { PortalDownload, PortalGoal, PortalGoalResult, PortalObservation } from './managed-portal.ts';
+
+type GoalKind = PortalGoal['kind'];
+type Stage = 'admitted' | 'located' | 'opened' | 'downloaded_temporary' | 'saved';
+type State = 'active' | 'paused' | 'completed' | 'cancelled';
+type Action = 'search' | 'open' | 'download' | 'save';
+const ID = /^[A-Za-z0-9_.:-]{1,160}$/;
+const INVOICE_ID = /^INV-\d{3}$/;
+
+export interface ScriptedPortalContract {
+  readonly taskId: string;
+  readonly origin: string;
+  readonly outcomeKind: GoalKind;
+  readonly invoiceId: string;
+  readonly title: string;
+  readonly account: string;
+  readonly query: string;
+  /** Explicit fixture output path inside the store's private output root.
+   * This is not a production file-grant or user approval record. */
+  readonly destinationPath?: string;
+}
+
+export interface ScriptedPortalRecord extends ScriptedPortalContract {
+  readonly state: State;
+  readonly stage: Stage;
+  readonly inFlight: Action | null;
+  readonly reason: string | null;
+}
+
+interface PortalSession {
+  readonly origin: string;
+  observe(): Promise<PortalObservation>;
+  search(query: string): Promise<PortalObservation>;
+  openInvoice(id: string, revision: number): Promise<PortalObservation>;
+  downloadInvoice(id: string, revision: number): Promise<PortalDownload>;
+  verifyGoal(goal: PortalGoal, revision: number, receipt?: PortalDownload): Promise<PortalGoalResult>;
+}
+
+/** Fixture-only durable progress. Active tasks pause on host restart; an
+ * in-flight action becomes unknown and is never silently replayed. This store
+ * is not the production permit journal or a general task admission service. */
+export class ScriptedPortalStore {
+  readonly #db: DatabaseSync;
+  readonly #outputRoot: string;
+
+  constructor(path: string, fixtureOutputRoot: string) {
+    this.#outputRoot = realpathSync(fixtureOutputRoot);
+    this.#db = new DatabaseSync(path);
+    this.#db.exec(`PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;
+      CREATE TABLE IF NOT EXISTS scripted_portal_tasks (
+        task_id TEXT PRIMARY KEY, origin TEXT NOT NULL,
+        outcome_kind TEXT NOT NULL, invoice_id TEXT NOT NULL,
+        title TEXT NOT NULL, account TEXT NOT NULL, query TEXT NOT NULL,
+        destination_path TEXT, state TEXT NOT NULL, stage TEXT NOT NULL,
+        in_flight TEXT, reason TEXT
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS one_open_scripted_portal_task
+      ON scripted_portal_tasks ((1)) WHERE state IN ('active', 'paused');`);
+  }
+
+  close(): void { this.#db.close(); }
+
+  start(contract: ScriptedPortalContract): ScriptedPortalRecord {
+    validateContract(contract);
+    this.#assertOutputScope(contract);
+    this.#db.prepare(`INSERT INTO scripted_portal_tasks VALUES
+      (?, ?, ?, ?, ?, ?, ?, ?, 'active', 'admitted', NULL, NULL)`)
+      .run(contract.taskId, contract.origin, contract.outcomeKind,
+        contract.invoiceId, contract.title, contract.account, contract.query,
+        contract.destinationPath ?? null);
+    return this.get(contract.taskId)!;
+  }
+
+  get(taskId: string): ScriptedPortalRecord | undefined {
+    if (!ID.test(taskId)) throw new Error('invalid task ID');
+    const row = this.#db.prepare('SELECT * FROM scripted_portal_tasks WHERE task_id = ?')
+      .get(taskId) as Record<string, string | null> | undefined;
+    if (!row) return undefined;
+    const record: ScriptedPortalRecord = {
+      taskId: row.task_id!, origin: row.origin!, outcomeKind: row.outcome_kind as GoalKind,
+      invoiceId: row.invoice_id!, title: row.title!, account: row.account!, query: row.query!,
+      ...(row.destination_path ? { destinationPath: row.destination_path } : {}),
+      state: row.state as State, stage: row.stage as Stage,
+      inFlight: (row.in_flight ?? null) as Action | null, reason: row.reason ?? null,
+    };
+    validateContract(record);
+    this.#assertOutputScope(record);
+    if (!['active', 'paused', 'completed', 'cancelled'].includes(record.state)
+      || !['admitted', 'located', 'opened', 'downloaded_temporary', 'saved'].includes(record.stage)
+      || (record.inFlight !== null && !['search', 'open', 'download', 'save'].includes(record.inFlight))) {
+      throw new Error('invalid stored scripted task state');
+    }
+    return Object.freeze(record);
+  }
+
+  begin(taskId: string, action: Action): void {
+    if (!['search', 'open', 'download', 'save'].includes(action)) throw new Error('invalid action');
+    const result = this.#db.prepare(`UPDATE scripted_portal_tasks SET in_flight = ?
+      WHERE task_id = ? AND state = 'active' AND in_flight IS NULL`).run(action, taskId);
+    if (result.changes !== 1) throw new Error('task is not ready for an action');
+  }
+
+  verified(taskId: string, stage: Stage, completed: boolean, action?: Action): boolean {
+    const result = this.#db.prepare(`UPDATE scripted_portal_tasks
+      SET stage = ?, state = ?, in_flight = NULL, reason = NULL
+      WHERE task_id = ? AND state = 'active' AND in_flight IS ?`)
+      .run(stage, completed ? 'completed' : 'active', taskId, action ?? null);
+    return result.changes === 1;
+  }
+
+  pause(taskId: string, reason: string): ScriptedPortalRecord {
+    this.#db.prepare(`UPDATE scripted_portal_tasks SET state = 'paused', reason = ?
+      WHERE task_id = ? AND state = 'active'`).run(reason, taskId);
+    return this.get(taskId)!;
+  }
+
+  stop(taskId: string): ScriptedPortalRecord {
+    this.#db.prepare(`UPDATE scripted_portal_tasks SET state = 'cancelled',
+      reason = CASE WHEN in_flight IS NULL THEN 'stopped' ELSE 'stopped with unresolved action' END
+      WHERE task_id = ? AND state IN ('active', 'paused')`).run(taskId);
+    return this.get(taskId)!;
+  }
+
+  /** New owner must call this before opening a worker. No automatic resume. */
+  recoverAfterRestart(): readonly ScriptedPortalRecord[] {
+    this.#db.prepare(`UPDATE scripted_portal_tasks SET state = 'paused',
+      reason = CASE WHEN in_flight IS NULL THEN 'fresh observation required after restart'
+      ELSE 'action outcome unknown after restart' END WHERE state = 'active'`).run();
+    const rows = this.#db.prepare(`SELECT task_id FROM scripted_portal_tasks
+      WHERE state = 'paused'`).all() as { task_id: string }[];
+    return Object.freeze(rows.map(row => this.get(row.task_id)!));
+  }
+
+  #assertOutputScope(contract: ScriptedPortalContract): void {
+    if (contract.outcomeKind === 'DOWNLOAD'
+      && (!contract.destinationPath
+        || realpathSync(dirname(contract.destinationPath)) !== this.#outputRoot
+        || basename(contract.destinationPath) !== `${contract.invoiceId}.txt`)) {
+      throw new Error('download destination is outside the private fixture output directory');
+    }
+  }
+}
+
+/** One observe -> one action -> verify step per call. Only the synthetic portal
+ * and an explicitly named output file are supported. A Playwright wait is not a
+ * qualified Stop barrier; Stop records uncertainty and never reports undo. */
+export class ScriptedPortalTask {
+  readonly #store: ScriptedPortalStore;
+  readonly #session: PortalSession;
+  readonly #taskId: string;
+  #receipt: PortalDownload | undefined;
+
+  constructor(store: ScriptedPortalStore, session: PortalSession, taskId: string) {
+    this.#store = store;
+    this.#session = session;
+    this.#taskId = taskId;
+    const task = store.get(taskId);
+    if (!task || task.origin !== session.origin) throw new Error('scripted task origin mismatch');
+  }
+
+  stop(): ScriptedPortalRecord { return this.#store.stop(this.#taskId); }
+
+  async advance(): Promise<ScriptedPortalRecord> {
+    const task = this.#store.get(this.#taskId)!;
+    if (task.state !== 'active' || task.inFlight !== null) {
+      throw new Error('scripted task is not active and settled');
+    }
+    let observed: PortalObservation;
+    try { observed = await this.#session.observe(); }
+    catch { return this.#store.pause(task.taskId, 'current observation unavailable'); }
+    if (this.#store.get(task.taskId)?.state !== 'active') return this.#store.get(task.taskId)!;
+    if ((task.stage === 'opened' || task.stage === 'downloaded_temporary')
+      && (observed.kind !== 'detail' || observed.invoiceId !== task.invoiceId
+        || observed.title !== task.title || observed.account !== task.account)) {
+      return this.#store.pause(task.taskId, 'verified detail is no longer current');
+    }
+    const exact = observed.kind === 'results'
+      && observed.rows.some(row => row.id === task.invoiceId
+        && row.title === task.title && row.account === task.account);
+    const detail = observed.kind === 'detail' && observed.invoiceId === task.invoiceId
+      && observed.title === task.title && observed.account === task.account;
+    if (task.stage === 'located' && !exact && !detail) {
+      return this.#store.pause(task.taskId, 'verified result is no longer current');
+    }
+    if (task.stage === 'downloaded_temporary') {
+      if (!detail || !this.#receipt) {
+        return this.#store.pause(task.taskId, 'temporary download evidence is unavailable');
+      }
+      return this.#action(task, 'save', 'saved', true, async () => {
+        const goal = goalFor(task, 'DOWNLOAD');
+        const verified = await this.#session.verifyGoal(goal, observed.revision, this.#receipt);
+        if (verified.status !== 'matched') throw new Error('temporary download changed');
+        const bytes = await readFile(this.#receipt!.path);
+        const output = await open(task.destinationPath!, 'wx', 0o600);
+        try { await output.writeFile(bytes); }
+        finally { await output.close(); }
+        const saved = await readFile(task.destinationPath!);
+        if (createHash('sha256').update(saved).digest('hex') !== this.#receipt!.sha256) {
+          throw new Error('saved document changed');
+        }
+      });
+    }
+    if (detail) {
+      const verified = await this.#session.verifyGoal(goalFor(task, 'OPEN'), observed.revision);
+      if (verified.status !== 'matched') return this.#store.pause(task.taskId, 'exact detail unavailable');
+      if (task.outcomeKind === 'OPEN') {
+        this.#store.verified(task.taskId, 'opened', true);
+        return this.#store.get(task.taskId)!;
+      }
+      if (task.outcomeKind === 'LOCATE') return this.#store.pause(task.taskId, 'locate evidence is no longer current');
+      return this.#action(task, 'download', 'downloaded_temporary', false, async () => {
+        this.#receipt = await this.#session.downloadInvoice(task.invoiceId, observed.revision);
+        const outcome = await this.#session.verifyGoal(goalFor(task, 'DOWNLOAD'),
+          observed.revision, this.#receipt);
+        if (outcome.status !== 'matched') throw new Error('download was not verified');
+      });
+    }
+    if (exact && observed.kind === 'results') {
+      const verified = await this.#session.verifyGoal(goalFor(task, 'LOCATE'), observed.revision);
+      if (verified.status !== 'matched') return this.#store.pause(task.taskId, 'exact result unavailable');
+      if (task.outcomeKind === 'LOCATE') {
+        this.#store.verified(task.taskId, 'located', true);
+        return this.#store.get(task.taskId)!;
+      }
+      return this.#action(task, 'open', 'opened', task.outcomeKind === 'OPEN', async () => {
+        const after = await this.#session.openInvoice(task.invoiceId, observed.revision);
+        const outcome = await this.#session.verifyGoal(goalFor(task, 'OPEN'), after.revision);
+        if (outcome.status !== 'matched') throw new Error('opened detail was not verified');
+      });
+    }
+    if (observed.kind === 'detail') {
+      return this.#store.pause(task.taskId, 'a different invoice is open');
+    }
+    return this.#action(task, 'search', 'located', task.outcomeKind === 'LOCATE', async () => {
+      const after = await this.#session.search(task.query);
+      const outcome = await this.#session.verifyGoal(goalFor(task, 'LOCATE'), after.revision);
+      if (outcome.status !== 'matched') throw new Error('exact invoice was not found');
+    });
+  }
+
+  async #action(task: ScriptedPortalRecord, action: Action, stage: Stage,
+    completed: boolean, body: () => Promise<void>): Promise<ScriptedPortalRecord> {
+    this.#store.begin(task.taskId, action);
+    try {
+      await body();
+      this.#store.verified(task.taskId, stage, completed, action);
+    } catch {
+      this.#store.pause(task.taskId, `${action} outcome uncertain; re-observe before any retry`);
+    }
+    return this.#store.get(task.taskId)!;
+  }
+}
+
+function goalFor(task: ScriptedPortalRecord, kind: GoalKind): PortalGoal {
+  return { kind, invoiceId: task.invoiceId, title: task.title, account: task.account };
+}
+
+function validateContract(value: ScriptedPortalContract): void {
+  let origin: URL;
+  try { origin = new URL(value.origin); }
+  catch { throw new Error('invalid scripted portal origin'); }
+  if (!ID.test(value.taskId) || !INVOICE_ID.test(value.invoiceId)
+    || !['LOCATE', 'OPEN', 'DOWNLOAD'].includes(value.outcomeKind)
+    || !value.title || !value.account || !value.query || value.query.length > 100
+    || origin.protocol !== 'http:' || origin.hostname !== '127.0.0.1'
+    || origin.origin !== value.origin || !origin.port) {
+    throw new Error('invalid scripted portal contract');
+  }
+  if (value.outcomeKind === 'DOWNLOAD') {
+    if (!value.destinationPath || !isAbsolute(value.destinationPath)
+      || basename(value.destinationPath) !== `${value.invoiceId}.txt`) {
+      throw new Error('download requires an exact approved destination');
+    }
+  } else if (value.destinationPath !== undefined) {
+    throw new Error('unexpected destination for non-download task');
+  }
+}

@@ -230,3 +230,30 @@ passed TypeScript typechecking and **131/131** Node tests, and a second
 `npm run run:native-mock` stopped both fresh synthetic processes and left only
 a newly launched Mock running. The owner has not yet repeated the in-Mock
 Open Fixture/Fill/Reset sequence against this build.
+
+## Accessibility identity and scripted portal task, 27 September 2026
+
+The owner showed an enabled Accessibility toggle while the current Mock returned
+false from `AXIsProcessTrustedWithOptions`. `codesign -dr -` showed the Mock's
+ad-hoc designated requirement is a CDHash; the bundle had been rebuilt after
+the earlier successful grant. `security find-identity -v -p codesigning`
+reported **0 valid identities**. The targeted command `tccutil reset
+Accessibility com.aurium.systemone.native-mock` succeeded, and
+`npm run run:native-mock` relaunched the Mock. A new user grant and live fixture
+Fill/Reset result are still unverified. The optional development signing
+identity and clearer status text have not been qualified with a certificate.
+
+`npm run check` passed typechecking and **136/136** Node tests. Five new tests
+cover the fixture-only task's exact duplicate-invoice search/open/download/save
+sequence in isolated Chromium, private output scope, restart with an in-flight
+unknown action, manual navigation interference, and late success after Stop.
+This is a model-free scripted
+workflow. It does not prove a host permit, browser worker cancellation barrier,
+native app automation, existing Chrome, or production completion.
+
+`zsh -n` passed for the build/run scripts. After the final Mock status-text
+rebuild, `npm run run:native-mock` built and ad-hoc signed both synthetic apps;
+the targeted TCC reset succeeded again, and a second `npm run run:native-mock`
+relaunched that same binary without rebuilding. A human still has to grant that
+binary in macOS and test Fill/Reset. The new `SYSTEMONE_CODESIGN_IDENTITY` option
+was not tested because the Mac has no valid code-signing identity.

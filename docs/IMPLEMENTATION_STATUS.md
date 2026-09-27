@@ -27,8 +27,8 @@ fixtures. Supported operations and limitations must be stated explicitly.
 | B05/B07 native fixture slice | Local test build | A synthetic AppKit fixture exposes one editable field. On this local Mac, the mock changed `Fixture Name` through Accessibility and the value was independently re-observed. This is one fixture action, not general native support. No shortcut, focus capture, voice, TCC attribution or production signing. |
 | B09 host dispatch gate foundation | In progress | A fixture-scoped TypeScript gate binds a selected candidate to the admitted task, exact observation, policy, target, argument provenance and one-use in-process permit. Synthetic drivers prove Stop before send, unresolved send after Stop, expiry and stale-target refusal. No OS/browser worker barrier has been qualified. |
 | B12 managed Chromium worker | In progress | Playwright 1.63.0 launches a fresh temporary Chromium profile and a narrow scripted portal driver. Headless tests search, open an exact duplicate and download a fixed document. General DOM snapshots, tabs/frames, uploads, headed UX, Stop barrier and packaging remain. |
-| B15 attempt journal foundation | In progress | SQLite records prepared attempts, the dispatch boundary, outcomes, cancellation and restart pause. Crash, late-receipt and replay scenarios pass synthetic tests. It is not connected to the native mock or a signed supervisor yet. |
-| B16 portal outcome predicates | In progress | The managed portal re-observes exact invoice ID/title/account for LOCATE and OPEN, and requires a session-owned download receipt plus unchanged file bytes for DOWNLOAD. Stale revision, missing receipt and tampering tests pass. No general task actor or other outcome kinds are connected. |
+| B15 attempt journal foundation | In progress | SQLite records prepared attempts, the dispatch boundary, outcomes, cancellation and restart pause. A separate fixture-only SQLite task record keeps verified portal progress and pauses unknown in-flight actions on restart. Neither store is connected to the native mock or a signed supervisor. |
+| B16 portal outcome predicates | In progress | The managed portal re-observes exact invoice ID/title/account for LOCATE and OPEN, and requires a session-owned download receipt plus unchanged file bytes for DOWNLOAD. A scripted task uses those predicates across search/open/download/save; its output is private fixture data. No general outcome engine or authenticated task actor is connected. |
 | All other tickets | Not started | No qualified signed UX, general native adapter, ASR, existing-Chrome bridge, model service or release artifact. |
 
 These slices are staged across draft PRs; they do not mark the entire contracts-and-fixtures stage
@@ -135,6 +135,16 @@ overwrite a running test bundle. Generated app-bundle extended attributes from
 the OneDrive checkout are cleared before ad-hoc signing. A fresh fixture opened
 and reopened without a new crash; the owner's in-Mock click remains to be checked.
 
+Later that day, the current Mock reported `AXIsProcessTrustedWithOptions == false`
+while System Settings showed its Accessibility toggle on. The installed bundle
+has an ad-hoc designated requirement bound to CDHash, and it was rebuilt after
+the earlier grant. This Mac has zero valid code-signing identities. The narrow
+`tccutil reset Accessibility com.aurium.systemone.native-mock` succeeded and the
+Mock relaunched; a fresh user grant and Fill/Reset retest are pending. The build
+script now accepts an optional `SYSTEMONE_CODESIGN_IDENTITY` for a valid local
+development certificate and warns when using ad-hoc signing. No production TCC
+update or clean-install behavior has been qualified.
+
 The local invoice portal now supplies deterministic search results, duplicate
 titles under distinct IDs/accounts, exact detail pages and a download link that
 appears after a short client-side delay. It binds only an ephemeral 127.0.0.1
@@ -158,9 +168,10 @@ existing-Chrome extension are still separate work.
 
 ## Next sequence
 
-1. Extend the B16 fixture outcome checks into an admitted, persistent scripted
-   task: preserve explicit ID/title/account parameters and verified progress
-   across search, open and download. Keep the task model-free.
+1. Connect the fixture-only scripted task and attempt journal through one
+   authenticated host authority and a real browser worker Stop barrier. Add
+   B10/B11 semantic native observations/actions with explicit scope; move beyond
+   single-field fixtures without treating unverified effects as safe.
 2. Finish B03 durable authority and supervisor peer-identity integration. Connect
    B09/B15 to native and managed-browser workers only after proving actual Stop
    barriers and unknown-outcome handling. Expand B05 interference fixtures and CI.
