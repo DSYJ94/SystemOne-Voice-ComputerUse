@@ -42,10 +42,19 @@ export type PortalGoalResult =
   | { readonly status: 'matched'; readonly revision: number }
   | { readonly status: 'not_matched' | 'unavailable'; readonly reason: string };
 
+export class ManagedPortalLaunchFailure extends Error {
+  readonly workerFenced: boolean;
+  constructor(workerFenced: boolean, cause: unknown) {
+    super('managed portal launch failed', { cause });
+    this.workerFenced = workerFenced;
+  }
+}
+
 /**
  * A deliberately narrow managed Chromium driver for the local synthetic portal.
  * It launches a fresh Playwright profile; it never attaches to Chrome's existing
- * profile, tabs or remote-debugging endpoint. Host authority/Stop are not wired.
+ * profile, tabs or remote-debugging endpoint. The scripted fixture task owns
+ * admission/Stop when this session is used by the development controller.
  */
 export class ManagedPortalSession {
   readonly #origin: string;
@@ -107,9 +116,16 @@ export class ManagedPortalSession {
       await session.observe();
       return session;
     } catch (error) {
-      await context?.close().catch(() => {});
-      rmSync(root, { recursive: true, force: true });
-      throw error;
+      // Failure while launchPersistentContext is still resolving does not
+      // prove that no Chromium process was created.
+      let workerFenced = false;
+      if (context) {
+        try { await context.close(); workerFenced = true; }
+        catch { /* Caller must block another task until this worker is fenced. */ }
+      }
+      try { rmSync(root, { recursive: true, force: true }); }
+      catch { /* Preserve the launch failure and its worker fence result. */ }
+      throw new ManagedPortalLaunchFailure(workerFenced, error);
     }
   }
 

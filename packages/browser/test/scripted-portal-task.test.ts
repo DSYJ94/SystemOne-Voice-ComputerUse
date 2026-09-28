@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -30,15 +30,16 @@ function mint(contract: ScriptedPortalContract) {
     ...structuredClone(schema.examples[0]), ...revision, messageId,
     utteranceId: `utterance-${contract.taskId}`, source: 'text',
     text: `Fixture ${contract.outcomeKind.toLowerCase()} ${contract.invoiceId}; `
-      + `title ${contract.title}; account ${contract.account}; query ${contract.query}`,
+      + `title ${contract.title}; account ${contract.account}; query ${contract.query}; `
+      + `origin ${contract.origin}`,
   }))).input;
   const registry = new TaskAdmissionRegistry(revision, inputSession);
   const parameterValues: [string, string, string][] = [
-    ['origin', 'fixture-config', contract.origin],
-    ['invoiceId', messageId, contract.invoiceId],
-    ['title', messageId, contract.title],
-    ['account', messageId, contract.account],
-    ['query', messageId, contract.query],
+    ['origin', messageId, contract.origin],
+    ['invoiceId', 'fixture-config', contract.invoiceId],
+    ['title', 'fixture-config', contract.title],
+    ['account', 'fixture-config', contract.account],
+    ['query', 'fixture-config', contract.query],
     ...(contract.destinationPath
       ? [['destinationPath', 'fixture-output', contract.destinationPath] as [string, string, string]] : []),
   ];
@@ -266,6 +267,18 @@ test('download output cannot escape its private fixture directory', async () => 
     await portal.close();
     rmSync(local.root, { recursive: true, force: true });
   }
+});
+
+test('fixture output root refuses a symlink to another directory', () => {
+  const root = mkdtempSync(join(tmpdir(), 'systemone-output-link-'));
+  const output = join(root, 'output');
+  mkdirSync(output, { mode: 0o700 });
+  const link = join(root, 'redirected-output');
+  symlinkSync(output, link, 'dir');
+  try {
+    assert.throws(() => new ScriptedPortalStore(join(root, 'tasks.sqlite'), link),
+      /fixture output directory is unsafe/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('manual navigation after verified search pauses instead of fighting the user', async () => {

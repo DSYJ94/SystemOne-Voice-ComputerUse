@@ -52,6 +52,16 @@ user-entered values to UTF-8 byte spans in the committed private command.
 Admission checks the span and digest before dispatch. This does not yet parse
 arbitrary utterances or qualify approved selections, so B13 remains open.
 
+The fixed `INV-105` scripted portal task is now reachable through the same
+persistent controller and a development-panel button. An isolated child-process
+test verifies search, exact open, download and private save, plus a Stop after
+the durable download boundary that cannot become completion. A restarted child
+reports the persisted recovery block. Fixture metadata is marked as fixture
+configuration, while the loopback origin is bound to the panel command. The
+AppKit bundle compiles; the button has not been manually exercised. This is
+still a fixed synthetic workflow, not general browser navigation or model
+control.
+
 These slices are staged across draft PRs; they do not mark the entire contracts-and-fixtures stage
 or any of B01/B03/B05/B26 complete. The private GitHub remote is configured.
 

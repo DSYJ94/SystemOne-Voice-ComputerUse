@@ -5,7 +5,7 @@ import Foundation
 
 @MainActor
 final class SystemOneDev: NSObject, NSApplicationDelegate {
-    private enum ActiveSurface { case managed, managedNavigation, native, chrome }
+    private enum ActiveSurface { case managed, managedNavigation, portal, native, chrome }
     private var statusItem: NSStatusItem?
     private var panel: NSPanel?
     private var urlField: NSTextField?
@@ -152,6 +152,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         let actions = NSStackView(views: [fill, navigate, stopButton, hide])
         actions.orientation = .horizontal
         actions.spacing = 8
+        let portal = NSButton(title: "Download fixture INV-105", target: self,
+                              action: #selector(startPortalWorkflow))
+        portal.setAccessibilityLabel("Run fixed multi-step invoice fixture")
 
         let nativeHeading = NSTextField(labelWithString: "Native app — inspect or fill one field")
         nativeHeading.font = .boldSystemFont(ofSize: 16)
@@ -208,14 +211,14 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         let chromeFill = NSButton(title: "Fill existing Chrome field", target: self,
                                   action: #selector(startChromeFill))
         let stack = NSStackView(views: [heading, explanation, url, label, value,
-                                        status, actions, nativeHeading,
+                                        status, actions, portal, nativeHeading,
                                         nativeExplanation, bundle, nativeLabel,
                                         nativeValue, nativeActions, scroll,
                                         chromeHeading, chromeExplanation,
                                         chromeLabel, chromeValue, chromeFill])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 9
+        stack.spacing = 7
         stack.translatesAutoresizingMaskIntoConstraints = false
         backdrop.addSubview(stack)
         NSLayoutConstraint.activate([
@@ -488,8 +491,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     }
 
     private func showStatus(requestID: String, phase: String) {
-        if requestID == "startup" && phase == "ready" {
-            statusField?.stringValue = "Ready. Only the approved page origin can load."
+        if requestID == "startup" {
+            statusField?.stringValue = phase == "ready"
+                ? "Ready. Only the approved page origin can load."
+                : "Earlier task unresolved. Inspect the private task record before starting again."
             return
         }
         guard requestID == activeRequestID || requestID == stopRequestID else { return }
@@ -509,6 +514,16 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             statusField?.stringValue = "Verified: this page's field holds the supplied text. Inspect it, then press Stop to close this browser."
         case "verified_navigation":
             statusField?.stringValue = "Verified: the browser reached the exact expected URL. This does not prove a named item was opened. Inspect it, then press Stop."
+        case "portal_located":
+            statusField?.stringValue = "Fixture invoice INV-105 located by exact ID, title and account. Opening it…"
+        case "portal_opened":
+            statusField?.stringValue = "Exact fixture invoice detail verified. Downloading it…"
+        case "portal_downloaded":
+            statusField?.stringValue = "Fixture download verified. Saving to the private fixture output folder…"
+        case "verified_portal_download":
+            statusField?.stringValue = "Verified: INV-105 was found, opened, downloaded and saved in SystemOne-Dev/fixture-output."
+        case "portal_paused":
+            statusField?.stringValue = "Fixture workflow paused. Inspect the private task record before retrying."
         case "verified_native_fill":
             statusField?.stringValue = "Verified: the native field holds the supplied text."
         case "verified_chrome_dom_fill":
@@ -657,6 +672,45 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         activeRequestID = taskID
         activeSurface = .managedNavigation
         statusField?.stringValue = "Navigation request sent to the local controller…"
+    }
+
+    @objc private func startPortalWorkflow() {
+        guard let input = controllerInput, controller?.isRunning == true,
+              activeRequestID == nil, stopRequestID == nil,
+              !inspectionPending else {
+            statusField?.stringValue = "Controller unavailable or a task is active."
+            return
+        }
+        let url = urlField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard let parsed = URLComponents(string: url), parsed.scheme == "http",
+              parsed.host == "127.0.0.1", parsed.port != nil,
+              parsed.path == "/", parsed.query == nil,
+              parsed.fragment == nil, parsed.user == nil, parsed.password == nil,
+              url.utf8.count <= 200 else {
+            statusField?.stringValue = "Enter the synthetic portal's exact http://127.0.0.1:<port>/ URL first."
+            return
+        }
+        let taskID = UUID().uuidString.lowercased()
+        let command: [String: Any] = [
+            "type": "command", "protocolVersion": "2.0", "messageId": UUID().uuidString.lowercased(),
+            "taskId": taskID, "taskEpoch": 1, "goalRevision": 1,
+            "source": "text", "mode": "command", "utteranceId": UUID().uuidString.lowercased(),
+            "utteranceRevision": 1,
+            "text": "Download fixture invoice INV-105 from \(url)", "isFinal": true,
+            "createdAt": ISO8601DateFormatter().string(from: Date()),
+            "originSurface": ["adapter": "native", "surfaceId": "systemone-panel",
+                "appBundleId": "com.aurium.systemone.dev", "windowId": "command-panel",
+                "contentRevision": taskID],
+        ]
+        let request: [String: Any] = ["type": "start_portal_workflow",
+            "requestId": taskID, "url": url, "command": command]
+        guard send(request, through: input) else {
+            statusField?.stringValue = "Could not send fixture workflow request."
+            return
+        }
+        activeRequestID = taskID
+        activeSurface = .portal
+        statusField?.stringValue = "Fixture workflow sent to the local controller…"
     }
 
     @objc private func startNativeFill() {

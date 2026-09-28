@@ -916,3 +916,27 @@ These checks do not prove general natural-language extraction, selected-value
 provenance, a physical Chrome toolbar grant, current-profile compatibility or
 Developer ID release identity. The value is now present in the private command
 record; it must pass disclosure review before any provider egress.
+
+## Portal workflow through the persistent controller, 28 September 2026
+
+`npm run check` passed **215/215 tests**, zero skipped, with TypeScript
+typecheck. A controller child launched disposable headless Chromium against
+the loopback fixture, verified exact `INV-105` search/open/download, and saved
+the expected bytes in its private fixture output directory. A malformed final
+command made no fixture request. With the delayed download control, the test
+waited for the journaled download dispatch boundary, sent Stop, observed no
+saved file or completion, then restarted the child and saw
+`blocked_recovery`. A symlinked or group/world-writable fixture output root is
+rejected. `npm run build:native-dev` compiled and ad-hoc signed the
+new panel button and restart status; the app was not launched for manual UI
+verification. `npm run test:chrome-browser-transport` still passed through
+the signed Swift host/listener and disposable Chromium after the controller
+startup change. This is a fixed fixture workflow and does not establish CLM,
+general sites, release authentication or notarized distribution.
+
+During this slice, an initial full run failed because Node's TypeScript strip
+mode rejected a parameter-property constructor; the constructor was rewritten.
+A later run exposed a test timing error: the `portal_opened` status did not
+prove the download dispatch boundary had been crossed. The test now waits for
+that journal event before Stop. Both failures were corrected before the final
+215/215 run; neither earlier run is counted as a pass.

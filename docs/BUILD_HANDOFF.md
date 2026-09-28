@@ -64,10 +64,11 @@ established by the current fixture-only native or browser tests.
   [#42 Chrome Stop after dispatch](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/42),
   [#43 production controller Chrome transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/43),
   [#44 shared action candidates](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/44),
-  [#45 structured input byte provenance](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/45).
+  [#45 structured input byte provenance](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/45),
+  [#46 fixed portal workflow in controller](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/46).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/input-byte-provenance`,
-  stacked on `codex/shared-candidate-projection`.
+- The current implementation branch is `codex/portal-controller-workflow`,
+  stacked on `codex/input-byte-provenance`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -179,6 +180,12 @@ A fixture-only [CLM reference probe](CLM_REFERENCE_PROBE.md) now serializes
 full candidate descriptions to the pinned CLM choice API and validates its
 response shape. It has not contacted a model service or qualified any weights;
 B02 and G1 remain open.
+The fixed scripted portal search/open/download/private-save workflow now runs
+through the persistent controller child and a development-panel button. A
+loopback child-process test verifies all four stages, a Stop after the durable
+download boundary, and recovery-blocked startup after restart. The AppKit
+button has compiled but has not been manually exercised. This fixture-only
+path does not constitute general browser task control.
 The [shared candidate foundation](ACTION_CANDIDATES.md) now gates the current
 native field, managed field/link and Chrome field actions before their existing
 admission and permits. Provider projection excludes private target/parameter
