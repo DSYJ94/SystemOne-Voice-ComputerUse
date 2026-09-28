@@ -48,9 +48,12 @@ field fill. There is no general-purpose executor or release binary yet.
   and exact tab/document grant. Its development path now supports one
   journaled fill of the synthetic loopback portal's `Find invoice` field,
   with a fresh semantic observation and current DOM-value check. The Swift
-  native-messaging host and opt-in AppKit listener pass signed synthetic
-  socket/framing checks. No host is installed in Chrome, no real profile has
-  been exercised, and the action remains unqualified in a real extension.
+  native-messaging host and listener now pass an isolated Chromium integration
+  check with mutual signed-peer authentication and a semantic read through a
+  temporary copy of the production extension. The copy uses a test-only
+  invocation and loopback grant. No host is installed in the owner's Chrome,
+  no current profile has been exercised, and fill remains unqualified in an
+  installed extension. See [existing Chrome](docs/EXISTING_CHROME.md).
 - An ignored, movable development app bundles a checksum-verified official
   Apple Silicon Node runtime, locked production packages and Playwright
   Chromium. The AppKit parent checks the launched signed Node child's pinned
@@ -123,6 +126,7 @@ python3 -m venv .venv
 npm run test:swift
 npm run test:mac-peer
 npm run test:chrome-host
+npm run test:chrome-browser-transport
 npm run test:native-ax
 npm run test:native-worker-ledger
 npm run test:native-host-permit
@@ -171,10 +175,11 @@ the schema's existing golden digests unless the contract is intentionally revise
 Python and Swift remain independent checks of the TypeScript fixture output.
 
 CLM/ASR model downloads, release signing, microphone capture, live native fixture
-editing, live existing-Chrome automation and remote inference are not part of the automated
-check commands above. The automated browser check covers only the synthetic
-portal in an isolated profile. The opt-in native fixture test is separate. Do not add models
-to the effect path until scripted drivers and durable dispatch/Stop tests pass.
+editing, current-profile Chrome automation and remote inference are not part of
+the automated check commands above. The browser checks use the synthetic portal
+and disposable Chromium profiles. The opt-in native fixture test is separate.
+Do not add models to the effect path until scripted drivers and durable
+dispatch/Stop tests pass.
 
 ## Repository and publication
 
