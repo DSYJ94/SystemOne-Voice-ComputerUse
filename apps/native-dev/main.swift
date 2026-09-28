@@ -807,7 +807,13 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func enableVoice() { speech.requestPermissions() }
 
     @objc private func showCapturedFields() {
-        guard AXIsProcessTrustedWithOptions(nil), let capturedApp,
+        if !AXIsProcessTrustedWithOptions(nil) {
+            let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+            _ = AXIsProcessTrustedWithOptions(options)
+            commandStatus?.stringValue = "Grant Accessibility to this build, then choose Show fields again."
+            return
+        }
+        guard let capturedApp,
               let app = NSRunningApplication.runningApplications(
                 withBundleIdentifier: capturedApp.bundleID).first,
               app.processIdentifier == capturedApp.pid,

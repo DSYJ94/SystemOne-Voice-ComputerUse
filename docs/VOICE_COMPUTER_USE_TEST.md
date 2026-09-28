@@ -19,7 +19,9 @@ a fresh Accessibility grant for native actions.
 For a real native app, open a disposable document or field in an app you choose
 and bring that app to the front. Press Control–Option–Space. Confirm the panel's
 **Target** names that app. Choose **Show fields** to see up to five observed,
-nonsecure editable labels; if coverage is incomplete or no label appears, do
+nonsecure editable labels. If macOS asks for Accessibility access, grant it to
+this exact development build and choose **Show fields** again. If coverage is
+incomplete or no label appears, do
 not guess. Enter `Fill <exact displayed label> with <disposable value>`. Choose
 **Run request** once. **Verified** means a fresh read found that exact value in
 the chosen field. It does not mean the document was saved or submitted.

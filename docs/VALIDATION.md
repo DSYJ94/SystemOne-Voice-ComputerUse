@@ -1145,3 +1145,7 @@ real native app, one headed managed-browser edit on an approved public page,
 and Stop during those paths. This development build does not qualify CLM,
 multi-hop open/download commands, existing-profile Chrome, Developer ID
 distribution or clean-Mac permissions.
+
+After adding a Show-fields-triggered Accessibility prompt, the Swift app
+recompiled, was ad-hoc signed and relaunched from the exact native-dev path
+(PID 25001). No permission prompt was invoked during this build or launch.
