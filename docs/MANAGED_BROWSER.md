@@ -36,6 +36,10 @@ structured final command and explicit field/value; the controller verifies the
 binding and admits it before the browser action. A successful fill leaves the
 isolated browser open for inspection until Stop. This is a source-level
 development bridge, not a bundled or OS-authenticated release worker.
+Controller Stop now reports a closed-context fence without waiting for a late
+workflow result. If browser launch is still in flight, Stop reports uncertainty
+and blocks further work until that launch settles; it does not claim closure of
+an unseen process.
 It cannot press, navigate by task action,
 upload, download or verify a broader goal. Automatic page code can still run on navigation, and
 the network policy does not establish a production privacy or security boundary
