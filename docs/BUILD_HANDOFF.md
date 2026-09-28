@@ -71,10 +71,11 @@ established by the current fixture-only native or browser tests.
   [#49 fixed native Documents controller action](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/49),
   [#50 synthetic native file LOCATE task](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/50),
   [#51 distinct synthetic native OPEN task](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/51),
-  [#52 scoped read-only native AX coverage](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/52).
+  [#52 scoped read-only native AX coverage](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/52),
+  [#53 local computer-use test session](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/53).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/native-ax-coverage`,
-  stacked on `codex/native-fixture-open`.
+- The current implementation branch is `codex/local-v1-test-setup`,
+  stacked on `codex/native-ax-coverage`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -228,6 +229,13 @@ identity/key-handoff smoke pass. The ad-hoc bundle is not a Developer ID release
 and external-source mode still lacks code authentication.
 
 ## Next implementation order
+
+The new `npm run try:local` prepares the current synthetic Fixture, development
+AppKit panel and loopback portal for one owner-run native/managed test. It does
+not attach to existing Chrome or constitute v1. See [Try local](TRY_LOCAL.md).
+On this Mac, older Dev and Fixture processes from the OneDrive checkout blocked
+opening a second build; the launcher now rejects both before another launch.
+The owner must quit those earlier apps before this worktree's test can start.
 
 1. Exercise the development panel's global open/Stop shortcuts and focus
    display using the [synthetic shortcut guide](NATIVE_SHORTCUT_TEST.md).

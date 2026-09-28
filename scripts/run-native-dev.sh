@@ -3,6 +3,8 @@ set -euo pipefail
 
 script_dir=${0:A:h}
 repository_root=${script_dir:h}
+source "$script_dir/native-dev-sources.zsh"
+source "$script_dir/native-mock-processes.sh"
 app_dir="$repository_root/.build/native-dev/SystemOne Dev.app"
 binary="$app_dir/Contents/MacOS/SystemOneDev"
 other_dev=$(/bin/ps -axo pid=,comm= | /usr/bin/awk -v wanted="$binary" '
@@ -17,18 +19,22 @@ other_dev=$(/bin/ps -axo pid=,comm= | /usr/bin/awk -v wanted="$binary" '
 if [[ -n "$other_dev" ]]; then
   print -u2 'Quit the earlier SystemOne Dev build before opening this checkout:'
   print -u2 "$other_dev"
+  print -u2 'Activate that app and press Command-Q; closing its panel can leave the app running.'
   exit 1
 fi
-if [[ ! -x "$binary" ||
-      "$repository_root/apps/native-dev/main.swift" -nt "$binary" ||
-      "$repository_root/apps/native-dev/DevChromeListener.swift" -nt "$binary" ||
-      "$repository_root/apps/native-dev/NativeFieldWorker.swift" -nt "$binary" ||
-      "$repository_root/packages/protocol/swift/Sources/PeerIdentity/PeerIdentity.swift" -nt "$binary" ||
-      "$repository_root/packages/native-ax/Sources/NativeAX/Observation.swift" -nt "$binary" ||
-      "$repository_root/packages/native-ax/Sources/NativeAX/SystemAXBackend.swift" -nt "$binary" ||
-      "$repository_root/packages/native-ax/Sources/NativeAX/ValueAction.swift" -nt "$binary" ||
-      "$repository_root/packages/native-ax/Sources/NativeAX/PressAction.swift" -nt "$binary" ||
-      "$script_dir/build-native-dev.sh" -nt "$binary" ]]; then
+needs_build=0
+if [[ ! -x "$binary" || "$script_dir/build-native-dev.sh" -nt "$binary" ||
+      "$script_dir/native-dev-sources.zsh" -nt "$binary" ]]; then
+  needs_build=1
+else
+  for source_file in "${native_dev_sources[@]}"; do
+    if [[ ! -f "$source_file" || "$source_file" -nt "$binary" ]]; then
+      needs_build=1
+      break
+    fi
+  done
+fi
+if (( needs_build )); then
   if [[ -f "$app_dir/Contents/Info.plist" ]] &&
      /usr/libexec/PlistBuddy -c 'Print :SystemOneChromeExtensionId' \
        "$app_dir/Contents/Info.plist" >/dev/null 2>&1; then
@@ -37,5 +43,22 @@ if [[ ! -x "$binary" ||
   fi
   "$script_dir/build-native-dev.sh"
 fi
-open "$app_dir"
+own_dev=$(native_mock_pids_for_binary "$binary") || {
+  print -u2 'Could not verify whether this SystemOne Dev build is already running.'
+  exit 1
+}
+if [[ -n "$own_dev" ]]; then
+  open "$app_dir"
+else
+  open -n "$app_dir"
+fi
+for (( attempt = 0; attempt < 30; attempt++ )); do
+  own_dev=$(native_mock_pids_for_binary "$binary") || exit 1
+  if [[ -n "$own_dev" ]]; then break; fi
+  /bin/sleep 0.1
+done
+if [[ -z "$own_dev" ]]; then
+  print -u2 'SystemOne Dev did not remain running after LaunchServices returned.'
+  exit 1
+fi
 echo 'SystemOne Dev opens a menu-bar panel with a Dock fallback.'

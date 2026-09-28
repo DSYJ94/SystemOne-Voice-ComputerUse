@@ -200,6 +200,9 @@ native-host work.
 For the current native-to-managed-browser development test, follow
 `docs/NATIVE_MANAGED_TEST.md`. It uses only the synthetic portal and needs no
 Accessibility permission.
+For one local launch command covering the synthetic native target and managed
+Chromium portal, run `npm run try:local` and follow [Try local](docs/TRY_LOCAL.md).
+It does not attach to the existing Chrome profile or qualify v1.
 The separate [native inspection test](docs/NATIVE_INSPECTION_TEST.md) exercises
 read-only Accessibility observations and requires a grant to the current Dev build.
 For the current PR stack, open gates and next implementation order, see

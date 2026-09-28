@@ -1073,3 +1073,43 @@ observed or controlled in this slice. The inspector is development-only,
 read-only and does not enter the controller's candidate/permit path. AX API
 timeouts, real-app tree coverage, secure-control behavior across apps and
 Stop responsiveness under a blocked call still require a manual Mac check.
+
+## Local test-session launcher, 28 September 2026
+
+`zsh -n` passed for the changed launch/build scripts.
+`npm run build:native-dev` compiled and ad-hoc signed this worktree's app.
+`npm run check` typechecked and passed **237/237** tests. The isolated
+`npm run test:chrome-browser-transport` passed its signed-host/temporary
+Chromium fixture, including the journaled fill and late-Stop accounting.
+`git diff --check` passed.
+
+`npm run try:local` was attempted three times. The first version opened a Fixture
+path before discovering an older SystemOne Dev process from the OneDrive
+checkout; it then refused a second Dev launch. The launcher was reordered and
+now checks for a Fixture from another checkout before opening either app. Its
+second and third runs correctly refused the older OneDrive Fixture. The portal did not
+start and no native action was dispatched in either attempt. A successful
+end-to-end UI run is still pending until those older apps are quit; existing
+Chrome/current-profile behavior, microphone, CLM and release distribution
+remain unverified.
+
+The user's next `try:local` report showed the remaining OneDrive Fixture
+process (PID 14189). An exact executable-path check confirmed that process
+and a separate Fixture from this worktree. The old process was terminated by
+the synthetic-app process helper, without signaling unrelated apps. The
+launcher then opened Dev and started the loopback portal; a GET of
+`http://127.0.0.1:65525/` returned the expected invoice page. LaunchServices
+returned success for the Fixture but did not leave this worktree's process
+running. Explicit `open -n` started it. Both current-worktree test apps were
+then observed by exact executable path. The launcher now uses `open -n` when
+its exact app process is absent and polls for that process after opening; it
+fails instead of claiming readiness when no process appears. Shell syntax and
+diff checks passed. Native field fill and managed-browser UI actions are still
+awaiting the owner's manual check.
+
+After the launcher change, `npm run try:local` completed startup without the
+older-checkout error and printed `http://127.0.0.1:49266/`. Exact-path `ps`
+checks found this worktree's Dev (PID 14168) and Fixture (PID 14455), and a
+loopback GET returned the portal title and `Find invoice` control. The portal
+session was left running for the owner's interactive test. These checks do not
+establish that either UI action completed.
