@@ -76,7 +76,9 @@ field fill. There is no general-purpose executor or release binary yet.
   checks pass. The development panel now routes one explicit field fill through
   the persistent controller, journal and private AppKit worker pipe. This path
   recomputes candidate/action digests in the AppKit worker and has passed
-  synthetic process and cross-language vector tests. A live AX run and release peer/permit
+  synthetic process and cross-language vector tests. The worker now durably
+  consumes execution and permit IDs before its AX setter; restart replay checks
+  pass. A live AX run and release peer/permit
   authentication remain unverified. See [native action status](docs/NATIVE_ACTION.md).
 - A separate native host task class binds a final text command, complete
   candidate set, supplied-value digest and one journaled attempt before calling
@@ -116,6 +118,7 @@ npm run test:swift
 npm run test:mac-peer
 npm run test:chrome-host
 npm run test:native-ax
+npm run test:native-worker-ledger
 ```
 
 `npm run test:mac-peer` checks a signing/peer-identity fixture in Terminal;

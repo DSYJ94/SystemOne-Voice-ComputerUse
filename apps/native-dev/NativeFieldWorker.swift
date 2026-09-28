@@ -19,6 +19,7 @@ final class DevNativeFieldWorker: @unchecked Sendable {
         var preparationRef: String?
         var executionID: String?
         var permitRef: String?
+        var actionDigest: String?
         var verifyCandidateID: String?
         var verifyValue: String?
 
@@ -42,6 +43,7 @@ final class DevNativeFieldWorker: @unchecked Sendable {
     private var stoppedTaskIDs = Set<String>()
     private var activeFence: (taskID: String, fence: NativeValueFence)?
     private var state: State? // Accessed only on queue.
+    private var permitLedger: NativeWorkerPermitLedger? // Accessed only on queue.
 
     func handle(_ data: Data, send: @escaping @Sendable (Data) -> Void) {
         guard data.count <= 16_384,
@@ -186,6 +188,7 @@ final class DevNativeFieldWorker: @unchecked Sendable {
                 state.preparationRef = UUID().uuidString
                 state.executionID = executionID
                 state.permitRef = permitRef
+                state.actionDigest = actionDigest
                 return ["kind": "ready", "preparationRef": state.preparationRef!]
             }
         } catch { return ["kind": "unsupported"] }
@@ -197,12 +200,26 @@ final class DevNativeFieldWorker: @unchecked Sendable {
               let preparationRef = message["preparationRef"] as? String,
               let executionID = message["executionId"] as? String,
               let permitRef = message["permitRef"] as? String,
+              let actionDigest = state.actionDigest,
               preparationRef == state.preparationRef,
               executionID == state.executionID,
               permitRef == state.permitRef else { return "unknown" }
         state.prepared = nil // One-use before the AX call.
-        // The host committed the durable boundary before sending this private
-        // message. Release IPC must verify a signed host permit here.
+        // The host committed its boundary before this message. Independently
+        // consume in the worker before the AX setter; a restarted worker must
+        // never reuse this execution ID or permit reference.
+        if permitLedger == nil {
+            let support = FileManager.default.urls(for: .applicationSupportDirectory,
+                in: .userDomainMask)[0]
+                .appendingPathComponent("SystemOne-Dev", isDirectory: true)
+            permitLedger = try? NativeWorkerPermitLedger(path: support
+                .appendingPathComponent("native-worker-permits.sqlite"))
+        }
+        guard permitLedger?.consume(executionID: executionID, permitRef: permitRef,
+                                    taskID: taskID, actionDigest: actionDigest) == true else {
+            return "unknown"
+        }
+        // Release IPC still needs a verified signed host permit here.
         switch prepared.send(recordBoundary: {}) {
         case .verified: return "verified"
         case .notDispatched: return "not_dispatched"

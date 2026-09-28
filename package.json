@@ -16,6 +16,7 @@
     "test:chrome-host": "zsh scripts/check-chrome-native-host.sh",
     "test:native-ax": "zsh scripts/check-native-ax.sh",
     "test:native-permit-digest": "node scripts/check-native-permit-digest.mjs",
+    "test:native-worker-ledger": "node scripts/check-native-worker-ledger.mjs",
     "test:mac-launch": "zsh scripts/test-native-mock-processes.sh",
     "build:native-mock": "scripts/build-native-mock.sh",
     "run:native-mock": "scripts/run-native-mock.sh",

@@ -154,20 +154,23 @@ The bundled development AppKit parent now checks its launched Node child's
 running code identity against a signed-bundle CDHash pin before processing
 controller output or issuing commands. A changed-hash app copy was rejected.
 External-source development mode is still unauthenticated, and release peer
-identity plus durable worker-side permit consumption remain open.
+identity and signed permit verification remain open.
 The native AppKit worker now recomputes candidate/action digests from its
 retained observation and supplied value before preparing the AX setter. A
 Swift/TypeScript vector check passes; no live AX action was re-run for this
-change. Digest agreement is not authorization or a durable worker permit.
+change. It also writes execution and permit identifiers to a full-sync,
+worker-owned SQLite ledger before the AX setter; restart replay is denied in
+isolated process checks. Neither digest agreement nor identifier consumption
+authenticates the development host or constitutes a release permit.
 
 ## Next implementation order
 
 1. Qualify the new native panel-to-controller-to-AX path on the synthetic
    Fixture with an explicit user test. Capture the verified result and Stop
    behavior without claiming general native control. Authenticate the release
-   host/worker boundary and make worker-side permit consumption durable.
-2. Integrate B03/B09/B15 host authority, authenticated worker identity, durable
-   permit consumption and a real native/managed-browser Stop barrier. Qualify
+   host/worker boundary and verify a signed permit before worker dispatch.
+2. Integrate B03/B09/B15 host authority, authenticated worker identity, signed
+   permit validation and a real native/managed-browser Stop barrier. Qualify
    dispatch timing and unknown outcomes before broadening native or browser
    actions. Extend B05 fixtures for interference and recovery cases.
 3. Build B04/B07/B08 signed native UX and B10/B11 general native observations/
