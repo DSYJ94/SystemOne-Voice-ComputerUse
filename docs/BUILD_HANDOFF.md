@@ -72,8 +72,8 @@ established by the current fixture-only native or browser tests.
   [#50 synthetic native file LOCATE task](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/50),
   [#51 distinct synthetic native OPEN task](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/51).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/native-fixture-open`,
-  stacked on `codex/native-fixture-locate`.
+- The current implementation branch is `codex/native-ax-coverage`,
+  stacked on `codex/native-fixture-open`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -131,6 +131,10 @@ same browser fence. See [managed navigation test](MANAGED_NAVIGATION_TEST.md).
 The development AppKit build now also compiles the B10 read-only
 Accessibility observer and can inspect one exact running bundle by explicit
 user input. Labels and capabilities remain local; field values are not read.
+The current draft adds explicit incomplete-coverage reasons and bounded,
+read-only drill-down into a displayed node. A subtree result never claims
+whole-app coverage; secure labels and descendants are omitted. Stop invalidates
+the inspection session before another inspection can start.
 Compilation and synthetic registry checks pass; live observation remains
 unverified while the earlier manual browser test stays available. See
 [native inspection test](NATIVE_INSPECTION_TEST.md).
