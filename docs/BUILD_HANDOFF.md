@@ -47,10 +47,11 @@ established by the current fixture-only native or browser tests.
   [#25 journaled native task authority](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/25),
   [#26 development native controller bridge](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/26),
   [#27 existing-Chrome controller read path](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/27),
-  [#28 guarded existing-Chrome loopback fill](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/28).
+  [#28 guarded existing-Chrome loopback fill](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/28),
+  [#29 movable bundled development runtime](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/29).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/chrome-guarded-field-fill`,
-  stacked on `codex/chrome-controller-read-session`.
+- The current implementation branch is `codex/bundled-dev-runtime`,
+  stacked on `codex/chrome-guarded-field-fill`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -131,6 +132,11 @@ update, voice, CLM inference, privacy review, crash recovery across real workers
 packaging/notarization and clean-Mac installation are unverified. Treat effects
 that may have crossed a worker boundary as unknown until re-observed; Stop cannot
 undo an already-dispatched effect.
+An ad-hoc bundled development app now starts its controller and managed
+Chromium worker from internal Node, npm and browser assets after relocation.
+This is a B27 packaging foundation; it is not Developer ID signed, notarized,
+or a clean-Mac test, and the Chrome native host is still external. See
+[bundled runtime](BUNDLED_DEV_RUNTIME.md).
 
 ## Next implementation order
 
