@@ -67,8 +67,8 @@ established by the current fixture-only native or browser tests.
   [#45 structured input byte provenance](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/45),
   [#46 fixed portal workflow in controller](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/46).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/portal-controller-workflow`,
-  stacked on `codex/input-byte-provenance`.
+- The current implementation branch is `codex/native-global-shortcuts`,
+  stacked on `codex/portal-controller-workflow`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -219,7 +219,10 @@ and external-source mode still lacks code authentication.
 
 ## Next implementation order
 
-1. Qualify the new native panel-to-controller-to-AX path on the synthetic
+1. Exercise the development panel's global open/Stop shortcuts and focus
+   display using the [synthetic shortcut guide](NATIVE_SHORTCUT_TEST.md).
+   A compile pass alone does not prove registration, cross-app focus or Stop.
+   Qualify the new native panel-to-controller-to-AX path on the synthetic
    Fixture with an explicit user test. Capture the verified result and Stop
    behavior without claiming general native control. Authenticate the release
    host/worker boundary under Developer ID signing and qualify the signed

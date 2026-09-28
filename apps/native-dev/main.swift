@@ -1,7 +1,29 @@
 import AppKit
 import ApplicationServices
+import Carbon
 import Darwin
 import Foundation
+
+private let systemOneHotkeySignature: OSType = 0x53314B59 // S1KY
+private let openPanelHotkeyID: UInt32 = 1
+private let stopHotkeyID: UInt32 = 2
+
+private func systemOneHotkeyHandler(_ event: EventHandlerCallRef?,
+                                    _ eventRef: EventRef?,
+                                    _ userData: UnsafeMutableRawPointer?) -> OSStatus {
+    guard let eventRef, let userData else { return OSStatus(eventNotHandledErr) }
+    var hotkeyID = EventHotKeyID(signature: 0, id: 0)
+    let result = GetEventParameter(eventRef, EventParamName(kEventParamDirectObject),
+                                   EventParamType(typeEventHotKeyID), nil,
+                                   MemoryLayout<EventHotKeyID>.size, nil, &hotkeyID)
+    guard result == noErr, hotkeyID.signature == systemOneHotkeySignature else {
+        return OSStatus(eventNotHandledErr)
+    }
+    let app = Unmanaged<SystemOneDev>.fromOpaque(userData).takeUnretainedValue()
+    let actionID = hotkeyID.id
+    DispatchQueue.main.async { app.handleGlobalHotkey(actionID) }
+    return noErr
+}
 
 @MainActor
 final class SystemOneDev: NSObject, NSApplicationDelegate {
@@ -12,6 +34,11 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     private var labelField: NSTextField?
     private var valueField: NSTextField?
     private var statusField: NSTextField?
+    private var shortcutField: NSTextField?
+    private var focusField: NSTextField?
+    private var hotkeyHandler: EventHandlerRef?
+    private var openHotkey: EventHotKeyRef?
+    private var stopHotkey: EventHotKeyRef?
     private var nativeBundleField: NSTextField?
     private var nativeLabelField: NSTextField?
     private var nativeValueField: NSTextField?
@@ -81,6 +108,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         item.menu = menu
         statusItem = item
         makePanel()
+        registerGlobalHotkeys()
         startController()
         startChromeListener()
         openPanel()
@@ -93,6 +121,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        unregisterGlobalHotkeys()
         if activeSurface == .native, let activeRequestID {
             nativeWorker.requestLocalStop(activeRequestID)
         }
@@ -144,6 +173,12 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         status.textColor = .secondaryLabelColor
         status.setAccessibilityLabel("SystemOne status")
         statusField = status
+        let shortcuts = NSTextField(wrappingLabelWithString: "Registering global shortcuts…")
+        shortcuts.textColor = .secondaryLabelColor
+        shortcutField = shortcuts
+        let focus = NSTextField(wrappingLabelWithString: "No external app captured. Enter the target explicitly.")
+        focus.textColor = .secondaryLabelColor
+        focusField = focus
         let fill = NSButton(title: "Fill field", target: self, action: #selector(startFill))
         let navigate = NSButton(title: "Navigate link", target: self,
                                 action: #selector(startManagedNavigate))
@@ -210,8 +245,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         chromeValueField = chromeValue
         let chromeFill = NSButton(title: "Fill existing Chrome field", target: self,
                                   action: #selector(startChromeFill))
-        let stack = NSStackView(views: [heading, explanation, url, label, value,
-                                        status, actions, portal, nativeHeading,
+        let stack = NSStackView(views: [shortcuts, focus, heading, explanation,
+                                        url, label, value, status, actions, portal, nativeHeading,
                                         nativeExplanation, bundle, nativeLabel,
                                         nativeValue, nativeActions, scroll,
                                         chromeHeading, chromeExplanation,
@@ -229,6 +264,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             label.widthAnchor.constraint(equalTo: stack.widthAnchor),
             value.widthAnchor.constraint(equalTo: stack.widthAnchor),
             status.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            shortcuts.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            focus.widthAnchor.constraint(equalTo: stack.widthAnchor),
             explanation.widthAnchor.constraint(equalTo: stack.widthAnchor),
             nativeExplanation.widthAnchor.constraint(equalTo: stack.widthAnchor),
             bundle.widthAnchor.constraint(equalTo: stack.widthAnchor),
@@ -582,9 +619,56 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
 
     @objc private func openPanel() {
         guard let panel else { return }
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        if let frontmost, frontmost.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+           !frontmost.isTerminated {
+            let name = frontmost.localizedName ?? frontmost.bundleIdentifier ?? "an unnamed app"
+            focusField?.stringValue = "Previously focused: \(name) (PID \(frontmost.processIdentifier)). Select a target explicitly."
+        } else {
+            focusField?.stringValue = "No external app captured. Enter the target explicitly."
+        }
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(urlField)
+    }
+
+    func handleGlobalHotkey(_ id: UInt32) {
+        switch id {
+        case openPanelHotkeyID: openPanel()
+        case stopHotkeyID: stop()
+        default: break
+        }
+    }
+
+    private func registerGlobalHotkeys() {
+        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
+                                      eventKind: OSType(kEventHotKeyPressed))
+        let handlerStatus = InstallEventHandler(GetApplicationEventTarget(),
+            systemOneHotkeyHandler, 1, &eventType,
+            Unmanaged.passUnretained(self).toOpaque(), &hotkeyHandler)
+        guard handlerStatus == noErr else {
+            shortcutField?.stringValue = "Global shortcuts unavailable (handler \(handlerStatus)); use the menu or Dock."
+            return
+        }
+        let modifiers = UInt32(controlKey | optionKey)
+        let openStatus = RegisterEventHotKey(UInt32(kVK_Space), modifiers,
+            EventHotKeyID(signature: systemOneHotkeySignature, id: openPanelHotkeyID),
+            GetApplicationEventTarget(), OptionBits(kEventHotKeyExclusive), &openHotkey)
+        let stopStatus = RegisterEventHotKey(UInt32(kVK_Escape), modifiers,
+            EventHotKeyID(signature: systemOneHotkeySignature, id: stopHotkeyID),
+            GetApplicationEventTarget(), OptionBits(kEventHotKeyExclusive), &stopHotkey)
+        if openStatus != noErr || stopStatus != noErr {
+            unregisterGlobalHotkeys()
+            shortcutField?.stringValue = "Global shortcuts unavailable (open \(openStatus), Stop \(stopStatus)); use the menu or Dock."
+            return
+        }
+        shortcutField?.stringValue = "Control–Option–Space: open panel · Control–Option–Escape: Stop"
+    }
+
+    private func unregisterGlobalHotkeys() {
+        if let openHotkey { UnregisterEventHotKey(openHotkey); self.openHotkey = nil }
+        if let stopHotkey { UnregisterEventHotKey(stopHotkey); self.stopHotkey = nil }
+        if let hotkeyHandler { RemoveEventHandler(hotkeyHandler); self.hotkeyHandler = nil }
     }
 
     @objc private func startFill() {
@@ -727,7 +811,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         let bundleID = nativeBundleField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let field = nativeLabelField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let value = nativeValueField?.stringValue ?? ""
-        guard bundleID.range(of: "^[A-Za-z0-9.-]{3,160}$",
+        guard bundleID != Bundle.main.bundleIdentifier,
+              bundleID.range(of: "^[A-Za-z0-9.-]{3,160}$",
                              options: .regularExpression) != nil,
               !field.isEmpty, field.count <= 160,
               value.utf8.count <= 1_024 else {
@@ -861,7 +946,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             return
         }
         let bundleID = nativeBundleField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard bundleID.range(of: "^[A-Za-z0-9.-]{3,160}$", options: .regularExpression) != nil else {
+        guard bundleID != Bundle.main.bundleIdentifier,
+              bundleID.range(of: "^[A-Za-z0-9.-]{3,160}$", options: .regularExpression) != nil else {
             nativeOutput?.string = "Enter one exact app bundle ID."
             return
         }

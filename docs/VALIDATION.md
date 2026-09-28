@@ -940,3 +940,15 @@ A later run exposed a test timing error: the `portal_opened` status did not
 prove the download dispatch boundary had been crossed. The test now waits for
 that journal event before Stop. Both failures were corrected before the final
 215/215 run; neither earlier run is counted as a pass.
+
+## Development global shortcuts, 28 September 2026
+
+`npm run build:native-dev` compiled and ad-hoc signed the AppKit panel with
+exclusive Control–Option–Space (open) and Control–Option–Escape (Stop) Carbon
+hotkeys, an explicit registration-failure message, and a previously focused app
+display. `npm run check` passed **215/215 tests**, zero skipped, with TypeScript
+typecheck. `git diff --check` passed. The app was not launched, so registration,
+shortcut delivery, focus across spaces/displays and a live Stop request remain
+**unverified**. The menu/Dock fallback is retained. The
+[owner-run check](NATIVE_SHORTCUT_TEST.md) covers a synthetic focus target and
+Stop entry point; it cannot alone qualify post-dispatch cancellation.
