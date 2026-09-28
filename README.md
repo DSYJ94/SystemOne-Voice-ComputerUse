@@ -37,8 +37,7 @@ field fill. There is no general-purpose executor or release binary yet.
   and durable attempt journal. A development AppKit panel can now send one
   explicitly entered field-fill request over private pipes to a persistent
   controller, show verification, and Stop the isolated browser. This is not a
-  general browser executor or an authenticated release worker. Existing Chrome
-  is not connected.
+  general browser executor or an authenticated release worker.
 - The existing-Chrome Manifest V3 extension source requires a toolbar click
   and exact tab/document grant. Its development path now supports one
   journaled fill of the synthetic loopback portal's `Find invoice` field,
@@ -46,6 +45,12 @@ field fill. There is no general-purpose executor or release binary yet.
   native-messaging host and opt-in AppKit listener pass signed synthetic
   socket/framing checks. No host is installed in Chrome, no real profile has
   been exercised, and the action remains unqualified in a real extension.
+- An ignored, movable development app bundles a checksum-verified official
+  Apple Silicon Node runtime, locked production packages and Playwright
+  Chromium. Its controller and managed-browser worker pass a synthetic portal
+  smoke check after relocation. It remains ad-hoc signed and lacks the Chrome
+  host, models, notarization and clean-Mac qualification; see
+  [bundled runtime](docs/BUNDLED_DEV_RUNTIME.md).
 - Fixture-scoped outcome checks re-observe the portal and distinguish an exact
   search result, an opened detail and a saved document. These are not wired to
   the general host controller or a production completion engine.

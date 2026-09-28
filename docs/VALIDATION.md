@@ -591,3 +591,27 @@ This is stronger than page-world `evaluate`, but still omits the production
 extension's native-messaging transport and any installed Chrome profile.
 It does not establish trusted-input behavior, server persistence, Stop during
 a real native-host action, or distributable signing.
+
+## Bundled development runtime, 28 September 2026
+
+`zsh scripts/build-bundled-dev.sh .build/release-deps/node-v26.5.0-darwin-arm64.tar.xz
+/Users/daryl/Library/Caches/ms-playwright` built a roughly 715 MB ad-hoc app.
+The official Node archive's SHA-256 matched the pinned `48231d6204eca6be13e6c5184dfdffa1d64ad88880364cc2cfb198f872cb2b13`
+entry from Node's HTTPS `SHASUMS256.txt`. The extracted binary reported
+`v26.5.0 arm64 darwin`; `otool -L` showed only system libraries. The current
+Homebrew Node binary showed multiple `/opt/homebrew` library dependencies and
+was therefore not copied into the bundle.
+
+The first build with `npm ci --offline` failed because `jsonc-parser` was not
+cached. The build script now uses lockfile integrity with scripts disabled and
+allows npm to fetch missing production archives; that retry built successfully.
+`node scripts/check-bundled-dev.mjs ABSOLUTE_APP_PATH` passed: the bundled
+controller started and stopped, and bundled headless Chromium observed the
+loopback invoice portal using the app's own Node, npm packages and browser
+assets with a restricted `PATH`. The same check passed after moving the app to
+another directory in the worktree, then it was returned to the documented
+build path. The app's nested and outer ad-hoc signatures verified strictly.
+
+No AppKit GUI launch from this bundle, clean-Mac install, Chrome native-host
+registration, Developer ID signing, notarization, model assets, updates or
+rollback was tested. The release gates remain open.

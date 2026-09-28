@@ -7,7 +7,7 @@ same parser, schema and digest fixtures before merging.
 
 | Component | Pin | Purpose / license / security and replacement boundary |
 |---|---|---|
-| Node | 26.5.0 tested | Development/controller runtime candidate. Distribution binary, bundled licenses, signing and security-update cadence still require B01/B27. |
+| Node | 26.5.0 tested | Development/controller runtime. The official `node-v26.5.0-darwin-arm64.tar.xz` archive was SHA-256 verified as `48231d6204eca6be13e6c5184dfdffa1d64ad88880364cc2cfb198f872cb2b13` and staged in an ignored ad-hoc app; its executable links only system libraries. The Homebrew build is not self-contained. Release signing, authenticated checksum provenance, full license notices, clean-Mac testing and security-update cadence remain B01/B27. [Official release directory](https://nodejs.org/dist/v26.5.0/). |
 | Node `node:sqlite` | Bundled with tested Node 26.5.0 | Host-private attempt journal foundation; SQLite WAL and full synchronous commits avoid a new native npm package. The controller must use an app-owned local path, guard file access and qualify crash/update behavior. Replace behind `AttemptJournal` if the bundled runtime changes; this does not authorize execution by itself. [Node API](https://nodejs.org/download/release/v26.5.1/docs/api/sqlite.html). |
 | Ajv | 8.20.0 | Draft 2020-12 schema validation, MIT. Compile only the bundled schema; no remote refs, coercion or provider schemas. Replace behind `decodeMessage`. |
 | ajv-formats | 3.0.1 | Actual date-time assertions, MIT. Retain invalid-date tests on every update; same validator replacement seam. |
