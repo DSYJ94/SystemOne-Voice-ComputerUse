@@ -37,6 +37,12 @@ fixtures. Supported operations and limitations must be stated explicitly.
 | B27 packaging foundation | Development bundle | A movable ad-hoc app includes a checksum-verified official Node 26.5.0 executable, locked production npm packages and version-matched Playwright Chromium. It now pins the signed Node code hash and checks the launched child from AppKit before accepting controller output; headless positive and changed-hash rejection checks passed. The bundled controller and browser worker pass a loopback fixture smoke after relocation. It is not Developer ID signed/notarized and has no authenticated release supervisor, bundled Chrome host, model assets, update system or clean-Mac qualification. See [bundled runtime](BUNDLED_DEV_RUNTIME.md). |
 | All other tickets | Not started | No qualified signed UX, general native action adapter, ASR, model service or release artifact. |
 
+The latest B19 isolated check now uses the production controller **child** and
+its private pipe, in addition to the signed host/listener source and extension
+copy. It reopens the child's journal to confirm one completed DOM fill and one
+cancelled, unresolved edit after Stop and a delayed receipt. The full AppKit
+bundle, physical toolbar click and installed Google Chrome remain unverified.
+
 These slices are staged across draft PRs; they do not mark the entire contracts-and-fixtures stage
 or any of B01/B03/B05/B26 complete. The private GitHub remote is configured.
 

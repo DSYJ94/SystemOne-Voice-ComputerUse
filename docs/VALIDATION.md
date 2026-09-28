@@ -862,3 +862,24 @@ an effect. The delay was injected in the synthetic Node controller's inbound
 receipt path, so other crash and disconnection timings remain unverified.
 `npm run check` passed **206/206 tests**, zero skipped, with TypeScript
 typecheck; `git diff --check` passed.
+
+## Production controller child over signed Chrome transport, 28 September 2026
+
+`npm run test:chrome-browser-transport` passed on macOS 26.6.2 arm64 after
+replacing the browser check's test-local `ChromeFillAuthority` with the real
+`native-managed-controller.ts` child process. The signed Swift listener now
+forwards connection, native-messaging frames and closure through the same
+private line protocol used by the development AppKit panel. The child reports
+its bounded semantic observation, rejects an ambiguous field and replay,
+verifies a fixture DOM fill, acknowledges Stop after a second dispatched edit,
+then blocks new work when a matched receipt arrives late. The journal is
+reopened after child exit: the first task is completed with a matched outcome,
+the second is cancelled with one unresolved attempt, and the rejected requests
+have no attempts. Changed signed-peer hashes still disconnect.
+
+The test uses a signed test executable compiled from the production listener
+source, not the launched AppKit bundle. It also uses a disposable Chromium
+profile and test-only action trigger. Physical toolbar use, installed Google
+Chrome/current-profile behavior and release identity remain unverified.
+`npm run check` passed **206/206 tests**, zero skipped, with TypeScript
+typecheck; `git diff --check` passed.
