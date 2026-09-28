@@ -53,10 +53,11 @@ established by the current fixture-only native or browser tests.
   [#31 bounded development Stop acknowledgement](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/31),
   [#32 bundled controller running-code identity](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/32),
   [#33 native worker digest binding](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/33),
-  [#34 native worker replay ledger](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/34).
+  [#34 native worker replay ledger](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/34),
+  [#35 controller-signed native permit](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/35).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/native-worker-replay-ledger`,
-  stacked on `codex/native-worker-digest-binding`.
+- The current implementation branch is `codex/native-host-permit`,
+  stacked on `codex/native-worker-replay-ledger`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
