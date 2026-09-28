@@ -848,3 +848,17 @@ It does not qualify a physical toolbar click, full AppKit integration, Google
 Chrome/current-profile installation, real-site trusted-input behavior or
 release signing. `npm run check` passed **206/206 tests**, zero skipped, with
 TypeScript typecheck; `git diff --check` passed.
+
+## Isolated Chromium late receipt after Stop, 28 September 2026
+
+`npm run test:chrome-browser-transport` passed on macOS 26.6.2 arm64 after
+adding a second grant and a second actual fixture edit. The harness withheld
+only the extension's matched receipt after the page field became `INV-105`.
+Host Stop then returned a positive worker fence and revoked the grant. The
+field remained edited; delivery of the held receipt returned `stopped`, left
+the task cancelled with one unresolved journal attempt, and refused a new
+request before dispatch. This distinguishes a future-action fence from undoing
+an effect. The delay was injected in the synthetic Node controller's inbound
+receipt path, so other crash and disconnection timings remain unverified.
+`npm run check` passed **206/206 tests**, zero skipped, with TypeScript
+typecheck; `git diff --check` passed.

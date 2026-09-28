@@ -97,6 +97,12 @@ attempt, then sends one host-admitted, journaled fill to the retained field.
 It verifies the current DOM value and durable completed task, rejects replay
 of the request, and checks that no search form was submitted. This is a DOM
 field edit in a disposable Chromium fixture, not proof of server persistence.
+After a reload and fresh grant, a second edit completes in the page while the
+test harness withholds its receipt from the controller. Stop then revokes the
+grant. Delivery of the late matched receipt leaves the task cancelled and its
+attempt unresolved; a new edit is refused. The changed DOM remains changed.
+This qualifies the signed-transport Stop accounting for this fixture timing,
+not every crash or worker-disconnect timing.
 Replacing either peer CDHash causes a browser-visible
 disconnect without another probe delivered. The check does not exercise a real
 physical toolbar click, run the complete AppKit app, or test
