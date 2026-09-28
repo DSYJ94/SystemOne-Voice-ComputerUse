@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createPublicKey, randomUUID, verify } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { AttemptJournal } from '../src/attempt-journal.ts';
+import { canonicalJSON } from '../../protocol/src/json.ts';
+import type { JSONValue } from '../../protocol/src/json.ts';
 
 interface WorkerRequest {
   readonly type: 'native_worker_request';
@@ -37,6 +39,7 @@ test('private pipe carries a journaled native task and fences a late result', as
   const operations: string[] = [];
   let pendingCommit: WorkerRequest | undefined;
   let holdCommit = false;
+  let publicKey: string | undefined;
   let output = '';
   function send(value: Record<string, unknown>): void {
     child.stdin.write(`${JSON.stringify(value)}\n`);
@@ -54,6 +57,12 @@ test('private pipe carries a journaled native task and fences a late result', as
       const message = JSON.parse(line) as Record<string, unknown>;
       if (message.type === 'status') {
         statuses.push(message as { requestId: string; phase: string });
+        continue;
+      }
+      if (message.type === 'native_permit_key') {
+        assert.equal(publicKey, undefined);
+        assert.match(String(message.publicKey), /^[A-Za-z0-9_-]{43}$/);
+        publicKey = String(message.publicKey);
         continue;
       }
       assert.equal(message.type, 'native_worker_request');
@@ -77,6 +86,23 @@ test('private pipe carries a journaled native task and fences a late result', as
         reply(request, { kind: 'ready', preparationRef: randomUUID() });
         break;
       case 'commit':
+        assert.ok(publicKey);
+        assert.ok(request.permit && typeof request.permit === 'object');
+        assert.equal((request.permit as Record<string, unknown>).executionId,
+          request.executionId);
+        assert.equal((request.permit as Record<string, unknown>).permitRef,
+          request.permitRef);
+        assert.equal(typeof request.preparationRef, 'string');
+        assert.equal(typeof request.expiresAtMs, 'number');
+        const expiry = Number(request.expiresAtMs);
+        assert.ok(Number.isSafeInteger(expiry) && expiry > Date.now());
+        const claim: JSONValue = { domain: 'systemone.native.commit.v1',
+          permit: request.permit as JSONValue,
+          preparationRef: String(request.preparationRef), expiresAtMs: expiry };
+        assert.equal(verify(null, Buffer.from(canonicalJSON(claim)),
+          createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: publicKey },
+            format: 'jwk' }), Buffer.from(String(request.signature), 'base64url')),
+        true);
         if (holdCommit) pendingCommit = request;
         else reply(request, 'verified');
         break;
@@ -101,6 +127,7 @@ test('private pipe carries a journaled native task and fences a late result', as
   try {
     await waitFor(() => statuses.some(s => s.requestId === 'startup'
       && s.phase === 'ready'));
+    assert.ok(publicKey);
     const first = randomUUID();
     start(first);
     await waitFor(() => statuses.some(s => s.requestId === first

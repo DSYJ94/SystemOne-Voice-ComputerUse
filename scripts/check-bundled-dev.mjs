@@ -73,7 +73,7 @@ try {
   const identity = await run(join(contents, 'MacOS', 'SystemOneDev'),
     ['--check-controller-identity'], env, root);
   assert.equal(identity.code, 0, identity.stderr);
-  assert.match(identity.stdout, /PASS: bundled controller running code identity accepted/);
+  assert.match(identity.stdout, /PASS: bundled controller identity and permit key accepted/);
   const controller = await run(node, [script, join(root, 'attempts.sqlite')],
     env, root);
   assert.equal(controller.code, 0, controller.stderr);

@@ -58,8 +58,15 @@ durable worker-side execution permit. The worker now also inserts the execution
 ID and permit reference into its own full-sync SQLite ledger before invoking
 the AX setter. A restarted worker rejects either replayed identifier, and a
 storage failure returns an unknown outcome without calling the setter. This
-persists replay consumption, not host authorization: the development pipe has
-no authenticated release permit, and deleting the local ledger is not an
-approved recovery mechanism. No recovery-clearance API exists yet, so a stopped boundary-crossed
+persists replay consumption. The controller now signs a ten-second Ed25519
+commit claim over the journaled permit and preparation reference. The AppKit
+parent accepts its public key only from the launched controller pipe after the
+bundled child passes running-code identity checks; the worker verifies the
+signature, exact task/observation/candidate/digest bindings and expiry before
+ledger consumption. In the external-source development build, the child code
+is not authenticated, so this signature is not a release authority boundary.
+The bundled build is ad-hoc signed and has no Developer ID/update/TCC
+qualification. Deleting the local ledger is not an approved recovery mechanism.
+No recovery-clearance API exists yet, so a stopped boundary-crossed
 task intentionally stays blocked. Follow the [development test](NATIVE_COMPUTER_USE_TEST.md)
 for the optional live synthetic fixture check.

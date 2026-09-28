@@ -44,7 +44,8 @@ export interface NativeFieldWorker {
       | { readonly kind: 'unsupported' }>;
   /** A one-use worker-side permit check and AX setter, after host journaling. */
   commit(input: { readonly taskId: string; readonly executionId: string;
-    readonly permitRef: string; readonly preparationRef: string }): Promise<
+    readonly permitRef: string; readonly preparationRef: string;
+    readonly permit: PreparedAttempt }): Promise<
       'verified' | 'not_dispatched' | 'unknown'>;
   /** Independent current-value read for a no-effect preflight match. */
   verify(input: { readonly taskId: string; readonly observationId: string;
@@ -276,7 +277,7 @@ export class NativeFillAuthority {
       this.#journal.markDispatchBoundary(permit.executionId);
       const result = await this.#worker.commit({ taskId: request.requestId,
         executionId: permit.executionId, permitRef: permit.permitRef,
-        preparationRef: prepared.preparationRef });
+        preparationRef: prepared.preparationRef, permit });
       const outcome = result === 'verified'
         ? { deliveryStatus: 'dispatched' as const, effectStatus: 'applied' as const,
           verification: 'matched' as const,

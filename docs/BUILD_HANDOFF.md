@@ -155,7 +155,7 @@ The bundled development AppKit parent now checks its launched Node child's
 running code identity against a signed-bundle CDHash pin before processing
 controller output or issuing commands. A changed-hash app copy was rejected.
 External-source development mode is still unauthenticated, and release peer
-identity and signed permit verification remain open.
+identity remains open.
 The native AppKit worker now recomputes candidate/action digests from its
 retained observation and supplied value before preparing the AX setter. A
 Swift/TypeScript vector check passes; no live AX action was re-run for this
@@ -163,14 +163,20 @@ change. It also writes execution and permit identifiers to a full-sync,
 worker-owned SQLite ledger before the AX setter; restart replay is denied in
 isolated process checks. Neither digest agreement nor identifier consumption
 authenticates the development host or constitutes a release permit.
+The controller now issues a short-lived Ed25519 commit claim. The worker checks
+its signature and exact retained task/observation/candidate bindings before
+durable consumption. A cross-language negative suite and bundled AppKit
+identity/key-handoff smoke pass. The ad-hoc bundle is not a Developer ID release,
+and external-source mode still lacks code authentication.
 
 ## Next implementation order
 
 1. Qualify the new native panel-to-controller-to-AX path on the synthetic
    Fixture with an explicit user test. Capture the verified result and Stop
    behavior without claiming general native control. Authenticate the release
-   host/worker boundary and verify a signed permit before worker dispatch.
-2. Integrate B03/B09/B15 host authority, authenticated worker identity, signed
+   host/worker boundary under Developer ID signing and qualify the signed
+   permit across installation, update and crash recovery.
+2. Integrate B03/B09/B15 host authority, release worker identity, signed
    permit validation and a real native/managed-browser Stop barrier. Qualify
    dispatch timing and unknown outcomes before broadening native or browser
    actions. Extend B05 fixtures for interference and recovery cases.

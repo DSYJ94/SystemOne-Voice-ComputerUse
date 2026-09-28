@@ -78,8 +78,10 @@ field fill. There is no general-purpose executor or release binary yet.
   recomputes candidate/action digests in the AppKit worker and has passed
   synthetic process and cross-language vector tests. The worker now durably
   consumes execution and permit IDs before its AX setter; restart replay checks
-  pass. A live AX run and release peer/permit
-  authentication remain unverified. See [native action status](docs/NATIVE_ACTION.md).
+  pass. A short-lived controller-signed commit permit now passes cross-language
+  checks and the bundled app accepts its key from the verified child. A live
+  AX run and Developer ID peer/update qualification remain unverified. See
+  [native action status](docs/NATIVE_ACTION.md).
 - A separate native host task class binds a final text command, complete
   candidate set, supplied-value digest and one journaled attempt before calling
   an abstract AX worker. Synthetic Stop, late-result and unknown-effect tests
@@ -119,6 +121,7 @@ npm run test:mac-peer
 npm run test:chrome-host
 npm run test:native-ax
 npm run test:native-worker-ledger
+npm run test:native-host-permit
 ```
 
 `npm run test:mac-peer` checks a signing/peer-identity fixture in Terminal;

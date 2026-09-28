@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { ContractError } from '../../protocol/src/json.ts';
 import type { JSONValue } from '../../protocol/src/json.ts';
+import type { PreparedAttempt } from './attempt-journal.ts';
 import type { NativeFieldObservation, NativeFieldWorker } from './native-fill-authority.ts';
+import { NativeHostPermitSigner } from './native-host-permit.ts';
 
 type Operation = 'observe' | 'prepare' | 'commit' | 'verify' | 'stop';
 const ID = /^[A-Za-z0-9_.:-]{1,160}$/;
@@ -24,10 +26,12 @@ function record(value: JSONValue): value is Record<string, JSONValue> {
 export class NativeFieldPipeWorker implements NativeFieldWorker {
   readonly #write: (value: Record<string, JSONValue>) => void;
   readonly #pending = new Map<string, Pending>();
+  readonly #signer = new NativeHostPermitSigner();
   #closed = false;
 
   constructor(write: (value: Record<string, JSONValue>) => void) {
     this.#write = write;
+    this.#write({ type: 'native_permit_key', publicKey: this.#signer.publicKey });
   }
 
   receive(value: JSONValue): boolean {
@@ -97,9 +101,19 @@ export class NativeFieldPipeWorker implements NativeFieldWorker {
   }
 
   async commit(input: { readonly taskId: string; readonly executionId: string;
-    readonly permitRef: string; readonly preparationRef: string }): Promise<
+    readonly permitRef: string; readonly preparationRef: string;
+    readonly permit: PreparedAttempt }): Promise<
       'verified' | 'not_dispatched' | 'unknown'> {
-    const result = await this.#request('commit', { ...input }, 10_000);
+    if (input.permit.taskId !== input.taskId
+      || input.permit.executionId !== input.executionId
+      || input.permit.permitRef !== input.permitRef) {
+      throw new ContractError('native permit identity changed');
+    }
+    const claim = this.#signer.sign(input.permit, input.preparationRef);
+    const result = await this.#request('commit', {
+      taskId: input.taskId, executionId: input.executionId,
+      permitRef: input.permitRef, ...claim,
+    }, 10_000);
     if (result !== 'verified' && result !== 'not_dispatched'
       && result !== 'unknown') throw new ContractError('invalid native commit reply');
     return result;

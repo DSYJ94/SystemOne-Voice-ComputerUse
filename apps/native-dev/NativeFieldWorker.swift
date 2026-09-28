@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import CryptoKit
 import Foundation
 
 /// Development-only AppKit-side AX worker. All retained handles and prepared
@@ -20,6 +21,8 @@ final class DevNativeFieldWorker: @unchecked Sendable {
         var executionID: String?
         var permitRef: String?
         var actionDigest: String?
+        var candidateSetDigest: String?
+        var preparedCandidateID: String?
         var verifyCandidateID: String?
         var verifyValue: String?
 
@@ -44,6 +47,19 @@ final class DevNativeFieldWorker: @unchecked Sendable {
     private var activeFence: (taskID: String, fence: NativeValueFence)?
     private var state: State? // Accessed only on queue.
     private var permitLedger: NativeWorkerPermitLedger? // Accessed only on queue.
+    private var hostPublicKey: Curve25519.Signing.PublicKey? // Accessed only on queue.
+
+    func installHostPublicKey(_ key: Curve25519.Signing.PublicKey) {
+        queue.async { [self] in hostPublicKey = key }
+    }
+
+    func invalidateHostPublicKey() {
+        queue.async { [self] in
+            hostPublicKey = nil
+            state?.fence.stop()
+            state = nil
+        }
+    }
 
     func handle(_ data: Data, send: @escaping @Sendable (Data) -> Void) {
         guard data.count <= 16_384,
@@ -189,22 +205,37 @@ final class DevNativeFieldWorker: @unchecked Sendable {
                 state.executionID = executionID
                 state.permitRef = permitRef
                 state.actionDigest = actionDigest
+                state.candidateSetDigest = candidateSetDigest
+                state.preparedCandidateID = candidateID
                 return ["kind": "ready", "preparationRef": state.preparationRef!]
             }
         } catch { return ["kind": "unsupported"] }
     }
 
     private func commit(_ message: [String: Any], taskID: String) -> Any {
-        guard let state, state.taskID == taskID,
+        guard Set(message.keys) == ["type", "requestId", "operation", "taskId",
+              "executionId", "permitRef", "preparationRef", "permit",
+              "expiresAtMs", "signature"],
+              let state, state.taskID == taskID,
               let prepared = state.prepared,
               let preparationRef = message["preparationRef"] as? String,
               let executionID = message["executionId"] as? String,
               let permitRef = message["permitRef"] as? String,
               let actionDigest = state.actionDigest,
+              let candidateSetDigest = state.candidateSetDigest,
+              let candidateID = state.preparedCandidateID,
+              let hostPublicKey,
               preparationRef == state.preparationRef,
               executionID == state.executionID,
               permitRef == state.permitRef else { return "unknown" }
         state.prepared = nil // One-use before the AX call.
+        guard NativeHostPermit.verify(publicKey: hostPublicKey,
+            message: message, taskID: taskID,
+            preparationRef: preparationRef, executionID: executionID,
+            permitRef: permitRef, scopeRef: state.observation.scopeRef,
+            observationID: state.observation.id, candidateID: candidateID,
+            candidateSetDigest: candidateSetDigest,
+            actionDigest: actionDigest) else { return "unknown" }
         // The host committed its boundary before this message. Independently
         // consume in the worker before the AX setter; a restarted worker must
         // never reuse this execution ID or permit reference.
@@ -219,7 +250,8 @@ final class DevNativeFieldWorker: @unchecked Sendable {
                                     taskID: taskID, actionDigest: actionDigest) == true else {
             return "unknown"
         }
-        // Release IPC still needs a verified signed host permit here.
+        // The per-process signature is tied to the checked child code identity
+        // only in the bundled build. Release signing and peer qualification remain.
         switch prepared.send(recordBoundary: {}) {
         case .verified: return "verified"
         case .notDispatched: return "not_dispatched"
