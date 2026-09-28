@@ -455,3 +455,21 @@ still needs owner observation. The app uses absolute external Node/source paths;
 the child is not OS-authenticated or packaged for distribution. No native-app
 workflow, existing Chrome action, voice, CLM, arbitrary-site compatibility,
 clean install or release signature is validated by these checks.
+
+## Development native Accessibility inspection, 28 September 2026
+
+In the isolated `codex/native-ax-worker` worktree,
+`npm run test:native-ax` compiled the Swift package and passed its synthetic
+registry checks. `npm run build:native-dev` compiled the AppKit panel with the
+read-only observer and passed strict codesign verification using an ad-hoc
+signature. `npm run check` passed TypeScript checking and **169/169** Node tests.
+The first `npm ci --offline` attempt could not find `undici-types` in the local
+cache; the pinned ordinary `npm ci --ignore-scripts` then installed 13 packages
+and reported zero audit vulnerabilities.
+
+The updated app was not launched because an earlier SystemOne Dev build and
+synthetic portal were left running for the owner's managed-browser test. No
+Accessibility permission was requested, no live native app was inspected, and
+no native action was dispatched. The synthetic test checks registry identity,
+truncation and stale-handle behavior, not TCC attribution, live AX timing,
+real application compatibility or a worker Stop barrier.

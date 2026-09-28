@@ -41,10 +41,11 @@ established by the current fixture-only native or browser tests.
   [#19 Chrome native-host transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/19),
   [#20 managed-browser observation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/20),
   [#21 admitted managed-browser fill](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/21),
-  [#22 native-to-managed development bridge](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/22).
+  [#22 native-to-managed development bridge](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/22),
+  [#23 native read-only inspection](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/23).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/native-managed-input-bridge`,
-  stacked on `codex/managed-browser-fill-authority`.
+- The current implementation branch is `codex/native-ax-worker`,
+  stacked on `codex/native-managed-input-bridge`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -94,6 +95,12 @@ Stop fences the journal and closes the isolated context, while any dispatched
 uncertainty remains unresolved. The development bundle points to external
 source and Node paths; its child is not authenticated as a release worker.
 See [native managed test](NATIVE_MANAGED_TEST.md).
+The development AppKit build now also compiles the B10 read-only
+Accessibility observer and can inspect one exact running bundle by explicit
+user input. Labels and capabilities remain local; field values are not read.
+Compilation and synthetic registry checks pass; live observation remains
+unverified while the earlier manual browser test stays available. See
+[native inspection test](NATIVE_INSPECTION_TEST.md).
 It fences both stores on Stop. Stop distinguishes browser context closure from
 an independent local save still pending and reports an incomplete worker fence
 for the latter. Context closure does not prove an already-dispatched action had

@@ -39,6 +39,8 @@ public struct SystemAXBackend: AXObservationBackend {
     }
 
     public func describe(_ handle: AXUIElement) throws -> AXDescription {
+        let timeout = AXUIElementSetMessagingTimeout(handle, 0.5)
+        guard timeout == .success else { throw SystemAXError.unavailable(timeout) }
         guard let role = stringAttribute(handle, kAXRoleAttribute) else {
             throw SystemAXError.invalidData
         }
@@ -66,6 +68,8 @@ public struct SystemAXBackend: AXObservationBackend {
 
     public func children(of handle: AXUIElement, limit: Int) throws -> AXChildPage<AXUIElement> {
         guard limit > 0 else { throw SystemAXError.invalidData }
+        let timeout = AXUIElementSetMessagingTimeout(handle, 0.5)
+        guard timeout == .success else { throw SystemAXError.unavailable(timeout) }
         var count: CFIndex = 0
         let countStatus = AXUIElementGetAttributeValueCount(handle,
                                                             kAXChildrenAttribute as CFString,
@@ -88,6 +92,7 @@ public struct SystemAXBackend: AXObservationBackend {
     }
 
     public func belongsToTarget(_ handle: AXUIElement, target: AXTarget) -> Bool {
+        guard AXUIElementSetMessagingTimeout(handle, 0.5) == .success else { return false }
         var pid: pid_t = 0
         return AXUIElementGetPid(handle, &pid) == .success && pid == target.pid
     }
