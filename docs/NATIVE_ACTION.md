@@ -7,18 +7,21 @@ callback before dispatch. A returned `AXPress` is `returnedUnverified`, never
 task completion. Errors after entry are unknown, and a changed control at the
 boundary sends no action. A synthetic backend proves Stop, stale-control,
 boundary-failure, replay and uncertain-effect behavior, then separately
-re-observes a Documents-like surface. The development controller now admits
-**one fixed synthetic Documents navigation** through this source. It binds a
-final text command, an exact observed button, a native press policy, a
-controller-signed one-use permit and a worker-owned replay ledger. The host
-journals before dispatch and separately checks the Fixture's exact window
-title. A returned `AXPress` alone never completes the task; failed
-re-observation remains unknown and blocks another task. The controller child
-and fake worker pass positive and late-Stop tests. The AppKit path has compiled
-but **has not been exercised live**. This proves no general Finder action or
-file LOCATE/OPEN semantics. The next integration must retain a single task
-across folder navigation and exact file selection, then verify path identity
-and selection without opening.
+re-observes a Documents-like surface. The development controller admits one
+fixed synthetic Documents navigation and one **Documents/Budget.xlsx LOCATE**
+task. The latter binds an exact final text command and path, retains one task
+admission across two fresh observations, and selects only the exact file
+button after independently verifying the Documents window. Each press has its
+own signed one-use permit and worker-owned replay-ledger entry. The worker
+rechecks the Documents title immediately before the file press; the host
+journals both dispatch boundaries and requires the exact selected-but-closed
+title before claiming LOCATE. A returned `AXPress` alone never completes the
+task; failed post-dispatch verification remains unknown and blocks another
+task. Duplicate file labels and inter-step interference stop before selection.
+The controller child and fake worker tests cover the two-step path and late
+Stop. The AppKit path has compiled but **has not been exercised live**. The
+Fixture's title is an app-specific oracle, not a real file path verifier.
+This proves no general Finder action or file OPEN semantics.
 
 The synthetic Fixture now exposes Documents and Downloads controls, a file with
 the same name under either folder, and separate select/open states. This makes

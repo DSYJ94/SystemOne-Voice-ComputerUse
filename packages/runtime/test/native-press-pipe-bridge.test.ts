@@ -174,3 +174,140 @@ test('controller child journals signed native press, verifies, and fences late S
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+test('controller child keeps one LOCATE task across two signed native presses',
+  async () => {
+    const root = mkdtempSync(join(tmpdir(), 'systemone-native-locate-pipe-'));
+    const journalPath = join(root, 'attempts.sqlite');
+    const source = fileURLToPath(new URL('../src/native-managed-controller.ts',
+      import.meta.url));
+    const child = spawn(process.execPath, [source, journalPath],
+      { stdio: ['pipe', 'pipe', 'pipe'] });
+    const statuses: Array<{ requestId: string; phase: string }> = [];
+    const operations: string[] = [];
+    const signedCandidates: string[] = [];
+    let publicKey: string | undefined;
+    let title = 'SystemOne Fixture';
+    let currentCandidate = '';
+    let output = '';
+    function send(value: Record<string, unknown>): void {
+      child.stdin.write(JSON.stringify(value) + '\n');
+    }
+    function reply(request: WorkerRequest, result: unknown): void {
+      send({ type: 'native_worker_reply', requestId: request.requestId,
+        operation: request.operation, result });
+    }
+    child.stdout.on('data', chunk => {
+      output += String(chunk);
+      while (output.includes('\n')) {
+        const index = output.indexOf('\n');
+        const line = output.slice(0, index);
+        output = output.slice(index + 1);
+        const message = JSON.parse(line) as Record<string, unknown>;
+        if (message.type === 'status') {
+          statuses.push(message as { requestId: string; phase: string });
+          continue;
+        }
+        if (message.type === 'native_permit_key') {
+          publicKey = String(message.publicKey);
+          continue;
+        }
+        assert.equal(message.type, 'native_worker_request');
+        const request = message as unknown as WorkerRequest;
+        operations.push(request.operation);
+        switch (request.operation) {
+        case 'observe_press':
+          reply(request, { observationId: randomUUID(),
+            scopeRef: 'native:stable-fixture-scope',
+            bundleId: 'com.aurium.systemone.fixture', complete: true,
+            windowTitles: [title],
+            controls: [
+              { id: 'documents-node', role: 'AXButton', label: 'Documents',
+                enabled: true, secure: false, canPress: true },
+              ...(title === 'SystemOne Fixture — Documents'
+                ? [{ id: 'file-node', role: 'AXButton', label: 'Budget.xlsx',
+                  enabled: true, secure: false, canPress: true },
+                  { id: 'open-node', role: 'AXButton',
+                    label: 'Open selected file', enabled: true,
+                    secure: false, canPress: true }] : []),
+            ] });
+          break;
+        case 'prepare_press':
+          currentCandidate = String(request.candidateId);
+          assert.equal(currentCandidate === 'documents-node'
+            ? request.expectedWindowTitle === 'SystemOne Fixture — Documents'
+            : currentCandidate === 'file-node'
+              && request.expectedWindowTitle
+                === 'SystemOne Fixture — Documents — Budget.xlsx selected',
+            true);
+          reply(request, { kind: 'ready', preparationRef: randomUUID() });
+          break;
+        case 'commit_press': {
+          assert.ok(publicKey);
+          const claim: JSONValue = { domain: 'systemone.native.commit.v1',
+            permit: request.permit as JSONValue,
+            preparationRef: String(request.preparationRef),
+            expiresAtMs: Number(request.expiresAtMs) };
+          assert.equal(verify(null, Buffer.from(canonicalJSON(claim)),
+            createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: publicKey },
+              format: 'jwk' }),
+            Buffer.from(String(request.signature), 'base64url')), true);
+          signedCandidates.push(String(
+            (request.permit as Record<string, unknown>).candidateId));
+          title = currentCandidate === 'documents-node'
+            ? 'SystemOne Fixture — Documents'
+            : 'SystemOne Fixture — Documents — Budget.xlsx selected';
+          reply(request, 'returned_unverified');
+          break;
+        }
+        case 'verify_press':
+          reply(request, title === request.expectedWindowTitle);
+          break;
+        case 'stop': reply(request, true); break;
+        default: assert.fail('unexpected worker operation ' + request.operation);
+        }
+      }
+    });
+    async function waitFor(predicate: () => boolean): Promise<void> {
+      for (let count = 0; count < 1_000; count++) {
+        if (predicate()) return;
+        if (child.exitCode !== null) throw new Error('controller exited early');
+        await new Promise(resolve => setTimeout(resolve, 2));
+      }
+      throw new Error('native locate pipe stage not reached');
+    }
+    try {
+      await waitFor(() => statuses.some(s => s.requestId === 'startup'
+        && s.phase === 'ready'));
+      const taskId = randomUUID();
+      send({ type: 'start_native_locate', requestId: taskId,
+        bundleId: 'com.aurium.systemone.fixture', folderName: 'Documents',
+        fileName: 'Budget.xlsx',
+        expectedWindowTitle:
+          'SystemOne Fixture — Documents — Budget.xlsx selected',
+        command: { ...command(taskId),
+          text: 'Locate synthetic fixture file Documents/Budget.xlsx' } });
+      await waitFor(() => statuses.some(s => s.requestId === taskId
+        && s.phase === 'verified_native_locate'));
+      assert.equal(title, 'SystemOne Fixture — Documents — Budget.xlsx selected');
+      assert.deepEqual(signedCandidates, ['documents-node', 'file-node']);
+      assert.deepEqual(operations.slice(0, 8),
+        ['observe_press', 'prepare_press', 'commit_press', 'verify_press',
+          'observe_press', 'prepare_press', 'commit_press', 'verify_press']);
+      child.stdin.end();
+      const exit = await new Promise<number | null>(resolve => child.once('exit',
+        resolve));
+      assert.equal(exit, 0);
+      const journal = new AttemptJournal(journalPath);
+      try {
+        assert.equal(journal.getTaskState(taskId), 'completed');
+        const attempts = journal.attemptsForTask(taskId);
+        assert.equal(attempts.length, 2);
+        assert.ok(attempts.every(attempt =>
+          attempt.outcome?.verification === 'matched'));
+      } finally { journal.close(); }
+    } finally {
+      if (child.exitCode === null) child.kill('SIGTERM');
+      rmSync(root, { recursive: true, force: true });
+    }
+  });

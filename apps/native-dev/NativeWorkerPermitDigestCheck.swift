@@ -3,8 +3,8 @@ import Foundation
 @main
 struct NativeWorkerPermitDigestCheck {
     static func main() throws {
-        guard CommandLine.arguments.count == 5 else {
-            fatalError("expected field and press candidate/action digests")
+        guard CommandLine.arguments.count == 7 else {
+            fatalError("expected field, folder and file candidate/action digests")
         }
         let controls: [[String: Any]] = [[
             "id": "node-1", "role": "AXTextField", "label": "Fixture Name",
@@ -72,6 +72,42 @@ struct NativeWorkerPermitDigestCheck {
                   candidateSetDigest: pressSet, actionDigest: pressAction) else {
             fatalError("native press digest or expected title binding changed")
         }
-        print("PASS: field and press digests match TypeScript; changed bindings denied")
+        let fileControls: [[String: Any]] = [[
+            "id": "file-node", "role": "AXButton", "label": "Budget.xlsx",
+            "enabled": true, "secure": false, "canPress": true,
+        ], [
+            "id": "open-node", "role": "AXButton",
+            "label": "Open selected file",
+            "enabled": true, "secure": false, "canPress": true,
+        ]]
+        let fileSet = try NativeWorkerPermitDigest.candidateSet(fileControls)
+        let fileAction = try NativeWorkerPermitDigest.pressAction(
+            taskID: "task-1", scopeRef: "native:scope-1",
+            observationID: "obs-2", candidateID: "file-node",
+            role: "AXButton", label: "Budget.xlsx",
+            expectedWindowTitle:
+                "SystemOne Fixture — Documents — Budget.xlsx selected",
+            policyRevision: NativeWorkerPermitDigest.pressPolicyRevision)
+        guard fileSet == CommandLine.arguments[5],
+              fileAction == CommandLine.arguments[6],
+              NativeWorkerPermitDigest.pressMatches(controls: fileControls,
+                  taskID: "task-1", scopeRef: "native:scope-1",
+                  observationID: "obs-2", candidateID: "file-node",
+                  role: "AXButton", label: "Budget.xlsx",
+                  expectedWindowTitle:
+                      "SystemOne Fixture — Documents — Budget.xlsx selected",
+                  policyRevision: NativeWorkerPermitDigest.pressPolicyRevision,
+                  candidateSetDigest: fileSet, actionDigest: fileAction),
+              !NativeWorkerPermitDigest.pressMatches(controls: fileControls,
+                  taskID: "task-1", scopeRef: "native:scope-1",
+                  observationID: "obs-2", candidateID: "open-node",
+                  role: "AXButton", label: "Open selected file",
+                  expectedWindowTitle:
+                      "SystemOne Fixture — Documents — Budget.xlsx selected",
+                  policyRevision: NativeWorkerPermitDigest.pressPolicyRevision,
+                  candidateSetDigest: fileSet, actionDigest: fileAction) else {
+            fatalError("file selection digest admitted an Open control")
+        }
+        print("PASS: field, folder and file digests match TypeScript; changed bindings denied")
     }
 }

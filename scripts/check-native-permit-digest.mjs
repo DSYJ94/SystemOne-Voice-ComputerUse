@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,16 +19,31 @@ const pressAction = { taskId: 'task-1', scopeRef: 'native:scope-1',
   observationId: 'obs-1', candidateId: 'node-2', role: 'AXButton',
   label: 'Documents', expectedWindowTitle: 'SystemOne Fixture — Documents',
   policyRevision: 'native-ax-press-fixture-v1' };
+const fileControls = [
+  { id: 'file-node', role: 'AXButton', label: 'Budget.xlsx',
+    enabled: true, secure: false, canPress: true },
+  { id: 'open-node', role: 'AXButton', label: 'Open selected file',
+    enabled: true, secure: false, canPress: true },
+];
+const fileAction = { taskId: 'task-1', scopeRef: 'native:scope-1',
+  observationId: 'obs-2', candidateId: 'file-node', role: 'AXButton',
+  label: 'Budget.xlsx',
+  expectedWindowTitle: 'SystemOne Fixture — Documents — Budget.xlsx selected',
+  policyRevision: 'native-ax-press-fixture-v1' };
 try {
   const binary = join(build, 'NativeWorkerPermitDigestCheck');
+  const moduleCache = join(build, 'module-cache');
+  mkdirSync(moduleCache);
   const compile = spawnSync('swiftc', ['-swift-version', '6', '-parse-as-library',
+    '-module-cache-path', moduleCache,
     join(root, 'packages/protocol/swift/Sources/ProtocolDigest/CanonicalJSON.swift'),
     join(root, 'apps/native-dev/NativeWorkerPermitDigest.swift'),
     join(root, 'apps/native-dev/NativeWorkerPermitDigestCheck.swift'),
     '-o', binary], { encoding: 'utf8' });
   assert.equal(compile.status, 0, compile.stderr);
   const check = spawnSync(binary, [digest(controls), digest(action),
-    digest(pressControls), digest(pressAction)],
+    digest(pressControls), digest(pressAction),
+    digest(fileControls), digest(fileAction)],
     { encoding: 'utf8' });
   assert.equal(check.status, 0, check.stderr);
   process.stdout.write(check.stdout);
