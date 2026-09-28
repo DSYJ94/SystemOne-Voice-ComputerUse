@@ -531,3 +531,26 @@ simulates the AppKit worker; no live Accessibility action was run through this
 route. No release-signed helper, OS-authenticated peer, durable worker-side
 permit, clean install, or update/TCC continuity was tested. See the
 [optional live synthetic test](NATIVE_COMPUTER_USE_TEST.md).
+
+## Existing-Chrome development read transport, 28 September 2026
+
+`npm run check` passed TypeScript checking and **182/182** Node tests with
+loopback fixture access. New tests cover exact Chrome hello/read binding,
+changed profile/document, malformed snapshots, revocation, replay, timeout and
+a spawned Node controller pipe. An extension/controller synthetic contract test
+also exchanges one exact tab snapshot and revokes on navigation. `zsh -n` passed for the new staging/check
+scripts and `git diff --check` passed. `npm run build:native-dev` compiled and
+ad-hoc signed the AppKit listener with Security/bsm linkage.
+
+`zsh scripts/build-chrome-dev-bridge.sh aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
+compiled and ad-hoc signed a development host and app, and staged an exact-
+origin manifest using a **synthetic extension ID**. It did not install that
+manifest, launch Chrome or alter a profile. `zsh scripts/check-chrome-dev-listener.sh`
+passed a signed temporary host/listener framed exchange and rejected a wrong
+pinned host CDHash. The current host
+configuration is development-only and external to a signed release bundle.
+
+No browser-to-host-to-controller run, Chrome action, trusted-input behavior,
+file transfer, current-profile compatibility, signed release identity or
+clean-Mac installation was tested. A signed host process can be invoked outside
+Chrome, so this transport check alone is not proof of user-granted authority.

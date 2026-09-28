@@ -11,9 +11,10 @@ import { AttemptJournal } from './attempt-journal.ts';
 import { TaskAdmissionRegistry } from './task-authority.ts';
 import { NativeFillAuthority } from './native-fill-authority.ts';
 import { NativeFieldPipeWorker } from './native-field-pipe-worker.ts';
+import { ChromeReadSession } from './chrome-read-session.ts';
 import type { JSONValue } from '../../protocol/src/json.ts';
 
-const MAX_LINE_BYTES = 16_384;
+const MAX_LINE_BYTES = 65_536;
 const ID = /^[A-Za-z0-9_.:-]{1,160}$/;
 const MAX_VALUE_BYTES = 1_024;
 
@@ -128,6 +129,8 @@ export class NativeManagedController {
   readonly #headless: boolean;
   readonly #nativeWorker: NativeFieldPipeWorker | undefined;
   readonly #nativeAuthority: NativeFillAuthority | undefined;
+  readonly #chromeOutput: ((value: Record<string, JSONValue>) => void) | undefined;
+  readonly #chromeSessions = new Map<string, ChromeReadSession>();
   readonly #seen = new Set<string>();
   #active: ActiveTask | undefined;
   #nativeActive: { readonly requestId: string;
@@ -135,11 +138,13 @@ export class NativeManagedController {
   #workerFenceFailed = false;
 
   constructor(journal: AttemptJournal, send: (requestId: string, phase: Phase) => void,
-    headless = false, nativeWorker?: NativeFieldPipeWorker) {
+    headless = false, nativeWorker?: NativeFieldPipeWorker,
+    chromeOutput?: (value: Record<string, JSONValue>) => void) {
     this.#journal = journal;
     this.#send = send;
     this.#headless = headless;
     this.#nativeWorker = nativeWorker;
+    this.#chromeOutput = chromeOutput;
     this.#nativeAuthority = nativeWorker
       ? new NativeFillAuthority(journal, nativeWorker) : undefined;
     journal.recoverAfterRestart();
@@ -151,6 +156,11 @@ export class NativeManagedController {
       if (line.byteLength > MAX_LINE_BYTES) throw new ContractError('native request too large');
       const parsed = parseJSON(line);
       if (this.#nativeWorker?.receive(parsed)) return;
+      if (isRecord(parsed) && typeof parsed.type === 'string'
+        && parsed.type.startsWith('chrome_port_')) {
+        this.#receiveChrome(parsed);
+        return;
+      }
       request = requestFromLine(line);
     }
     catch { this.#send('invalid', 'error'); return; }
@@ -212,6 +222,8 @@ export class NativeManagedController {
   }
 
   async close(): Promise<void> {
+    for (const session of this.#chromeSessions.values()) session.close();
+    this.#chromeSessions.clear();
     if (this.#nativeActive) {
       await this.#nativeAuthority?.stop().catch(() => {});
       await this.#nativeActive.done.catch(() => {});
@@ -230,6 +242,60 @@ export class NativeManagedController {
       this.#active = undefined;
     }
     this.#journal.close();
+  }
+
+  #receiveChrome(message: Record<string, JSONValue>): void {
+    const output = this.#chromeOutput;
+    const connectionId = message.connectionId;
+    if (!output || typeof connectionId !== 'string' || !ID.test(connectionId)) {
+      throw new ContractError('invalid Chrome controller connection');
+    }
+    try {
+      if (message.type === 'chrome_port_open') {
+        if (Object.keys(message).sort().join(',')
+            !== 'connectionId,extensionId,type'
+          || typeof message.extensionId !== 'string'
+          || this.#chromeSessions.has(connectionId)
+          || this.#chromeSessions.size >= 1) {
+          throw new ContractError('Chrome controller port already active');
+        }
+        const session = new ChromeReadSession(message.extensionId,
+          payload => output({ type: 'chrome_port_send', connectionId, payload }),
+          (binding, snapshot) => output({ type: 'chrome_observation',
+            connectionId, grantId: binding.grantId,
+            origin: binding.origin, url: binding.url,
+            title: snapshot.title, elements: snapshot.elements.map(item => ({ ...item })) }));
+        this.#chromeSessions.set(connectionId, session);
+        return;
+      }
+      const session = this.#chromeSessions.get(connectionId);
+      if (!session) throw new ContractError('Chrome controller port absent');
+      if (message.type === 'chrome_port_closed') {
+        if (Object.keys(message).sort().join(',') !== 'connectionId,type') {
+          throw new ContractError('invalid Chrome close');
+        }
+        session.close();
+        this.#chromeSessions.delete(connectionId);
+        return;
+      }
+      if (message.type !== 'chrome_port_message'
+        || Object.keys(message).sort().join(',') !== 'base64,connectionId,type'
+        || typeof message.base64 !== 'string'
+        || message.base64.length > 43_700
+        || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(message.base64)) {
+        throw new ContractError('invalid Chrome port message');
+      }
+      const bytes = Buffer.from(message.base64, 'base64');
+      if (bytes.length === 0 || bytes.length > 32_768
+        || bytes.toString('base64') !== message.base64) {
+        throw new ContractError('invalid Chrome port frame');
+      }
+      session.receive(parseJSON(bytes));
+    } catch {
+      this.#chromeSessions.get(connectionId)?.close();
+      this.#chromeSessions.delete(connectionId);
+      output({ type: 'chrome_port_close', connectionId });
+    }
   }
 
   async #run(request: StartFill, active: ActiveTask): Promise<void> {
@@ -356,7 +422,8 @@ async function main(): Promise<void> {
     process.stdout.write(`${JSON.stringify(value)}\n`);
   });
   const controller = new NativeManagedController(journal, write,
-    process.env.SYSTEMONE_MANAGED_HEADLESS === '1', worker);
+    process.env.SYSTEMONE_MANAGED_HEADLESS === '1', worker,
+    value => { process.stdout.write(`${JSON.stringify(value)}\n`); });
   write('startup', 'ready');
   let pending = Buffer.alloc(0);
   process.stdin.on('data', chunk => {

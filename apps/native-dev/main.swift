@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Darwin
 import Foundation
 
 @MainActor
@@ -16,6 +17,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     private var nativeValueField: NSTextField?
     private var nativeOutput: NSTextView?
     private let nativeWorker = DevNativeFieldWorker()
+    private var chromeListener: DevChromeListener?
     private var inspectionEpoch = 0
     private var inspectionPending = false
     private var controller: Process?
@@ -43,6 +45,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         statusItem = item
         makePanel()
         startController()
+        startChromeListener()
         openPanel()
     }
 
@@ -56,6 +59,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         if activeSurface == .native, let activeRequestID {
             nativeWorker.requestLocalStop(activeRequestID)
         }
+        chromeListener?.stop()
         controllerOutput?.fileHandleForReading.readabilityHandler = nil
         controllerInput?.fileHandleForWriting.closeFile()
     }
@@ -215,10 +219,69 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func startChromeListener() {
+        // The development listener is opt-in. Release packaging must supply
+        // signed, pinned app/host identities and a managed socket lifecycle.
+        guard controller?.isRunning == true,
+              let extensionID = Bundle.main.object(forInfoDictionaryKey:
+                "SystemOneChromeExtensionId") as? String,
+              extensionID.range(of: "^[a-p]{32}$", options: .regularExpression) != nil,
+              let hostID = Bundle.main.object(forInfoDictionaryKey:
+                "SystemOneChromeHostSigningIdentifier") as? String,
+              let hashes = Bundle.main.object(forInfoDictionaryKey:
+                "SystemOneChromeHostCDHashes") as? [String] else { return }
+        let teamID = Bundle.main.object(forInfoDictionaryKey:
+            "SystemOneChromeHostTeamIdentifier") as? String
+        let support = FileManager.default.urls(for: .applicationSupportDirectory,
+                                               in: .userDomainMask)[0]
+            .appendingPathComponent("SystemOne-Dev", isDirectory: true)
+        do {
+            let requirement = try PeerRequirement(effectiveUserID: geteuid(),
+                signingIdentifier: hostID, teamIdentifier: teamID,
+                allowedCDHashes: Set(hashes))
+            let listener = DevChromeListener(
+                path: support.appendingPathComponent("controller.sock").path,
+                requirement: requirement,
+                onOpen: { [weak self] connectionID in
+                    DispatchQueue.main.async { [weak self] in
+                        self?.sendChromeControl(["type": "chrome_port_open",
+                            "connectionId": connectionID, "extensionId": extensionID])
+                    }
+                },
+                onMessage: { [weak self] connectionID, data in
+                    DispatchQueue.main.async { [weak self] in
+                        self?.sendChromeControl(["type": "chrome_port_message",
+                            "connectionId": connectionID,
+                            "base64": data.base64EncodedString()])
+                    }
+                },
+                onClosed: { [weak self] connectionID in
+                    DispatchQueue.main.async { [weak self] in
+                        self?.sendChromeControl(["type": "chrome_port_closed",
+                            "connectionId": connectionID])
+                    }
+                })
+            try listener.start()
+            chromeListener = listener
+        } catch {
+            statusField?.stringValue = "Existing Chrome listener unavailable: \(error)."
+        }
+    }
+
+    private func sendChromeControl(_ object: [String: Any]) {
+        guard let pipe = controllerInput, send(object, through: pipe,
+            limit: 65_536) else {
+            chromeListener?.stop()
+            chromeListener = nil
+            statusField?.stringValue = "Existing Chrome controller link unavailable."
+            return
+        }
+    }
+
     private func receiveOutput(_ data: Data) {
         if data.isEmpty { return }
         outputBuffer.append(data)
-        guard outputBuffer.count <= 32_768 else {
+        guard outputBuffer.count <= 131_072 else {
             statusField?.stringValue = "Controller protocol exceeded its limit. Stop and relaunch."
             controller?.terminate()
             return
@@ -226,7 +289,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         while let newline = outputBuffer.firstIndex(of: 10) {
             let line = Data(outputBuffer[..<newline])
             outputBuffer.removeSubrange(...newline)
-            guard line.count <= 16_384,
+            guard line.count <= 65_536,
                   let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any]
             else {
                 statusField?.stringValue = "Controller returned invalid data. Stop and relaunch."
@@ -238,6 +301,33 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
                         self?.sendRaw(reply)
                     }
                 }
+                continue
+            }
+            if object["type"] as? String == "chrome_port_send",
+               let connectionID = object["connectionId"] as? String,
+               let payload = object["payload"] as? [String: Any],
+               let data = try? JSONSerialization.data(withJSONObject: payload),
+               data.count <= 65_536 {
+                chromeListener?.send(data, to: connectionID)
+                continue
+            }
+            if object["type"] as? String == "chrome_port_close",
+               let connectionID = object["connectionId"] as? String {
+                chromeListener?.closeConnection(connectionID)
+                continue
+            }
+            if object["type"] as? String == "chrome_observation",
+               let title = object["title"] as? String,
+               let url = object["url"] as? String,
+               let elements = object["elements"] as? [[String: Any]] {
+                let labels = elements.prefix(12).compactMap { item -> String? in
+                    guard let role = item["role"] as? String,
+                          let label = item["label"] as? String else { return nil }
+                    return "\(role): \(label)"
+                }
+                nativeOutput?.string = "Existing Chrome read-only tab: \(title)\n\(url)\n"
+                    + labels.joined(separator: "\n")
+                statusField?.stringValue = "Existing Chrome tab observed. No action was sent."
                 continue
             }
             guard
@@ -299,6 +389,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     }
 
     private func controllerExited(_ code: Int32) {
+        chromeListener?.stop()
+        chromeListener = nil
         if activeSurface == .native, let activeRequestID {
             nativeWorker.requestLocalStop(activeRequestID)
         }
@@ -435,9 +527,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func send(_ object: [String: Any], through pipe: Pipe) -> Bool {
+    private func send(_ object: [String: Any], through pipe: Pipe,
+                      limit: Int = 16_384) -> Bool {
         guard let data = try? JSONSerialization.data(withJSONObject: object),
-              data.count <= 16_384 else { return false }
+              data.count <= limit else { return false }
         do {
             try pipe.fileHandleForWriting.write(contentsOf: data + Data([10]))
             return true
