@@ -19,6 +19,10 @@ let package = Package(
             name: "PeerIdentityCheck",
             dependencies: ["PeerIdentity"]
         ),
+        .executableTarget(
+            name: "RunningProcessCheck",
+            dependencies: ["PeerIdentity"]
+        ),
         .testTarget(name: "ProtocolDigestTests", dependencies: ["ProtocolDigest"])
     ]
 )

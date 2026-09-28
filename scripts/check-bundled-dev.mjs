@@ -26,6 +26,16 @@ const bundled = spawnSync('/usr/libexec/PlistBuddy',
   ['-c', 'Print :SystemOneBundledRuntime', plist], { encoding: 'utf8' });
 assert.equal(bundled.status, 0);
 assert.equal(bundled.stdout.trim(), 'true');
+const expectedHash = spawnSync('/usr/libexec/PlistBuddy',
+  ['-c', 'Print :SystemOneControllerNodeCDHash', plist], { encoding: 'utf8' });
+assert.equal(expectedHash.status, 0);
+assert.match(expectedHash.stdout.trim(), /^[a-f0-9]{40,128}$/);
+const actualIdentity = spawnSync('codesign', ['-dv', '--verbose=4', node],
+  { encoding: 'utf8' });
+assert.equal(actualIdentity.status, 0);
+assert.match(actualIdentity.stderr, /Identifier=com\.aurium\.systemone\.bundlednode/);
+assert.equal(actualIdentity.stderr.match(/^CDHash=([a-f0-9]+)$/m)?.[1],
+  expectedHash.stdout.trim());
 for (const key of ['SystemOneNodeExecutable', 'SystemOneControllerScript']) {
   const external = spawnSync('/usr/libexec/PlistBuddy',
     ['-c', `Print :${key}`, plist], { encoding: 'utf8' });
@@ -60,6 +70,10 @@ try {
   // A restricted PATH prevents accidental use of Homebrew at runtime.
   const env = { ...process.env, PATH: '/usr/bin:/bin',
     PLAYWRIGHT_BROWSERS_PATH: browsers };
+  const identity = await run(join(contents, 'MacOS', 'SystemOneDev'),
+    ['--check-controller-identity'], env, root);
+  assert.equal(identity.code, 0, identity.stderr);
+  assert.match(identity.stdout, /PASS: bundled controller running code identity accepted/);
   const controller = await run(node, [script, join(root, 'attempts.sqlite')],
     env, root);
   assert.equal(controller.code, 0, controller.stderr);

@@ -26,6 +26,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     private var inspectionEpoch = 0
     private var inspectionPending = false
     private var controller: Process?
+    private var controllerRequirement: RunningProcessRequirement?
     private var controllerInput: Pipe?
     private var controllerOutput: Pipe?
     private var outputBuffer = Data()
@@ -33,8 +34,32 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     private var activeSurface: ActiveSurface?
     private var stopRequestID: String?
     private var quitPending = false
+    private var identityCheckSupport: URL?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if CommandLine.arguments.contains("--check-controller-identity") {
+            identityCheckSupport = FileManager.default.temporaryDirectory
+                .appendingPathComponent("systemone-controller-id-\(UUID().uuidString)",
+                                    isDirectory: true)
+            startController()
+            guard let process = controller, controllerRequirement != nil else {
+                fputs("Controller identity check failed to start.\n", stderr)
+                if let identityCheckSupport {
+                    try? FileManager.default.removeItem(at: identityCheckSupport)
+                }
+                exit(1)
+            }
+            controllerOutput?.fileHandleForReading.readabilityHandler = nil
+            controllerInput?.fileHandleForWriting.closeFile()
+            process.waitUntilExit()
+            let success = process.terminationStatus == 0
+            if let identityCheckSupport {
+                try? FileManager.default.removeItem(at: identityCheckSupport)
+            }
+            print(success ? "PASS: bundled controller running code identity accepted"
+                          : "FAIL: bundled controller did not exit cleanly")
+            exit(success ? 0 : 1)
+        }
         // Development fallback: a hidden menu-bar item remains reachable from
         // the Dock. Release packaging will use the agent-app lifecycle.
         NSApp.setActivationPolicy(.regular)
@@ -225,10 +250,22 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             statusField?.stringValue = "Development controller configuration is missing. Rebuild the app."
             return
         }
-        let support = FileManager.default.urls(for: .applicationSupportDirectory,
-                                               in: .userDomainMask)[0]
+        let support = identityCheckSupport ?? FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("SystemOne-Dev", isDirectory: true)
         do {
+            let requirement: RunningProcessRequirement?
+            if bundled {
+                guard let hash = Bundle.main.object(forInfoDictionaryKey:
+                    "SystemOneControllerNodeCDHash") as? String else {
+                    throw PeerIdentityError.missingTrustAnchor
+                }
+                requirement = try RunningProcessRequirement(
+                    signingIdentifier: "com.aurium.systemone.bundlednode",
+                    allowedCDHashes: [hash])
+            } else {
+                requirement = nil // External-source development build only.
+            }
             try FileManager.default.createDirectory(at: support,
                 withIntermediateDirectories: true,
                 attributes: [.posixPermissions: 0o700])
@@ -245,6 +282,22 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             process.standardInput = input
             process.standardOutput = output
             process.standardError = FileHandle.nullDevice
+            try process.run()
+            do {
+                if let requirement {
+                    guard process.isRunning else { throw PeerIdentityError.invalidRequirement }
+                    _ = try authenticateRunningProcess(
+                        pid: process.processIdentifier, requirement: requirement)
+                    guard process.isRunning else { throw PeerIdentityError.invalidRequirement }
+                }
+            } catch {
+                if process.isRunning { process.terminate() }
+                throw error
+            }
+            controller = process
+            controllerRequirement = requirement
+            controllerInput = input
+            controllerOutput = output
             output.fileHandleForReading.readabilityHandler = { [weak self] handle in
                 let data = handle.availableData
                 Task { @MainActor [weak self] in self?.receiveOutput(data) }
@@ -253,19 +306,33 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
                 let code = ended.terminationStatus
                 Task { @MainActor [weak self] in self?.controllerExited(code) }
             }
-            try process.run()
-            controller = process
-            controllerInput = input
-            controllerOutput = output
         } catch {
-            statusField?.stringValue = "Could not start the local controller. Rebuild and retry."
+            statusField?.stringValue = "Controller identity or launch failed. Rebuild and retry."
+        }
+    }
+
+    private func controllerIdentityValid() -> Bool {
+        guard let process = controller, process.isRunning else { return false }
+        guard let requirement = controllerRequirement else { return true }
+        do {
+            _ = try authenticateRunningProcess(pid: process.processIdentifier,
+                                               requirement: requirement)
+            return process.isRunning
+        } catch {
+            if activeSurface == .native, let activeRequestID {
+                nativeWorker.requestLocalStop(activeRequestID)
+            }
+            chromeListener?.stop()
+            if process.isRunning { process.terminate() }
+            statusField?.stringValue = "Controller identity changed; task outcome uncertain."
+            return false
         }
     }
 
     private func startChromeListener() {
         // The development listener is opt-in. Release packaging must supply
         // signed, pinned app/host identities and a managed socket lifecycle.
-        guard controller?.isRunning == true,
+        guard controllerIdentityValid(),
               let extensionID = Bundle.main.object(forInfoDictionaryKey:
                 "SystemOneChromeExtensionId") as? String,
               extensionID.range(of: "^[a-p]{32}$", options: .regularExpression) != nil,
@@ -323,6 +390,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
 
     private func receiveOutput(_ data: Data) {
         if data.isEmpty { return }
+        guard controllerIdentityValid() else { return }
         outputBuffer.append(data)
         guard outputBuffer.count <= 131_072 else {
             statusField?.stringValue = "Controller protocol exceeded its limit. Stop and relaunch."
@@ -447,6 +515,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             nativeWorker.requestLocalStop(activeRequestID)
         }
         controller = nil
+        controllerRequirement = nil
         controllerInput = nil
         controllerOutput?.fileHandleForReading.readabilityHandler = nil
         controllerOutput = nil
@@ -621,6 +690,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
 
     private func send(_ object: [String: Any], through pipe: Pipe,
                       limit: Int = 16_384) -> Bool {
+        guard controllerIdentityValid() else { return false }
         guard let data = try? JSONSerialization.data(withJSONObject: object),
               data.count <= limit else { return false }
         do {
@@ -630,7 +700,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     }
 
     private func sendRaw(_ data: Data) {
-        guard data.count <= 16_384, let pipe = controllerInput else { return }
+        guard data.count <= 16_384, let pipe = controllerInput,
+              controllerIdentityValid() else { return }
         do { try pipe.fileHandleForWriting.write(contentsOf: data + Data([10])) }
         catch { statusField?.stringValue = "Native worker reply failed; task outcome uncertain." }
     }
