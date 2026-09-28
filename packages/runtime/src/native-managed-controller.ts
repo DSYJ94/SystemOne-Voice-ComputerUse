@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { existsSync, mkdirSync } from 'node:fs';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ManagedFillTask } from '../../browser/src/managed-fill-task.ts';
 import { ManagedNavigateTask } from '../../browser/src/managed-navigate-task.ts';
+import { ManagedPortalLaunchFailure, ManagedPortalSession } from '../../browser/src/managed-portal.ts';
+import { ScriptedPortalStore, ScriptedPortalTask } from '../../browser/src/scripted-portal-task.ts';
 import { ManagedLaunchFailure, ManagedObservationSession } from '../../browser/src/managed-observation.ts';
 import { ContractError, digest, parseJSON } from '../../protocol/src/json.ts';
 import { bindEndpoint } from '../../protocol/src/session.ts';
@@ -66,12 +68,22 @@ interface StartChromeFill {
   readonly command: Record<string, JSONValue>;
 }
 
-type NativeRequest = StartFill | StartNavigate | StartNativeFill | StartChromeFill | Stop;
+interface StartPortalWorkflow {
+  readonly type: 'start_portal_workflow';
+  readonly requestId: string;
+  readonly url: string;
+  readonly command: Record<string, JSONValue>;
+}
+
+type NativeRequest = StartFill | StartNavigate | StartNativeFill
+  | StartChromeFill | StartPortalWorkflow | Stop;
 type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
   | 'verified_dom_fill' | 'unsupported' | 'uncertain' | 'stopping'
   | 'stopped' | 'busy' | 'error' | 'blocked_recovery'
   | 'observing_native' | 'verified_native_fill' | 'already_matched'
-  | 'observing_chrome' | 'verified_chrome_dom_fill' | 'verified_navigation';
+  | 'observing_chrome' | 'verified_chrome_dom_fill' | 'verified_navigation'
+  | 'portal_located' | 'portal_opened' | 'portal_downloaded'
+  | 'verified_portal_download' | 'portal_paused';
 
 function isRecord(value: JSONValue): value is Record<string, JSONValue> {
   return value !== null && !Array.isArray(value) && typeof value === 'object';
@@ -91,6 +103,15 @@ function requestFromLine(line: Uint8Array): NativeRequest {
     }
     return { type: 'stop', requestId: value.requestId as string,
       targetRequestId: value.targetRequestId };
+  }
+  if (value.type === 'start_portal_workflow') {
+    if (Object.keys(value).sort().join(',') !== 'command,requestId,type,url'
+      || typeof value.url !== 'string' || value.url.length > 200
+      || value.command === undefined || !isRecord(value.command)) {
+      throw new ContractError('invalid fixture workflow request');
+    }
+    return { type: 'start_portal_workflow', requestId: value.requestId as string,
+      url: value.url, command: value.command };
   }
   if (value.type === 'start_native_fill') {
     if (Object.keys(value).sort().join(',')
@@ -170,8 +191,8 @@ interface ActiveTask {
   cancelled: boolean;
   keepOpen: boolean;
   launchFenceUnconfirmed: boolean;
-  session?: ManagedObservationSession;
-  task?: ManagedFillTask | ManagedNavigateTask;
+  session?: ManagedObservationSession | ManagedPortalSession;
+  task?: ManagedFillTask | ManagedNavigateTask | ScriptedPortalTask;
   browserFenced: boolean;
   done: Promise<void>;
 }
@@ -181,6 +202,7 @@ interface ActiveTask {
  * listens on a network port or accepts model-originated execution requests. */
 export class NativeManagedController {
   readonly #journal: AttemptJournal;
+  readonly #portalStore: ScriptedPortalStore | undefined;
   readonly #send: (requestId: string, phase: Phase) => void;
   readonly #headless: boolean;
   readonly #nativeWorker: NativeFieldPipeWorker | undefined;
@@ -198,8 +220,10 @@ export class NativeManagedController {
 
   constructor(journal: AttemptJournal, send: (requestId: string, phase: Phase) => void,
     headless = false, nativeWorker?: NativeFieldPipeWorker,
-    chromeOutput?: (value: Record<string, JSONValue>) => void) {
+    chromeOutput?: (value: Record<string, JSONValue>) => void,
+    portalStore?: ScriptedPortalStore) {
     this.#journal = journal;
+    this.#portalStore = portalStore;
     this.#send = send;
     this.#headless = headless;
     this.#nativeWorker = nativeWorker;
@@ -207,6 +231,12 @@ export class NativeManagedController {
     this.#nativeAuthority = nativeWorker
       ? new NativeFillAuthority(journal, nativeWorker) : undefined;
     journal.recoverAfterRestart();
+    portalStore?.recoverAfterRestart();
+  }
+
+  startupPhase(): Phase {
+    return this.#journal.unresolvedAttempts().length
+      || this.#portalStore?.hasBlockingTask() ? 'blocked_recovery' : 'ready';
   }
 
   receive(line: Uint8Array): void {
@@ -237,7 +267,8 @@ export class NativeManagedController {
     }
     if (this.#workerFenceFailed || this.#nativeAuthority?.needsRecovery
       || [...this.#chromeAuthorities.values()].some(x => x.needsRecovery)
-      || this.#journal.unresolvedAttempts().length) {
+      || this.#journal.unresolvedAttempts().length
+      || this.#portalStore?.hasBlockingTask()) {
       this.#send(request.requestId, 'blocked_recovery');
       return;
     }
@@ -296,11 +327,14 @@ export class NativeManagedController {
     this.#active = active;
     this.#send(request.requestId, 'starting');
     active.done = (request.type === 'start_navigate'
-      ? this.#runNavigate(request, active) : this.#run(request, active)).finally(() => {
+      ? this.#runNavigate(request, active)
+      : request.type === 'start_portal_workflow'
+        ? this.#runPortal(request, active) : this.#run(request, active)).finally(() => {
       if (this.#active === active && !active.keepOpen && !active.cancelled) {
         this.#active = undefined;
         this.#send(request.requestId,
           this.#workerFenceFailed || this.#journal.unresolvedAttempts().length
+            || this.#portalStore?.hasBlockingTask()
             ? 'blocked_recovery' : 'ready');
       }
     });
@@ -332,6 +366,7 @@ export class NativeManagedController {
       this.#active = undefined;
     }
     this.#journal.close();
+    this.#portalStore?.close();
   }
 
   #receiveChrome(message: Record<string, JSONValue>): void {
@@ -568,6 +603,98 @@ export class NativeManagedController {
     }
   }
 
+  async #runPortal(request: StartPortalWorkflow, active: ActiveTask): Promise<void> {
+    const store = this.#portalStore;
+    if (!store) { this.#send(request.requestId, 'unsupported'); return; }
+    try {
+      const url = new URL(request.url);
+      if (url.href !== request.url || url.protocol !== 'http:'
+        || url.hostname !== '127.0.0.1' || !url.port || url.pathname !== '/'
+        || url.search || url.hash || url.username || url.password) {
+        throw new ContractError('fixture workflow requires exact loopback root');
+      }
+      const command = request.command;
+      if (command.type !== 'command' || command.source !== 'text'
+        || command.mode !== 'command' || command.isFinal !== true
+        || command.taskId !== request.requestId || command.taskEpoch !== 1
+        || command.goalRevision !== 1
+        || command.text !== `Download fixture invoice INV-105 from ${request.url}`
+        || command.originSurface === undefined || !isRecord(command.originSurface)
+        || command.originSurface.appBundleId !== 'com.aurium.systemone.dev') {
+        throw new ContractError('fixture workflow command binding changed');
+      }
+      const destinationPath = store.fixtureDestination('INV-105');
+      if (existsSync(destinationPath)) {
+        this.#send(request.requestId, 'unsupported');
+        return;
+      }
+      const revision = { taskId: request.requestId, taskEpoch: 1, goalRevision: 1 };
+      const endpoint = bindEndpoint(['command']);
+      const input = new CommittedInputSession(endpoint, revision);
+      const route = input.accept(endpoint, Buffer.from(JSON.stringify(command)));
+      if (route.kind !== 'interpret_command') throw new ContractError('not a command');
+      const registry = new TaskAdmissionRegistry(revision, input);
+      const contract = { taskId: request.requestId, origin: url.origin,
+        outcomeKind: 'DOWNLOAD' as const, invoiceId: 'INV-105',
+        title: 'April Service Statement', account: 'Harbor Works',
+        query: 'April', destinationPath };
+      const admission = registry.admit(route.input, {
+        admissionId: randomUUID(), goal: route.input.text,
+        outcomeKind: 'DOWNLOAD', scopeRef: 'synthetic-portal-only',
+        completionVerifierRef: 'portal-download-v1',
+        policyRevision: 'portal-policy-1',
+        approvedEffects: ['READ', 'NAVIGATE', 'DOWNLOAD', 'LOCAL_EDIT'],
+        parameters: [
+          { parameterRef: 'origin', sourceRef: route.input.messageId,
+            valueDigest: digest(contract.origin) },
+          ...(['invoiceId', 'title', 'account', 'query'] as const).map(parameterRef => ({
+            parameterRef, sourceRef: 'fixture-config',
+            valueDigest: digest(contract[parameterRef]) })),
+          { parameterRef: 'destinationPath', sourceRef: 'fixture-output',
+            valueDigest: digest(destinationPath) },
+        ],
+      });
+      const session = await ManagedPortalSession.launch(request.url,
+        { headless: this.#headless });
+      active.session = session;
+      if (active.cancelled) return;
+      const started = store.start(registry, admission, contract);
+      const task = new ScriptedPortalTask(store, this.#journal, session,
+        admission, started);
+      active.task = task;
+      while (!active.cancelled) {
+        const record = await task.advance();
+        if (active.cancelled) return;
+        if (record.state === 'completed') {
+          this.#send(request.requestId, 'verified_portal_download');
+          return;
+        }
+        if (record.state !== 'active') {
+          this.#send(request.requestId, 'portal_paused');
+          return;
+        }
+        this.#send(request.requestId, record.stage === 'located' ? 'portal_located'
+          : record.stage === 'opened' ? 'portal_opened' : 'portal_downloaded');
+      }
+    } catch (error) {
+      if (error instanceof ManagedPortalLaunchFailure && !error.workerFenced) {
+        active.launchFenceUnconfirmed = true;
+        this.#workerFenceFailed = true;
+      }
+      if (!active.cancelled) {
+        if (store.get(request.requestId)?.state === 'active') {
+          store.pause(request.requestId, 'controller workflow outcome uncertain');
+          this.#send(request.requestId, 'portal_paused');
+        } else this.#send(request.requestId, 'error');
+      }
+    } finally {
+      try {
+        await active.session?.close();
+        active.browserFenced = !active.launchFenceUnconfirmed;
+      } catch { this.#workerFenceFailed = true; }
+    }
+  }
+
   async #stop(request: Stop): Promise<void> {
     const chromeActive = this.#chromeActive;
     if (chromeActive?.requestId === request.targetRequestId) {
@@ -606,7 +733,9 @@ export class NativeManagedController {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const fence = active.task
-        ? active.task.stop().then(result => result.browserFenced, () => false)
+        ? active.task.stop().then(result => active.task instanceof ScriptedPortalTask
+          ? ('workerFenced' in result && result.workerFenced)
+          : result.browserFenced, () => false)
         : active.session
           ? active.session.close().then(() => true, () => false)
           : Promise.resolve(false); // A browser launch is still in flight.
@@ -638,6 +767,9 @@ async function main(): Promise<void> {
   if (!journalPath || !isAbsolute(journalPath)) throw new Error('absolute journal path required');
   mkdirSync(dirname(journalPath), { recursive: true, mode: 0o700 });
   const journal = new AttemptJournal(journalPath);
+  const outputRoot = join(dirname(journalPath), 'fixture-output');
+  mkdirSync(outputRoot, { recursive: true, mode: 0o700 });
+  const portalStore = new ScriptedPortalStore(journalPath, outputRoot);
   const write = (requestId: string, phase: Phase) => {
     process.stdout.write(`${JSON.stringify({ type: 'status', requestId, phase })}\n`);
   };
@@ -646,8 +778,8 @@ async function main(): Promise<void> {
   });
   const controller = new NativeManagedController(journal, write,
     process.env.SYSTEMONE_MANAGED_HEADLESS === '1', worker,
-    value => { process.stdout.write(`${JSON.stringify(value)}\n`); });
-  write('startup', 'ready');
+    value => { process.stdout.write(`${JSON.stringify(value)}\n`); }, portalStore);
+  write('startup', controller.startupPhase());
   let pending = Buffer.alloc(0);
   process.stdin.on('data', chunk => {
     const incoming = Buffer.from(chunk);

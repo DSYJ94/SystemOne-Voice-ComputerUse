@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { open, readFile } from 'node:fs/promises';
-import { basename, dirname, isAbsolute } from 'node:path';
-import { realpathSync } from 'node:fs';
+import { basename, dirname, isAbsolute, join } from 'node:path';
+import { lstatSync, realpathSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { digest } from '../../protocol/src/json.ts';
 import { AttemptJournal } from '../../runtime/src/attempt-journal.ts';
@@ -58,6 +58,11 @@ export class ScriptedPortalStore {
   readonly #admissions = new WeakMap<object, TaskAdmission>();
 
   constructor(path: string, fixtureOutputRoot: string) {
+    const output = lstatSync(fixtureOutputRoot);
+    if (!output.isDirectory() || output.isSymbolicLink()
+      || (output.mode & 0o022) !== 0) {
+      throw new Error('fixture output directory is unsafe');
+    }
     this.#outputRoot = realpathSync(fixtureOutputRoot);
     this.#db = new DatabaseSync(path);
     this.#db.exec(`PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;
@@ -74,6 +79,16 @@ export class ScriptedPortalStore {
   }
 
   close(): void { this.#db.close(); }
+
+  fixtureDestination(invoiceId: string): string {
+    if (!INVOICE_ID.test(invoiceId)) throw new Error('invalid fixture invoice ID');
+    return join(this.#outputRoot, `${invoiceId}.txt`);
+  }
+
+  hasBlockingTask(): boolean {
+    return Boolean(this.#db.prepare(`SELECT 1 FROM scripted_portal_tasks
+      WHERE state IN ('active', 'paused') OR in_flight IS NOT NULL LIMIT 1`).get());
+  }
 
   start(registry: TaskAdmissionRegistry, admission: TaskAdmission,
     contract: ScriptedPortalContract): ScriptedPortalRecord {
@@ -412,11 +427,11 @@ function assertAdmission(admission: TaskAdmission, contract: ScriptedPortalContr
   const effects: readonly Effect[] = contract.outcomeKind === 'DOWNLOAD'
     ? ['READ', 'NAVIGATE', 'DOWNLOAD', 'LOCAL_EDIT'] : ['READ', 'NAVIGATE'];
   const expected = new Map<string, [string, string]>([
-    ['origin', ['fixture-config', contract.origin]],
-    ['invoiceId', [admission.commandMessageId, contract.invoiceId]],
-    ['title', [admission.commandMessageId, contract.title]],
-    ['account', [admission.commandMessageId, contract.account]],
-    ['query', [admission.commandMessageId, contract.query]],
+    ['origin', [admission.commandMessageId, contract.origin]],
+    ['invoiceId', ['fixture-config', contract.invoiceId]],
+    ['title', ['fixture-config', contract.title]],
+    ['account', ['fixture-config', contract.account]],
+    ['query', ['fixture-config', contract.query]],
   ]);
   if (contract.destinationPath) {
     expected.set('destinationPath', ['fixture-output', contract.destinationPath]);

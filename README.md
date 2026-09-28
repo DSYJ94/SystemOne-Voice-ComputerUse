@@ -78,8 +78,9 @@ field fill. There is no general-purpose executor or release binary yet.
   host, models, notarization and clean-Mac qualification; see
   [bundled runtime](docs/BUNDLED_DEV_RUNTIME.md).
 - Fixture-scoped outcome checks re-observe the portal and distinguish an exact
-  search result, an opened detail and a saved document. These are not wired to
-  the general host controller or a production completion engine.
+  search result, an opened detail and a saved document. They now run through
+  the persistent development controller for one fixed invoice, but are not a
+  production completion engine.
 - A fixture-scoped durable task accepts a one-use admitted contract and runs
   portal search/open/download/save one action at a time, keeping verified progress
   and pausing after unknown in-flight outcomes. Each action requires a short-lived
@@ -87,6 +88,8 @@ field fill. There is no general-purpose executor or release binary yet.
   writes an attempt and dispatch boundary before its browser call. Stop fences both records.
   Output is confined to a private fixture directory. This is still in-process
   fixture authority, not authenticated production dispatch.
+  The fixed `INV-105` workflow is reachable from a compiled development-panel
+  button and passes a controller child-process test; owner UI verification remains open.
 - A read-only native Accessibility observation package with bounded traversal,
   private observation-scoped handles and synthetic stale-target checks. The
   development AppKit panel can now inspect one explicitly named running app

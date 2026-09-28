@@ -1,8 +1,9 @@
 # Development native-to-managed-browser test
 
 This is an opt-in local test on macOS. It exercises a real AppKit menu-bar
-process, a persistent Node controller over inherited private pipes, and one
-isolated managed Chromium field edit. It does not control existing Chrome or
+process, a persistent Node controller over inherited private pipes, one
+isolated managed Chromium field edit, and a fixed synthetic invoice workflow.
+It does not control existing Chrome or
 native apps, use CLM or voice, submit a form, or qualify a release build.
 
 Use a terminal in the repository with the pinned Node and Playwright Chromium
@@ -36,6 +37,19 @@ development UI. The app accepts HTTPS pages but arbitrary-site privacy,
 compatibility and worker isolation are not yet qualified; use the synthetic
 fixture for this manual test. A field edit is a local DOM state, not a submit
 or a persisted website change. Stop cannot undo an edit already dispatched.
+
+The same development panel now has **Download fixture INV-105**. With the
+synthetic portal still running, enter its exact URL with a trailing `/` in
+**Approved page URL** and click that button. The controller opens disposable
+Chromium, searches for the synthetic invoice, verifies its exact ID/title/account,
+opens it, downloads it and saves `INV-105.txt` under
+`~/Library/Application Support/SystemOne-Dev/fixture-output/`. The status must
+advance through located, opened and downloaded before it says verified. The
+browser closes on completion. This fixed workflow does not parse a general
+instruction or use CLM. An existing output file is never overwritten; inspect
+or move it before a fresh run. If Stop or a crash leaves an unresolved action,
+the app must show a recovery block instead of claiming completion. This panel
+path compiled, but has not yet been clicked and observed by the owner.
 
 The build is ad-hoc signed and refers to this checkout's Node executable and
 TypeScript source by absolute paths. Move/rebuild the checkout or change Node
