@@ -5,6 +5,7 @@ set -euo pipefail
 # microphone capture, or Accessibility permission request happens here.
 script_dir=${0:A:h}
 repository_root=${script_dir:h}
+source "$script_dir/native-mock-processes.sh"
 fixture_app="$repository_root/.build/native-mock/SystemOne Fixture.app"
 fixture_binary="$fixture_app/Contents/MacOS/SystemOneFixture"
 mock_binary="$repository_root/.build/native-mock/SystemOne Mock.app/Contents/MacOS/SystemOneMock"
@@ -35,6 +36,7 @@ other_fixture=$(/bin/ps -axo pid=,comm= | /usr/bin/awk -v wanted="$fixture_binar
 if [[ -n "$other_fixture" ]]; then
   print -u2 'Quit the earlier SystemOne Fixture before opening this checkout:'
   print -u2 "$other_fixture"
+  print -u2 'Activate that Fixture and press Command-Q; closing its window can leave the app running.'
   exit 1
 fi
 
@@ -52,7 +54,24 @@ fi
 
 print 'Opening SystemOne Dev and the synthetic Fixture. No task starts automatically.'
 zsh "$script_dir/run-native-dev.sh"
-open "$fixture_app"
+own_fixture=$(native_mock_pids_for_binary "$fixture_binary") || {
+  print -u2 'Could not verify whether this Fixture build is already running.'
+  exit 1
+}
+if [[ -n "$own_fixture" ]]; then
+  open "$fixture_app"
+else
+  open -n "$fixture_app"
+fi
+for (( attempt = 0; attempt < 30; attempt++ )); do
+  own_fixture=$(native_mock_pids_for_binary "$fixture_binary") || exit 1
+  if [[ -n "$own_fixture" ]]; then break; fi
+  /bin/sleep 0.1
+done
+if [[ -z "$own_fixture" ]]; then
+  print -u2 'SystemOne Fixture did not remain running after LaunchServices returned.'
+  exit 1
+fi
 
 print ''
 print 'The loopback portal URL appears below. Leave this terminal open while testing.'

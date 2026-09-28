@@ -12,7 +12,8 @@ then runs the loopback invoice portal in the same terminal. It does not request
 Accessibility access, capture audio, install a Chrome extension, or connect to
 an account. Leave the terminal open and copy the printed portal URL. If older
 SystemOne Dev or SystemOne Fixture builds are running from another checkout,
-quit them first; the launcher refuses to open an ambiguous target. A rebuild
+activate each older app and press Command-Q first; closing a window can leave
+the app running. The launcher refuses to open an ambiguous target. A rebuild
 of the ad-hoc-signed Dev app can require a new macOS
 Accessibility grant.
 
