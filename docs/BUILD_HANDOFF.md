@@ -43,10 +43,11 @@ established by the current fixture-only native or browser tests.
   [#21 admitted managed-browser fill](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/21),
   [#22 native-to-managed development bridge](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/22),
   [#23 native read-only inspection](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/23),
-  [#24 guarded native value driver](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/24).
+  [#24 guarded native value driver](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/24),
+  [#25 journaled native task authority](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/25).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/native-ax-action-driver`,
-  stacked on `codex/native-ax-worker`.
+- The current implementation branch is `codex/native-ax-task-authority`,
+  stacked on `codex/native-ax-action-driver`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
