@@ -52,10 +52,11 @@ established by the current fixture-only native or browser tests.
   [#30 fixture-only CLM reference probe](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/30),
   [#31 bounded development Stop acknowledgement](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/31),
   [#32 bundled controller running-code identity](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/32),
-  [#33 native worker digest binding](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/33).
+  [#33 native worker digest binding](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/33),
+  [#34 native worker replay ledger](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/34).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/native-worker-digest-binding`,
-  stacked on `codex/bundled-controller-identity`.
+- The current implementation branch is `codex/native-worker-replay-ledger`,
+  stacked on `codex/native-worker-digest-binding`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
