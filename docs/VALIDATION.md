@@ -793,15 +793,38 @@ from the production `DevChromeListener` source authenticated the host; the host
 authenticated the listener. It relayed a nonce frame and its reply from a
 synthetic Node controller, then carried the production service worker's
 `hello`/`observe` exchange and semantic `Find invoice` observation from the
-loopback portal. A synthetic
-private field value was absent from the reported snapshot. Reload
-revoked the document grant. Changed listener and host CDHashes each caused a
+loopback portal. A synthetic private field value was absent from the reported
+snapshot. Reload revoked the document grant. Changed listener and host CDHashes each caused a
 browser-visible disconnect without delivering another probe. The manifest was
 registered only inside the temporary Chromium profile; the test removed that
-directory and did not change
-the owner's Chrome setup.
+directory and did not change the owner's Chrome setup.
 
 This is real browser-to-host transport and production service-worker read-path
-evidence, but the copy had test-only loopback host permission and a test handler
-invocation. The actual toolbar click and `activeTab` grant, fill workflow,
-complete AppKit app, Google Chrome and current profile remain untested end to end.
+evidence. The copy has no persistent host permission. Its positive read now
+uses Chromium's test-only action trigger to exercise temporary `activeTab`;
+a physical toolbar click, fill workflow, complete AppKit app, Google Chrome and
+current profile remain untested end to end.
+
+## Existing-Chrome grant boundary, 28 September 2026
+
+`npm run test:chrome-browser-transport` passed again with a new negative case.
+Before invoking any browser action, the temporary copy of the production
+extension invoked its handler on the synthetic portal tab. The
+browser badge became `OFF`, no semantic observation reached the controller,
+and the test observed no controller protocol error. The positive read instead
+used Chromium's `Extensions.triggerAction` on the exact tab target, with no
+persistent host grant. The production `onClicked` handler then completed the
+semantic observation through the mutually authenticated Swift processes and
+revoked it on reload. `npm run check` passed **206/206 tests**.
+
+Chrome's [commands documentation](https://developer.chrome.com/docs/extensions/reference/api/commands)
+supports `_execute_action` as an action invocation shortcut. A temporary
+shortcut registered in the disposable Chromium profile, but Playwright
+`Meta+Shift+Y` keys did not dispatch the action in headless or headed mode;
+both bounded attempts timed out waiting for an observation. Those failed
+automation attempts do not show whether a physical Chrome toolbar click or
+keyboard shortcut works. The separate DevTools action-trigger check did pass
+with `--enable-unsafe-extension-debugging` and Playwright's private debugging
+pipe, both confined to disposable Chromium. This flag is test-only, not a
+requirement for existing-profile support. Physical toolbar behavior and Google
+Chrome's installed profile remain unverified.

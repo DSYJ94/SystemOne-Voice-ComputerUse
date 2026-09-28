@@ -151,8 +151,11 @@ A temporary Playwright Chromium profile now connects a test-modified copy of
 the production extension to the signed Swift host and a signed test executable
 built from the production `DevChromeListener` source. Both peer identities are
 checked, with changed hashes rejected. The production service-worker source
-observes a semantic fixture field and revokes the grant on reload. Real toolbar
-invocation, complete AppKit integration and installed Google Chrome remain open.
+observes a semantic fixture field after Chromium's test-only extension action
+trigger grants `activeTab`, then revokes the grant on reload. A physical toolbar
+click, complete AppKit integration and installed Google Chrome remain open.
+The isolated handler also fails to observe a tab without a browser host grant;
+the successful read needs the action-triggered `activeTab` grant.
 Host/helper release identity, TCC attribution after installation and
 update, voice, CLM inference, privacy review, crash recovery across real workers,
 packaging/notarization and clean-Mac installation are unverified. Treat effects

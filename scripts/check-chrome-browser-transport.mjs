@@ -133,9 +133,9 @@ function extensionFiles() {
     copyFileSync(join(source, name), join(extension, name));
   }
   const manifest = JSON.parse(readFileSync(join(source, 'manifest.json'), 'utf8'));
-  // The temporary copy receives loopback host access because this test invokes
-  // its handler without a real toolbar click or activeTab user gesture.
-  manifest.host_permissions = ['http://127.0.0.1/*'];
+  // A test-only handler invocation cannot mint activeTab permission. The
+  // positive run uses Chromium's action trigger with no persistent host grant.
+  assert.equal(manifest.host_permissions, undefined);
   writeFileSync(join(extension, 'manifest.json'), JSON.stringify(manifest));
   const workerSource = readFileSync(join(source, 'service-worker.mjs'), 'utf8');
   const hooked = workerSource.replace('chrome.action.onClicked.addListener(tab => {',
@@ -159,16 +159,19 @@ function extensionFiles() {
 
 async function until(predicate, label) {
   for (let attempt = 0; attempt < 50; attempt++) {
-    if (predicate()) return;
+    if (await predicate()) return;
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   throw new Error(`timed out waiting for ${label}: ${sessionError?.message ?? 'no error'}`);
 }
 
 async function browserWorker() {
+  // Only the disposable Chromium profile has this DevTools test capability.
+  // Existing Chrome support must never require a debugging flag or port.
   context = await chromium.launchPersistentContext(profile, {
     channel: 'chromium', headless: true,
-    args: [`--disable-extensions-except=${extension}`,
+    args: ['--enable-unsafe-extension-debugging',
+      `--disable-extensions-except=${extension}`,
       `--load-extension=${extension}`],
   });
   return context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
@@ -220,14 +223,37 @@ try {
   assert.deepEqual(received, [{ type: 'probe', nonce: 'signed-roundtrip' }]);
   await until(() => closedConnections >= 1, 'probe port close');
 
+  const deniedPage = await context.newPage();
+  await deniedPage.goto(`${fixture.url}/`);
+  const deniedTabId = await worker.evaluate(async url => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) throw new Error('active fixture tab missing');
+    // Passing the URL is only a test-hook input, not a Chrome permission.
+    globalThis.testInvoke({ ...tab, url });
+    return tab.id;
+  }, deniedPage.url());
+  await until(() => worker.evaluate(tabId =>
+    chrome.action.getBadgeText({ tabId }).then(text => text === 'OFF'), deniedTabId),
+  'ungranted tab rejection');
+  assert.equal(observations.length, 0);
+  assert.equal(sessionError, undefined);
+  await context.close();
+  context = null;
+
+  worker = await browserWorker();
   const page = await context.newPage();
   await page.goto(`${fixture.url}/`);
   await page.locator('#query').fill('synthetic-private-value');
-  await worker.evaluate(async url => {
-    const tab = (await chrome.tabs.query({})).find(item => item.url === url);
-    if (!tab) throw new Error('fixture tab missing');
-    globalThis.testInvoke(tab);
-  }, page.url());
+  const browser = context.browser();
+  assert.ok(browser, 'persistent Chromium browser object missing');
+  const browserSession = await browser.newBrowserCDPSession();
+  const targets = await browserSession.send('Target.getTargets',
+    { filter: [{ type: 'tab', exclude: false }] });
+  const target = targets.targetInfos.find(item => item.type === 'tab'
+    && item.url === page.url());
+  assert.ok(target, 'fixture browser target missing');
+  await browserSession.send('Extensions.triggerAction',
+    { id: extensionId, targetId: target.targetId });
   await until(() => observations.length === 1, 'production extension observation');
   assert.equal(sessionError, undefined);
   assert.equal(observations[0].snapshot.title, 'Invoice Portal Fixture');
@@ -264,7 +290,7 @@ try {
   assert.ok(wrongHost.error && !wrongHost.timeout,
     `wrong host identity unexpectedly accepted: ${JSON.stringify(wrongHost)}`);
   assert.equal(received.filter(message => message.type === 'probe').length, 1);
-  process.stdout.write('PASS: temporary Chromium -> signed Swift host -> authenticated Swift listener -> synthetic controller; semantic read and navigation revocation; changed listener and host CDHashes rejected.\n');
+  process.stdout.write('PASS: ungranted handler cannot read; Chromium action grants activeTab for signed host/listener semantic read, then revokes on reload; changed listener and host CDHashes rejected.\n');
 } finally {
   await context?.close();
   await fixture?.close();
