@@ -57,10 +57,11 @@ established by the current fixture-only native or browser tests.
   [#35 controller-signed native permit](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/35),
   [#36 managed semantic navigation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/36),
   [#37 guarded Chrome host registration](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/37),
-  [#38 isolated Chrome native transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/38).
+  [#38 isolated Chrome native transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/38),
+  [#39 Chrome host/listener integration](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/39).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/chrome-isolated-transport`,
-  stacked on `codex/chrome-host-registration`.
+- The current implementation branch is `codex/chrome-listener-integration`,
+  stacked on `codex/chrome-isolated-transport`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
