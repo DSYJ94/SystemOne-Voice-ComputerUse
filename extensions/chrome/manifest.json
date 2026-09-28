@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "SystemOne Existing Chrome Bridge",
+  "description": "Connect one explicitly selected Chrome tab to SystemOne.",
+  "version": "0.1.0",
+  "minimum_chrome_version": "106",
+  "permissions": ["activeTab", "scripting", "nativeMessaging", "storage", "webNavigation"],
+  "background": {
+    "service_worker": "service-worker.mjs",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Connect this tab to SystemOne"
+  }
+}
