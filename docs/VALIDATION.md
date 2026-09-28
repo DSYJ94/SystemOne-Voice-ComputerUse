@@ -495,3 +495,20 @@ codesign verification. The native action remains unexposed.
 The command-line-tools linker emitted warnings about missing framework/library
 search paths, but exited successfully. A matching value at preflight remains a
 read-only match, not evidence of a dispatched action or durable completion.
+
+## Journaled native host task contract, 28 September 2026
+
+`node --test packages/runtime/test/native-fill-authority.test.ts` passed
+**7/7** synthetic worker tests. They cover an exact admitted candidate and
+one durable boundary, malformed command before observation, duplicate and
+incomplete observations, independently verified existing value, Stop during
+preflight, Stop after a boundary with a late verified receipt, lost setter
+reply and unconfirmed worker fence. The first full `npm run check` found one
+strict TypeScript optional-property test declaration error; it was fixed.
+The final `npm run check` passed TypeScript checking and **176/176** tests.
+
+No real AX worker was connected, no native effect was dispatched, and no
+AppKit task route or OS peer authentication was exercised. A successful
+synthetic worker receipt is not evidence of a real app change. Recovery after
+a stopped boundary-crossed task remains blocked pending explicit fresh
+observation and user intent.

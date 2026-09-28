@@ -64,6 +64,10 @@ field fill. There is no general-purpose executor or release binary yet.
   durable-boundary callback before setting it. Synthetic interference and Stop
   checks pass. The driver is **not callable from the app UI** or task controller;
   native actions remain unqualified. See [native action status](docs/NATIVE_ACTION.md).
+- A separate native host task class binds a final text command, complete
+  candidate set, supplied-value digest and one journaled attempt before calling
+  an abstract AX worker. Synthetic Stop, late-result and unknown-effect tests
+  pass. It is not yet connected to the AppKit worker or cross-surface owner.
 - A fixture-only managed-browser Stop path cancels the task record and closes
   the isolated Chromium context. A delayed-control test confirms no download
   request after Stop. Stop reports an incomplete worker fence when a local save

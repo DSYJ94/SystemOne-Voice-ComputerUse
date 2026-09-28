@@ -106,6 +106,10 @@ The B11 source now includes a guarded native `AXValue` driver and synthetic
 Stop/interference checks. It is not connected to the UI, host journal or a
 signed worker permit, so there is still no native action in the development
 app. See [native action status](NATIVE_ACTION.md).
+The host-side native task class now admits a final command against one exact
+complete observation and records a journaled attempt before an abstract
+worker commit. It is tested with a synthetic worker only; the AppKit worker,
+OS peer identity and cross-surface owner are not connected.
 It fences both stores on Stop. Stop distinguishes browser context closure from
 an independent local save still pending and reports an incomplete worker fence
 for the latter. Context closure does not prove an already-dispatched action had

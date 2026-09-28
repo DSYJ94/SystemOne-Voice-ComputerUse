@@ -30,3 +30,20 @@ worker identity, UI Stop barrier, independent re-observation and recovery.
 Do not infer permission from a model proposal or from a successful read-only
 inspection. App-specific semantics, secure controls, focus changes and other
 native operations remain separate qualification work.
+
+`packages/runtime/src/native-fill-authority.ts` now owns a synthetic host-side
+task path for this operation. It accepts only a bound final text command,
+selects one exact candidate from a complete observation, records the admitted
+source-value digest, prepares one journal attempt, writes the dispatch marker
+before worker commit, and verifies a no-effect existing match separately.
+Stop aborts preflight and waits up to three seconds for the worker fence;
+boundary-crossed tasks remain blocked for recovery even if a late verified
+receipt settles their history. An unconfirmed fence or unknown effect blocks
+new native starts. Seven synthetic worker tests exercise those transitions.
+
+This host class is **not yet connected** to the AppKit process or real AX
+driver. Its `NativeFieldWorker` interface is an in-process test contract, not
+proof of a signed worker, authenticated peer, durable worker-side permit or
+cross-surface one-writer authority. No recovery-clearance API exists yet, so a
+stopped boundary-crossed task intentionally stays blocked. The next integration
+must supply those boundaries before native actions are enabled in the UI.
