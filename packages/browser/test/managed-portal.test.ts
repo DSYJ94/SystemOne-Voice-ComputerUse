@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { startPortalFixture } from '../../fixtures/portal.ts';
 import { ManagedPortalSession } from '../src/managed-portal.ts';
+
+const HARBOR_GOAL = Object.freeze({
+  invoiceId: 'INV-105', title: 'April Service Statement', account: 'Harbor Works',
+});
 
 test('managed Chromium searches, opens an exact duplicate and downloads it', async () => {
   const portal = await startPortalFixture();
@@ -63,5 +67,44 @@ test('managed browser refuses non-fixture origins before launch', async () => {
   for (const url of ['https://example.com/', 'http://localhost:1234/',
     'http://127.0.0.1:1234/path', 'http://127.0.0.1:1234/?q=x']) {
     await assert.rejects(ManagedPortalSession.launch(url), /exact loopback fixture origin/);
+  }
+});
+
+test('completion distinguishes exact result, detail and saved document', async () => {
+  const portal = await startPortalFixture();
+  let session: ManagedPortalSession | undefined;
+  try {
+    session = await ManagedPortalSession.launch(portal.url);
+    const found = await session.search('April Service Statement');
+    assert.equal(found.kind, 'results');
+    if (found.kind !== 'results') return;
+    assert.deepEqual(await session.verifyGoal({ kind: 'LOCATE', ...HARBOR_GOAL }, found.revision),
+      { status: 'matched', revision: found.revision });
+    assert.equal((await session.verifyGoal({ kind: 'OPEN', ...HARBOR_GOAL }, found.revision)).status,
+      'not_matched');
+    assert.equal((await session.verifyGoal({ kind: 'LOCATE', ...HARBOR_GOAL,
+      account: 'Northstar Studio' }, found.revision)).status, 'not_matched');
+
+    const opened = await session.openInvoice('INV-105', found.revision);
+    assert.equal(opened.kind, 'detail');
+    if (opened.kind !== 'detail') return;
+    assert.equal((await session.verifyGoal({ kind: 'LOCATE', ...HARBOR_GOAL }, found.revision)).status,
+      'unavailable');
+    assert.equal((await session.verifyGoal({ kind: 'OPEN', ...HARBOR_GOAL }, opened.revision)).status,
+      'matched');
+    assert.equal((await session.verifyGoal({ kind: 'DOWNLOAD', ...HARBOR_GOAL }, opened.revision)).status,
+      'unavailable');
+
+    const receipt = await session.downloadInvoice('INV-105', opened.revision);
+    assert.equal((await session.verifyGoal({ kind: 'DOWNLOAD', ...HARBOR_GOAL },
+      opened.revision, receipt)).status, 'matched');
+    assert.equal((await session.verifyGoal({ kind: 'DOWNLOAD', ...HARBOR_GOAL },
+      opened.revision, { ...receipt })).status, 'unavailable');
+    await writeFile(receipt.path, 'tampered synthetic document\n');
+    assert.equal((await session.verifyGoal({ kind: 'DOWNLOAD', ...HARBOR_GOAL },
+      opened.revision, receipt)).status, 'not_matched');
+  } finally {
+    await session?.close();
+    await portal.close();
   }
 });
