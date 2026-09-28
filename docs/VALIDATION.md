@@ -933,3 +933,10 @@ verification. `npm run test:chrome-browser-transport` still passed through
 the signed Swift host/listener and disposable Chromium after the controller
 startup change. This is a fixed fixture workflow and does not establish CLM,
 general sites, release authentication or notarized distribution.
+
+During this slice, an initial full run failed because Node's TypeScript strip
+mode rejected a parameter-property constructor; the constructor was rewritten.
+A later run exposed a test timing error: the `portal_opened` status did not
+prove the download dispatch boundary had been crossed. The test now waits for
+that journal event before Stop. Both failures were corrected before the final
+215/215 run; neither earlier run is counted as a pass.
