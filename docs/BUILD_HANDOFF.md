@@ -51,7 +51,8 @@ established by the current fixture-only native or browser tests.
   [#29 movable bundled development runtime](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/29),
   [#30 fixture-only CLM reference probe](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/30),
   [#31 bounded development Stop acknowledgement](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/31),
-  [#32 bundled controller running-code identity](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/32).
+  [#32 bundled controller running-code identity](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/32),
+  [#33 native worker digest binding](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/33).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current implementation branch is `codex/native-worker-digest-binding`,
   stacked on `codex/bundled-controller-identity`.
