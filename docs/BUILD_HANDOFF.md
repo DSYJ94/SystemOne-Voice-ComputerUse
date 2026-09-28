@@ -54,10 +54,11 @@ established by the current fixture-only native or browser tests.
   [#32 bundled controller running-code identity](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/32),
   [#33 native worker digest binding](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/33),
   [#34 native worker replay ledger](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/34),
-  [#35 controller-signed native permit](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/35).
+  [#35 controller-signed native permit](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/35),
+  [#36 managed semantic navigation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/36).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/native-host-permit`,
-  stacked on `codex/native-worker-replay-ledger`.
+- The current implementation branch is `codex/managed-semantic-navigation`,
+  stacked on `codex/native-host-permit`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
