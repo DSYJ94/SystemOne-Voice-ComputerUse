@@ -37,6 +37,8 @@ the development panel calls for disposable synthetic text. Stop fences future ac
 undo an already-dispatched edit. Unknown delivery blocks another task until
 explicit recovery. A loopback URL and page title do not authenticate the
 fixture process; this remains a development-only scope.
+The controller now reports the extension Stop fence before a delayed action
+receipt arrives and keeps the task slot occupied until that receipt settles.
 
 `packages/chrome-native-host/` now
 builds a Swift native-messaging executable. It reads a configuration staged next

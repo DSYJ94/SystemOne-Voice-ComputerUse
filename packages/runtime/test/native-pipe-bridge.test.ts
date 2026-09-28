@@ -112,9 +112,17 @@ test('private pipe carries a journaled native task and fences a late result', as
     const stopId = randomUUID();
     send({ type: 'stop', requestId: stopId, targetRequestId: second });
     await waitFor(() => operations.includes('stop'));
-    reply(pendingCommit!, 'verified');
     await waitFor(() => statuses.some(s => s.requestId === stopId
       && s.phase === 'uncertain'));
+    assert.equal(statuses.some(s => s.requestId === second
+      && s.phase === 'verified_native_fill'), false);
+    const tooEarly = randomUUID();
+    start(tooEarly);
+    await waitFor(() => statuses.some(s => s.requestId === tooEarly
+      && s.phase === 'busy'));
+    reply(pendingCommit!, 'verified');
+    await waitFor(() => statuses.some(s => s.requestId === second
+      && s.phase === 'blocked_recovery'));
     const third = randomUUID();
     start(third);
     await waitFor(() => statuses.some(s => s.requestId === third
@@ -129,6 +137,7 @@ test('private pipe carries a journaled native task and fences a late result', as
       assert.equal(journal.attemptsForTask(second)[0]?.outcome?.verification,
         'matched');
       assert.equal(journal.getTaskState(third), undefined);
+      assert.equal(journal.getTaskState(tooEarly), undefined);
     } finally { journal.close(); }
   } finally {
     if (child.exitCode === null) child.kill('SIGTERM');

@@ -49,10 +49,11 @@ established by the current fixture-only native or browser tests.
   [#27 existing-Chrome controller read path](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/27),
   [#28 guarded existing-Chrome loopback fill](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/28),
   [#29 movable bundled development runtime](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/29),
-  [#30 fixture-only CLM reference probe](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/30).
+  [#30 fixture-only CLM reference probe](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/30),
+  [#31 bounded development Stop acknowledgement](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/31).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/clm-reference-probe`,
-  stacked on `codex/bundled-dev-runtime`.
+- The current implementation branch is `codex/early-stop-ack`,
+  stacked on `codex/clm-reference-probe`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -142,6 +143,11 @@ A fixture-only [CLM reference probe](CLM_REFERENCE_PROBE.md) now serializes
 full candidate descriptions to the pinned CLM choice API and validates its
 response shape. It has not contacted a model service or qualified any weights;
 B02 and G1 remain open.
+The development controller now acknowledges native and existing-Chrome Stop
+from their worker fences without awaiting delayed action receipts. Managed
+Chromium Stop closes an available context with a bounded wait; an in-flight
+launch reports uncertainty and remains blocked. These are source and synthetic
+process checks, not release-authenticated Stop evidence.
 
 ## Next implementation order
 

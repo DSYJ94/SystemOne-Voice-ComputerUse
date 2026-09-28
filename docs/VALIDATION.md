@@ -639,3 +639,21 @@ downloaded and no inference endpoint was contacted successfully. B02/G1 remain
 unverified pending an attested private deployment and representative benchmark.
 Final `npm run check`: TypeScript passed and **198/198 tests passed**, zero
 skipped or failed.
+
+## Bounded development Stop acknowledgement, 28 September 2026
+
+The controller now replies to native and existing-Chrome Stop after their
+worker fences, before a held commit/action result arrives. Managed Chromium
+Stop reports a closed-context fence within a three-second wait when a session
+exists; a launch still in flight returns `uncertain` and latches recovery.
+Synthetic process tests also assert that a new task is `busy` until a late
+result or launch settles, then recovery remains blocked after a crossed
+dispatch boundary. These checks do not authenticate worker identities or prove
+Stop latency on production apps/extensions.
+
+The first full `npm run check` after this change failed because the old native
+pipe test submitted a third task immediately after early Stop acknowledgement
+and expected recovery blocking. The active slot correctly returned `busy`.
+The test now asserts `busy` before the late result and `blocked_recovery`
+after it. The final `npm run check` passed **199/199 tests**, zero skipped or
+failed. No real app, Chrome profile or account was operated in this run.

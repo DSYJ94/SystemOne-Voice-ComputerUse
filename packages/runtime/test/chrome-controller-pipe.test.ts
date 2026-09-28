@@ -164,6 +164,54 @@ test('controller pipe admits one loopback Chrome fill after fresh observation', 
       status: 'matched' });
     await waitFor(() => messages.some(message => message.type === 'status'
       && message.requestId === taskId && message.phase === 'verified_chrome_dom_fill'));
+    await waitFor(() => messages.some(message => message.type === 'status'
+      && message.requestId === taskId && message.phase === 'ready'));
+    const secondTaskId = randomUUID();
+    const before = messages.filter(message => message.type === 'chrome_port_send').length;
+    send({ type: 'start_chrome_fill', requestId: secondTaskId,
+      connectionId: 'connection-1', grantId: scoped.grantId,
+      fieldLabel: 'Find invoice', value: 'INV-105',
+      command: { type: 'command', protocolVersion: '2.0',
+        messageId: randomUUID(), taskId: secondTaskId, taskEpoch: 1, goalRevision: 1,
+        source: 'text', mode: 'command', utteranceId: randomUUID(),
+        utteranceRevision: 1,
+        text: `Fill Find invoice in existing Chrome tab ${scoped.url} with supplied text`,
+        isFinal: true, createdAt: new Date().toISOString(),
+        originSurface: { adapter: 'native', surfaceId: 'systemone-panel',
+          appBundleId: 'com.aurium.systemone.dev', windowId: 'command-panel',
+          contentRevision: secondTaskId } } });
+    await waitFor(() => messages.filter(message => message.type === 'chrome_port_send').length > before);
+    const secondObserve = messages.filter(message => message.type === 'chrome_port_send')[before]!
+      .payload as Record<string, unknown>;
+    sendChrome(observed(secondObserve.requestId, 'observation-3'));
+    await waitFor(() => messages.filter(message => message.type === 'chrome_port_send').length > before + 1);
+    const secondAction = messages.filter(message => message.type === 'chrome_port_send')[before + 1]!
+      .payload as Record<string, unknown>;
+    assert.equal(secondAction.type, 'action');
+    const stopId = randomUUID();
+    send({ type: 'stop', requestId: stopId, targetRequestId: secondTaskId });
+    await waitFor(() => messages.filter(message => message.type === 'chrome_port_send').length > before + 2);
+    const stop = messages.filter(message => message.type === 'chrome_port_send')[before + 2]!
+      .payload as Record<string, unknown>;
+    assert.equal(stop.type, 'stop_action');
+    sendChrome({ type: 'stop_ack', requestId: stop.requestId,
+      targetRequestId: secondAction.requestId, grantId: scoped.grantId,
+      workerFenced: true });
+    await waitFor(() => messages.some(message => message.type === 'status'
+      && message.requestId === stopId && message.phase === 'uncertain'));
+    assert.equal(messages.some(message => message.type === 'status'
+      && message.requestId === secondTaskId && message.phase === 'verified_chrome_dom_fill'), false);
+    const tooEarly = randomUUID();
+    send({ type: 'start_chrome_fill', requestId: tooEarly,
+      connectionId: 'connection-1', grantId: scoped.grantId,
+      fieldLabel: 'Find invoice', value: 'INV-106', command: {} });
+    await waitFor(() => messages.some(message => message.type === 'status'
+      && message.requestId === tooEarly && message.phase === 'busy'));
+    sendChrome({ type: 'action_result', requestId: secondAction.requestId,
+      permitRef: secondAction.permitRef, binding: { ...scoped, connected: true },
+      status: 'matched' });
+    await waitFor(() => messages.some(message => message.type === 'status'
+      && message.requestId === secondTaskId && message.phase === 'blocked_recovery'));
     child.stdin.end();
     const exit = await new Promise<number | null>(resolve => child.once('exit', resolve));
     assert.equal(exit, 0);

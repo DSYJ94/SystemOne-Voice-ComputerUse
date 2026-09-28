@@ -42,6 +42,9 @@ Stop aborts preflight and waits up to three seconds for the worker fence;
 boundary-crossed tasks remain blocked for recovery even if a late verified
 receipt settles their history. An unconfirmed fence or unknown effect blocks
 new native starts. Seven synthetic worker tests exercise those transitions.
+The development controller now reports the Stop fence without waiting for a
+pending commit receipt. It keeps that task slot occupied until the late reply
+settles, and a boundary-crossed task reports uncertainty rather than success.
 
 The development controller connects this host class to the AppKit AX worker
 through inherited private pipes. One controller owns both native and managed

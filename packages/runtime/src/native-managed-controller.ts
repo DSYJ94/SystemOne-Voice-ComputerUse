@@ -439,7 +439,9 @@ export class NativeManagedController {
     if (chromeActive?.requestId === request.targetRequestId) {
       this.#send(request.requestId, 'stopping');
       const fenced = await chromeActive.authority.stop().catch(() => false);
-      await chromeActive.done.catch(() => {});
+      // The extension Stop acknowledgement is the barrier. A delayed action
+      // receipt may still settle history, but cannot delay user feedback or
+      // authorize another task while the active slot remains occupied.
       this.#send(request.requestId,
         fenced && !chromeActive.authority.needsRecovery ? 'stopped' : 'uncertain');
       return;
@@ -450,7 +452,8 @@ export class NativeManagedController {
       const result = await this.#nativeAuthority!.stop().catch(() => ({
         workerFenced: false, unresolvedExecutionIds: [] as readonly string[],
       }));
-      await nativeActive.done.catch(() => {});
+      // Worker Stop fences the setter independently of its pending commit
+      // receipt. Leave the task slot occupied until that receipt settles.
       this.#send(request.requestId,
         result.workerFenced && !this.#nativeAuthority!.needsRecovery
           ? 'stopped' : 'uncertain');
@@ -466,20 +469,32 @@ export class NativeManagedController {
     }
     active.cancelled = true;
     this.#send(request.requestId, 'stopping');
-    const result = await active.task?.stop().catch(() => undefined);
-    if (result) active.browserFenced = result.browserFenced;
-    await active.done;
-    if (active.session && !active.browserFenced) {
-      try { await active.session.close(); active.browserFenced = true; }
-      catch { this.#workerFenceFailed = true; }
-    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const fence = active.task
+        ? active.task.stop().then(result => result.browserFenced, () => false)
+        : active.session
+          ? active.session.close().then(() => true, () => false)
+          : Promise.resolve(false); // A browser launch is still in flight.
+      active.browserFenced = await Promise.race([
+        fence,
+        new Promise<boolean>(resolve => {
+          timer = setTimeout(() => resolve(false), 3_000);
+        }),
+      ]);
+    } finally { if (timer) clearTimeout(timer); }
     if (!active.browserFenced) this.#workerFenceFailed = true;
-    if (this.#active === active) this.#active = undefined;
     this.#send(request.requestId,
       active.browserFenced ? 'stopped' : 'uncertain');
-    this.#send(active.requestId,
-      this.#workerFenceFailed || this.#journal.unresolvedAttempts().length
-        ? 'blocked_recovery' : 'ready');
+    // Keep the task slot occupied until the old workflow actually settles.
+    // Its late response cannot turn a cancelled goal into success.
+    void active.done.then(() => {
+      if (this.#active !== active) return;
+      this.#active = undefined;
+      this.#send(active.requestId,
+        this.#workerFenceFailed || this.#journal.unresolvedAttempts().length
+          ? 'blocked_recovery' : 'ready');
+    });
   }
 }
 
