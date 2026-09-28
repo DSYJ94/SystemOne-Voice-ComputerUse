@@ -1149,3 +1149,23 @@ distribution or clean-Mac permissions.
 After adding a Show-fields-triggered Accessibility prompt, the Swift app
 recompiled, was ad-hoc signed and relaunched from the exact native-dev path
 (PID 25001). No permission prompt was invoked during this build or launch.
+
+## Enable Voice crash diagnosis and bounded regression, 28 September 2026
+
+The owner reported a crash after clicking Enable Voice. Local incidents
+`D473FC9D-FD30-46CF-92E5-56D002CDD37B` and
+`B0D1F920-5C81-4681-88D7-C2357E3D8C18` both show `SIGTRAP` in
+`_dispatch_assert_queue_fail` / `_swift_task_checkIsolatedSwift` at
+`OnDeviceSpeech.requestPermissions()`'s Speech authorization reply on a
+background queue. The built app contains the Speech usage-description key.
+
+After marking external callbacks `@Sendable` and adding an injectable Speech
+permission requester, `npm run test:voice-permission-callback` passed: a
+synthetic denial delivered from a background queue reached the main-actor
+status handler. `npm run build:native-dev` compiled and ad-hoc signed the new
+app. `npm run check` passed 241/241 tests. The first sandboxed smoke build
+failed writing the global Clang cache; the test script now uses a private
+temporary cache. The first sandboxed full suite hit loopback `EPERM`; the
+permitted local run passed. No OS permission request, audio capture, or live
+Enable Voice click was run by the agent. The manual gate remains open; see
+[handoff](VOICE_CRASH_HANDOFF.md).

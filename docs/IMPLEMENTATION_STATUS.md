@@ -216,6 +216,12 @@ Chrome extension are still separate work.
 
 ## Next sequence
 
+As of 28 September, the owner-reported Enable Voice crash blocks live voice
+qualification. The faulting stack is in the Speech authorization reply's Swift
+actor-isolation check. The branch has a narrow fix and a synthetic background
+callback check; the real macOS permission flow remains unverified. See
+[voice crash handoff](VOICE_CRASH_HANDOFF.md).
+
 1. Move the now-journaled fixture portal task behind one authenticated host
    authority and one-use permits. Prove the browser close fence at that dispatch
    boundary and preserve already-dispatched uncertainty. Add

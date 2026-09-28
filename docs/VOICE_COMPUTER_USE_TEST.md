@@ -34,6 +34,13 @@ transcripts never run. Recognition requires an available on-device recognizer
 for the current Mac language; it never falls back to network speech. Raw audio
 is not saved. If the recognizer is unavailable, type the command instead.
 
+**Crash regression gate (28 September):** the owner saw SystemOne Dev quit
+after Enable Voice. A background-permission-callback fix now compiles and its
+synthetic test passes, but the real click is not yet verified. On the next
+manual run, test Enable Voice alone first. If the app closes, stop there and
+record the new crash-report incident; do not proceed to Talk or Run request.
+See [voice crash handoff](VOICE_CRASH_HANDOFF.md).
+
 For a browser page, enter or speak `Fill <exact field label> on <HTTPS URL> with
 <disposable value>`. Review the URL carefully before **Run request**. This opens
 an isolated Chromium profile, observes that page and fills one matching field.

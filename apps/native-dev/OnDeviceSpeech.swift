@@ -13,18 +13,27 @@ final class OnDeviceSpeech {
     private var epoch = 0
     private var listening = false
     private var finishing = false
+    private let speechAuthorization: (@escaping @Sendable (SFSpeechRecognizerAuthorizationStatus) -> Void) -> Void
     var isCapturing: Bool { listening || finishing }
+
+    init(speechAuthorization: @escaping (@escaping @Sendable (SFSpeechRecognizerAuthorizationStatus) -> Void) -> Void = { completion in
+        SFSpeechRecognizer.requestAuthorization(completion)
+    }) {
+        self.speechAuthorization = speechAuthorization
+    }
 
     func requestPermissions() {
         guard !listening && !finishing else { return }
-        SFSpeechRecognizer.requestAuthorization { [weak self] speechStatus in
+        // Speech invokes this callback on an arbitrary queue. Keep the callback
+        // nonisolated; touching UI state happens only after the explicit hop.
+        speechAuthorization { @Sendable [weak self] speechStatus in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 guard speechStatus == .authorized else {
                     self.onStatus?("Speech recognition permission was not granted.")
                     return
                 }
-                AVCaptureDevice.requestAccess(for: .audio) { [weak self] allowed in
+                AVCaptureDevice.requestAccess(for: .audio) { @Sendable [weak self] allowed in
                     Task { @MainActor [weak self] in
                         self?.onStatus?(allowed
                             ? "Voice is ready. Hold Talk, then review and run the final transcript."
@@ -74,7 +83,7 @@ final class OnDeviceSpeech {
             return
         }
         listening = true
-        task = recognizer.recognitionTask(with: request) { [weak self] result, error in
+        task = recognizer.recognitionTask(with: request) { @Sendable [weak self] result, error in
             let text = result?.bestTranscription.formattedString
             let isFinal = result?.isFinal == true
             let failed = error != nil
