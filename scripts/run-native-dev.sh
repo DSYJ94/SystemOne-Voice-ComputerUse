@@ -3,6 +3,7 @@ set -euo pipefail
 
 script_dir=${0:A:h}
 repository_root=${script_dir:h}
+source "$script_dir/native-dev-sources.zsh"
 app_dir="$repository_root/.build/native-dev/SystemOne Dev.app"
 binary="$app_dir/Contents/MacOS/SystemOneDev"
 other_dev=$(/bin/ps -axo pid=,comm= | /usr/bin/awk -v wanted="$binary" '
@@ -19,16 +20,19 @@ if [[ -n "$other_dev" ]]; then
   print -u2 "$other_dev"
   exit 1
 fi
-if [[ ! -x "$binary" ||
-      "$repository_root/apps/native-dev/main.swift" -nt "$binary" ||
-      "$repository_root/apps/native-dev/DevChromeListener.swift" -nt "$binary" ||
-      "$repository_root/apps/native-dev/NativeFieldWorker.swift" -nt "$binary" ||
-      "$repository_root/packages/protocol/swift/Sources/PeerIdentity/PeerIdentity.swift" -nt "$binary" ||
-      "$repository_root/packages/native-ax/Sources/NativeAX/Observation.swift" -nt "$binary" ||
-      "$repository_root/packages/native-ax/Sources/NativeAX/SystemAXBackend.swift" -nt "$binary" ||
-      "$repository_root/packages/native-ax/Sources/NativeAX/ValueAction.swift" -nt "$binary" ||
-      "$repository_root/packages/native-ax/Sources/NativeAX/PressAction.swift" -nt "$binary" ||
-      "$script_dir/build-native-dev.sh" -nt "$binary" ]]; then
+needs_build=0
+if [[ ! -x "$binary" || "$script_dir/build-native-dev.sh" -nt "$binary" ||
+      "$script_dir/native-dev-sources.zsh" -nt "$binary" ]]; then
+  needs_build=1
+else
+  for source_file in "${native_dev_sources[@]}"; do
+    if [[ ! -f "$source_file" || "$source_file" -nt "$binary" ]]; then
+      needs_build=1
+      break
+    fi
+  done
+fi
+if (( needs_build )); then
   if [[ -f "$app_dir/Contents/Info.plist" ]] &&
      /usr/libexec/PlistBuddy -c 'Print :SystemOneChromeExtensionId' \
        "$app_dir/Contents/Info.plist" >/dev/null 2>&1; then

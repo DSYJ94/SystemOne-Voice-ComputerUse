@@ -24,6 +24,7 @@
     "run:native-mock": "scripts/run-native-mock.sh",
     "build:native-dev": "zsh scripts/build-native-dev.sh",
     "run:native-dev": "zsh scripts/run-native-dev.sh",
+    "try:local": "zsh scripts/try-local.sh",
     "run:portal-fixture": "node scripts/run-portal-fixture.ts",
     "fixtures": "node scripts/export-fixtures.ts"
   },

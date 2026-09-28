@@ -3,6 +3,7 @@ set -euo pipefail
 
 script_dir=${0:A:h}
 repository_root=${script_dir:h}
+source "$script_dir/native-dev-sources.zsh"
 app_dir="$repository_root/.build/native-dev/SystemOne Dev.app"
 contents="$app_dir/Contents"
 binary="$contents/MacOS/SystemOneDev"
@@ -27,19 +28,7 @@ mkdir -p "$contents/MacOS" "$repository_root/.build/native-dev/module-cache"
 swiftc -swift-version 6 -parse-as-library -framework AppKit -framework Carbon \
   -framework Security -lbsm -lsqlite3 \
   -module-cache-path "$repository_root/.build/native-dev/module-cache" \
-  "$repository_root/apps/native-dev/main.swift" \
-  "$repository_root/apps/native-dev/DevChromeListener.swift" \
-  "$repository_root/apps/native-dev/NativeFieldWorker.swift" \
-  "$repository_root/apps/native-dev/NativeInspectionSession.swift" \
-  "$repository_root/apps/native-dev/NativeWorkerPermitLedger.swift" \
-  "$repository_root/apps/native-dev/NativeHostPermit.swift" \
-  "$repository_root/apps/native-dev/NativeWorkerPermitDigest.swift" \
-  "$repository_root/packages/protocol/swift/Sources/PeerIdentity/PeerIdentity.swift" \
-  "$repository_root/packages/protocol/swift/Sources/ProtocolDigest/CanonicalJSON.swift" \
-  "$repository_root/packages/native-ax/Sources/NativeAX/Observation.swift" \
-  "$repository_root/packages/native-ax/Sources/NativeAX/SystemAXBackend.swift" \
-  "$repository_root/packages/native-ax/Sources/NativeAX/ValueAction.swift" \
-  "$repository_root/packages/native-ax/Sources/NativeAX/PressAction.swift" \
+  "${native_dev_sources[@]}" \
   -o "$binary"
 
 /usr/bin/python3 - "$contents/Info.plist" "$node_path" "$controller_path" <<'PY'

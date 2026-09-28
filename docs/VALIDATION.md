@@ -1073,3 +1073,22 @@ observed or controlled in this slice. The inspector is development-only,
 read-only and does not enter the controller's candidate/permit path. AX API
 timeouts, real-app tree coverage, secure-control behavior across apps and
 Stop responsiveness under a blocked call still require a manual Mac check.
+
+## Local test-session launcher, 28 September 2026
+
+`zsh -n` passed for the changed launch/build scripts.
+`npm run build:native-dev` compiled and ad-hoc signed this worktree's app.
+`npm run check` typechecked and passed **237/237** tests. The isolated
+`npm run test:chrome-browser-transport` passed its signed-host/temporary
+Chromium fixture, including the journaled fill and late-Stop accounting.
+`git diff --check` passed.
+
+`npm run try:local` was attempted three times. The first version opened a Fixture
+path before discovering an older SystemOne Dev process from the OneDrive
+checkout; it then refused a second Dev launch. The launcher was reordered and
+now checks for a Fixture from another checkout before opening either app. Its
+second and third runs correctly refused the older OneDrive Fixture. The portal did not
+start and no native action was dispatched in either attempt. A successful
+end-to-end UI run is still pending until those older apps are quit; existing
+Chrome/current-profile behavior, microphone, CLM and release distribution
+remain unverified.
