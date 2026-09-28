@@ -21,11 +21,19 @@ if [[ -n "$other_dev" ]]; then
 fi
 if [[ ! -x "$binary" ||
       "$repository_root/apps/native-dev/main.swift" -nt "$binary" ||
+      "$repository_root/apps/native-dev/DevChromeListener.swift" -nt "$binary" ||
       "$repository_root/apps/native-dev/NativeFieldWorker.swift" -nt "$binary" ||
+      "$repository_root/packages/protocol/swift/Sources/PeerIdentity/PeerIdentity.swift" -nt "$binary" ||
       "$repository_root/packages/native-ax/Sources/NativeAX/Observation.swift" -nt "$binary" ||
       "$repository_root/packages/native-ax/Sources/NativeAX/SystemAXBackend.swift" -nt "$binary" ||
       "$repository_root/packages/native-ax/Sources/NativeAX/ValueAction.swift" -nt "$binary" ||
       "$script_dir/build-native-dev.sh" -nt "$binary" ]]; then
+  if [[ -f "$app_dir/Contents/Info.plist" ]] &&
+     /usr/libexec/PlistBuddy -c 'Print :SystemOneChromeExtensionId' \
+       "$app_dir/Contents/Info.plist" >/dev/null 2>&1; then
+    print -u2 'The Chrome-configured development app is stale. Rebuild it with scripts/build-chrome-dev-bridge.sh and its exact extension ID.'
+    exit 1
+  fi
   "$script_dir/build-native-dev.sh"
 fi
 open "$app_dir"

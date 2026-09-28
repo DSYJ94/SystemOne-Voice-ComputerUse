@@ -47,8 +47,8 @@ established by the current fixture-only native or browser tests.
   [#25 journaled native task authority](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/25),
   [#26 development native controller bridge](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/26).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/native-ax-controller-bridge`,
-  stacked on `codex/native-ax-task-authority`.
+- The current implementation branch is `codex/chrome-controller-read-session`,
+  stacked on `codex/native-ax-controller-bridge`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -118,9 +118,10 @@ for the latter. Context closure does not prove an already-dispatched action had
 no effect; the two stores lack one atomic transaction and
 the path has no OS-authenticated host/worker boundary. An existing-Chrome
 extension source now has explicit one-tab read-only grants. A Swift
-native-messaging host passes a signed synthetic framing/peer check and
-exact-origin manifest staging, but no host is installed, no controller listener
-exists and no real Chrome action works.
+native-messaging host, opt-in AppKit listener and Node controller read session
+pass signed synthetic framing and strict binding tests. Exact-origin development
+artifacts can be staged without installation. No host is installed in Chrome,
+no real profile has been observed, and no Chrome action works.
 Host/helper release identity, TCC attribution after installation and
 update, voice, CLM inference, privacy review, crash recovery across real workers,
 packaging/notarization and clean-Mac installation are unverified. Treat effects
@@ -141,11 +142,10 @@ undo an already-dispatched effect.
    actions; add B12 headed managed workflows with explicit limits. Prove clean
    installation and TCC attribution on an authorized Mac.
 4. Complete B13 candidate projection, scripted B15-B17 multi-hop/recovery and
-   B18 transitions; then qualify CLM under B14. For B19, connect the signed
-   host source to an authenticated controller protocol, package/register the
-   exact-origin manifest and test on a separate profile, then qualify the
-   owner's current-profile and reconnect/revocation cases. Do not substitute
-   managed Chromium for B19.
+   B18 transitions; then qualify CLM under B14. For B19, qualify the staged
+   host/listener/extension read path on a separate Chrome profile, then add
+   host-authorized fixed actions, Stop/reconnect and current-profile tests.
+   Do not substitute managed Chromium for B19.
 
 Release gates G1-G6 remain unverified; consult the review handoff and status
 before changing scope. Optional model/training/vision research must not block a

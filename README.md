@@ -41,9 +41,11 @@ field fill. There is no general-purpose executor or release binary yet.
   is not connected.
 - An initial existing-Chrome Manifest V3 extension source requires a toolbar
   click, binds a read-only DOM observation to one exact tab/document and revokes
-  on navigation or native-port disconnect. A Swift native-messaging host passes
-  a signed synthetic socket/framing check, but no host is installed, no
-  controller listener is connected, and no existing Chrome action works yet.
+  on navigation or native-port disconnect. A Swift native-messaging host and
+  opt-in development AppKit listener pass a signed synthetic socket/framing
+  check; a private controller session validates bounded read-only snapshots.
+  No host is installed in Chrome, no real profile has been exercised, and no
+  existing-Chrome action works yet.
 - Fixture-scoped outcome checks re-observe the portal and distinguish an exact
   search result, an opened detail and a saved document. These are not wired to
   the general host controller or a production completion engine.

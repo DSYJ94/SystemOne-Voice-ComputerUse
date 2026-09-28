@@ -1,6 +1,6 @@
 # Existing Chrome bridge: source status
 
-Updated 27 September 2026. This is B19 implementation work, not a usable
+Updated 28 September 2026. This is B19 implementation work, not a usable
 existing-profile computer-use release. No extension or native host has been
 installed in the owner's Chrome profile by the automated checks.
 
@@ -32,21 +32,33 @@ that connected controller's audit-token/code-signing identity, and relays at mos
 64 KiB per framed message. Its test-only socket override is excluded from a
 release build. `scripts/stage-chrome-native-host.mjs` writes an exact-origin
 Chrome manifest and release controller trust pins; it **does not register** that
-manifest with Chrome. The SystemOne controller listener and protocol handler do
-not yet exist. An unpacked extension without the installed host will show `OFF`.
+manifest with Chrome. The development AppKit build now has an opt-in local
+listener. It authenticates the connected host's audit-token/code-signing
+identity against a pinned CDHash or Apple-anchored Team ID before forwarding
+frames on its private controller pipe. The Node read session checks exact
+extension/profile-session/tab/frame/document/URL claims, requests one bounded
+read-only observation and displays labels locally. Malformed, replayed,
+expired or changed replies close the session. An unpacked extension without
+the installed host will show `OFF`.
 
 The host's origin argument and extension installation tag are not independent
 proof that Chrome launched the process or which profile owns a message: a local
-process can invoke a signed host with that argument. The future controller must
-authenticate the host peer, validate every protocol message and task permit,
-and treat tab/document bindings as scoped claims that require fresh checks.
+process can invoke a signed host with that argument. The controller must
+continue validating every protocol message and future task permit, and treat
+tab/document bindings as scoped claims that require fresh checks.
 Neither the host nor the extension currently authorizes an effect.
 
 `npm run test:chrome-host` builds and ad-hoc signs a temporary host and
 synthetic controller, then checks framed round-trip, wrong caller origin,
 oversized input and wrong controller CDHash. A release-configured build compiles.
-These checks do not open Chrome, verify extension-to-host integration, exercise
-Stop, or establish a distributable signing identity.
+`zsh scripts/build-chrome-dev-bridge.sh EXACT_EXTENSION_ID` stages an ad-hoc
+development host, app and exact-origin manifest under ignored `.build/`, but
+does not register the manifest or touch a Chrome profile. Its host configuration
+is outside a signed release bundle and is not a production trust anchor.
+`zsh scripts/check-chrome-dev-listener.sh` checks a signed temporary host and
+listener exchange. These checks do not open Chrome, verify extension-to-host
+integration in a browser, exercise action Stop, or establish a distributable
+signing identity.
 
 Release packaging must place the host at its final absolute path and run
 `node scripts/stage-chrome-native-host.mjs EXTENSION_ID HOST_PATH MANIFEST_PATH
@@ -55,14 +67,14 @@ the bundle. The generated manifest must then be installed in Chrome's
 per-user native-host registration location. This is a packager instruction,
 not a current-profile test procedure; neither operation is automated yet.
 
-Before an owner-run current-profile test, package/sign the host with its exact
-extension manifest, register that manifest, pair the host with an authenticated
-SystemOne task controller, and test the user-visible grant/revoke cycle.
-Then add fixed semantic actions through host permits, fresh document checks,
+Before an owner-run current-profile test, first qualify the installed
+exact-origin manifest, host/app signing pair, activeTab grant/revoke cycle and
+read-only end-to-end observation on a non-sensitive Chrome profile. Then add
+fixed semantic actions through host permits, fresh document checks,
 Stop/reconnect handling, unsupported trusted-input behavior and real Chrome
 profile cases. Keep file transfer disabled until its outbound and destination
-enforcement is qualified. Test on a separate non-sensitive Chrome profile
-first; an existing-profile check requires explicit owner participation.
+enforcement is qualified. An existing-profile check requires explicit owner
+participation.
 
 Primary references checked for this slice:
 

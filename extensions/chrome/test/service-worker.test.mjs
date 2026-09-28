@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { webcrypto } from 'node:crypto';
 import { test } from 'node:test';
+import { ChromeReadSession } from '../../../packages/runtime/src/chrome-read-session.ts';
 
 function event() {
   const listeners = [];
@@ -104,6 +105,62 @@ test('user click, host handshake, exact document read and navigation revocation'
       && message.requestId === 'read-2'));
     assert.equal(injected, 1);
   } finally {
+    delete globalThis.chrome;
+  }
+});
+
+test('extension and controller read contracts exchange one exact tab snapshot', async () => {
+  const clicked = event();
+  const committed = event();
+  const changed = event();
+  const removed = event();
+  const detached = event();
+  const history = event();
+  const fragment = event();
+  const reports = [];
+  const extensionId = 'a'.repeat(32);
+  let documentId = 'document-1';
+  let injected = 0;
+  const tab = { id: 18, windowId: 3, url: 'https://example.test/account',
+    incognito: false };
+  const port = { onMessage: event(), onDisconnect: event(),
+    postMessage(message) { session.receive(message); } };
+  const session = new ChromeReadSession(extensionId,
+    message => port.onMessage.emit(message),
+    (binding, snapshot) => reports.push({ binding, snapshot }));
+  globalThis.crypto ??= webcrypto;
+  globalThis.chrome = {
+    action: { onClicked: clicked, setBadgeText: async () => {},
+      setBadgeBackgroundColor: async () => {} },
+    storage: { local: { get: async () => ({}), set: async () => {} } },
+    runtime: { id: extensionId, connectNative: () => port },
+    tabs: { get: async () => tab, onUpdated: changed,
+      onRemoved: removed, onDetached: detached },
+    webNavigation: { getFrame: async () => ({ frameId: 0, documentId,
+      url: tab.url }), onCommitted: committed,
+      onHistoryStateUpdated: history,
+      onReferenceFragmentUpdated: fragment },
+    scripting: { async executeScript(options) {
+      injected++;
+      assert.deepEqual(options.target, { tabId: 18, documentIds: ['document-1'] });
+      return [{ frameId: 0, documentId,
+        result: { title: 'Synthetic account', url: tab.url,
+          elements: [{ role: 'button', label: 'Open', disabled: false }] } }];
+    } },
+  };
+  try {
+    await import(`../service-worker.mjs?contract=${Date.now()}`);
+    clicked.emit(tab);
+    await until(() => reports.length === 1);
+    assert.equal(injected, 1);
+    assert.equal(reports[0].binding.documentId, documentId);
+    assert.deepEqual(reports[0].snapshot.elements,
+      [{ role: 'button', label: 'Open', disabled: false }]);
+    documentId = 'document-2';
+    committed.emit({ tabId: 18, frameId: 0, documentId });
+    assert.equal(session.activeGrantCount, 0);
+  } finally {
+    session.close();
     delete globalThis.chrome;
   }
 });
