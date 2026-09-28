@@ -725,3 +725,23 @@ SQLite linked. The sandboxed first attempt could not run its `/bin/ps` safety
 check; an approved unsandboxed retry succeeded. The first `npm run check`
 could not bind synthetic loopback ports in the sandbox. The approved retry
 passed **199/199 tests**, zero skipped. No live native action was performed.
+
+## Controller-signed native commit claim, 28 September 2026
+
+`npm run test:native-host-permit` compiled the Swift Ed25519 verifier and
+compared it against a Node-signed canonical protocol claim. The valid fixture
+passed; a different public key/signature, changed preparation reference or
+action digest, changed or independently signed wrong candidate, changed task
+epoch, expired/future claim and extra permit field were
+rejected. This test used fixed synthetic identities and made no AX call.
+
+`npm run check` passed **199/199 tests** after the private-pipe process test was
+updated to verify the key announcement and a signed commit. The first full run
+had one failing process test because it treated the new key announcement as an
+action request; no product action failed. `zsh scripts/build-bundled-dev.sh
+.build/release-deps/node-v26.5.0-darwin-arm64.tar.xz
+/Users/daryl/Library/Caches/ms-playwright` rebuilt the ad-hoc bundle and
+`node scripts/check-bundled-dev.mjs ABSOLUTE_APP_PATH` passed its AppKit
+running-code/key acceptance and isolated Chromium smoke. This is not a live
+native setter, Developer ID/notarization, clean-Mac or existing-profile Chrome
+test.

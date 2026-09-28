@@ -27,6 +27,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     private var inspectionPending = false
     private var controller: Process?
     private var controllerRequirement: RunningProcessRequirement?
+    private var nativePermitKeyAccepted = false
     private var controllerInput: Pipe?
     private var controllerOutput: Pipe?
     private var outputBuffer = Data()
@@ -49,15 +50,21 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
                 }
                 exit(1)
             }
+            let keyDeadline = Date().addingTimeInterval(3)
+            while !nativePermitKeyAccepted && process.isRunning && Date() < keyDeadline {
+                _ = RunLoop.current.run(mode: .default,
+                                        before: Date().addingTimeInterval(0.01))
+            }
+            let permitKeyAccepted = nativePermitKeyAccepted
             controllerOutput?.fileHandleForReading.readabilityHandler = nil
             controllerInput?.fileHandleForWriting.closeFile()
             process.waitUntilExit()
-            let success = process.terminationStatus == 0
+            let success = permitKeyAccepted && process.terminationStatus == 0
             if let identityCheckSupport {
                 try? FileManager.default.removeItem(at: identityCheckSupport)
             }
-            print(success ? "PASS: bundled controller running code identity accepted"
-                          : "FAIL: bundled controller did not exit cleanly")
+            print(success ? "PASS: bundled controller identity and permit key accepted"
+                          : "FAIL: bundled controller identity, permit key or exit")
             exit(success ? 0 : 1)
         }
         // Development fallback: a hidden menu-bar item remains reachable from
@@ -231,6 +238,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     }
 
     private func startController() {
+        nativePermitKeyAccepted = false
+        nativeWorker.invalidateHostPublicKey()
         let bundled = Bundle.main.object(forInfoDictionaryKey: "SystemOneBundledRuntime") as? Bool == true
         let node = bundled
             ? Bundle.main.bundleURL.appendingPathComponent("Contents/Frameworks/node").path
@@ -322,6 +331,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             if activeSurface == .native, let activeRequestID {
                 nativeWorker.requestLocalStop(activeRequestID)
             }
+            nativeWorker.invalidateHostPublicKey()
             chromeListener?.stop()
             if process.isRunning { process.terminate() }
             statusField?.stringValue = "Controller identity changed; task outcome uncertain."
@@ -407,11 +417,29 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
                 continue
             }
             if object["type"] as? String == "native_worker_request" {
+                guard nativePermitKeyAccepted else {
+                    statusField?.stringValue = "Native permit key unavailable; outcome uncertain."
+                    controller?.terminate()
+                    return
+                }
                 nativeWorker.handle(line) { [weak self] reply in
                     Task { @MainActor [weak self] in
                         self?.sendRaw(reply)
                     }
                 }
+                continue
+            }
+            if object["type"] as? String == "native_permit_key" {
+                guard !nativePermitKeyAccepted,
+                      Set(object.keys) == ["type", "publicKey"],
+                      let encoded = object["publicKey"] as? String,
+                      let key = NativeHostPermit.publicKey(encoded) else {
+                    statusField?.stringValue = "Invalid native permit key; outcome uncertain."
+                    controller?.terminate()
+                    return
+                }
+                nativePermitKeyAccepted = true
+                nativeWorker.installHostPublicKey(key)
                 continue
             }
             if object["type"] as? String == "chrome_port_send",
@@ -509,6 +537,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     }
 
     private func controllerExited(_ code: Int32) {
+        nativePermitKeyAccepted = false
+        nativeWorker.invalidateHostPublicKey()
         chromeListener?.stop()
         chromeListener = nil
         if activeSurface == .native, let activeRequestID {
