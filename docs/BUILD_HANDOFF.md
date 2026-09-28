@@ -72,7 +72,8 @@ established by the current fixture-only native or browser tests.
   [#50 synthetic native file LOCATE task](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/50),
   [#51 distinct synthetic native OPEN task](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/51),
   [#52 scoped read-only native AX coverage](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/52),
-  [#53 local computer-use test session](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/53).
+  [#53 local computer-use test session](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/53),
+  [#54 compact voice/text command alpha](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/54).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current implementation branch is `codex/voice-command-alpha`,
   stacked on `codex/local-v1-test-setup`.
