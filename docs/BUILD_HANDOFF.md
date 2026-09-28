@@ -62,7 +62,8 @@ established by the current fixture-only native or browser tests.
   [#40 Chrome action-scoped grant](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/40),
   [#41 isolated Chrome journaled fill](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/41),
   [#42 Chrome Stop after dispatch](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/42),
-  [#43 production controller Chrome transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/43).
+  [#43 production controller Chrome transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/43),
+  [#44 shared action candidates](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/44).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current implementation branch is `codex/shared-candidate-projection`,
   stacked on `codex/chrome-controller-transport`.
