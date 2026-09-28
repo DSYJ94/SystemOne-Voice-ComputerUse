@@ -247,9 +247,11 @@ final class DevNativeFieldWorker: @unchecked Sendable {
               let candidateID = message["candidateId"] as? String,
               let node = state.observation.nodes.first(where: { $0.id == candidateID }),
               let expectedTitle = message["expectedWindowTitle"] as? String,
-              expectedTitle == "SystemOne Fixture — Documents",
               node.description.role == (kAXButtonRole as String),
-              node.description.label == "Documents",
+              ((expectedTitle == "SystemOne Fixture — Documents"
+                && node.description.label == "Documents")
+               || (expectedTitle == "SystemOne Fixture — Documents — Budget.xlsx selected"
+                && node.description.label == "Budget.xlsx")),
               let executionID = message["executionId"] as? String,
               let permitRef = message["permitRef"] as? String,
               let actionDigest = message["actionDigest"] as? String,
@@ -270,6 +272,12 @@ final class DevNativeFieldWorker: @unchecked Sendable {
         }
         state.preparedOnce = true
         do {
+            if expectedTitle == "SystemOne Fixture — Documents — Budget.xlsx selected" {
+                guard try state.backend.windowTitles(for: state.target)
+                    == ["SystemOne Fixture — Documents"] else {
+                    return ["kind": "unsupported"]
+                }
+            }
             state.preparedPress = try prepareNativePress(backend: state.backend,
                 registry: state.registry, target: state.target,
                 observation: state.observation, nodeID: candidateID,
@@ -326,7 +334,15 @@ final class DevNativeFieldWorker: @unchecked Sendable {
         }
         // The per-process signature is tied to the checked child code identity
         // only in the bundled build. Release signing and peer qualification remain.
-        switch prepared.send(recordBoundary: {}) {
+        switch prepared.send(recordBoundary: {
+            if state.expectedWindowTitle
+                == "SystemOne Fixture — Documents — Budget.xlsx selected" {
+                guard try state.backend.windowTitles(for: state.target)
+                    == ["SystemOne Fixture — Documents"] else {
+                    throw NativePressActionError.targetChanged
+                }
+            }
+        }) {
         case .verified: return "verified"
         case .notDispatched: return "not_dispatched"
         case .unknown: return "unknown"
@@ -380,7 +396,9 @@ final class DevNativeFieldWorker: @unchecked Sendable {
     private func verifyPress(_ message: [String: Any], taskID: String) -> Any {
         guard let state, state.taskID == taskID, state.mode == "press",
               let expectedTitle = message["expectedWindowTitle"] as? String,
-              expectedTitle == "SystemOne Fixture — Documents",
+              ["SystemOne Fixture — Documents",
+               "SystemOne Fixture — Documents — Budget.xlsx selected"]
+                .contains(expectedTitle),
               (state.expectedWindowTitle == nil
                 || expectedTitle == state.expectedWindowTitle),
               state.target.bundleID == "com.aurium.systemone.fixture" else {

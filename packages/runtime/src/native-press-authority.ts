@@ -13,6 +13,8 @@ const ID = /^[A-Za-z0-9_.:-]{1,160}$/;
 const FIXTURE_BUNDLE = 'com.aurium.systemone.fixture';
 const FOLDER = 'Documents';
 const EXPECTED_TITLE = 'SystemOne Fixture — Documents';
+const FILE = 'Budget.xlsx';
+const SELECTED_TITLE = 'SystemOne Fixture — Documents — Budget.xlsx selected';
 const POLICY = 'native-ax-press-fixture-v1';
 
 export interface NativePressControl {
@@ -61,8 +63,19 @@ export interface NativePressRequest {
   readonly command: Record<string, JSONValue>;
 }
 
+export interface NativeLocateRequest {
+  readonly requestId: string;
+  readonly bundleId: string;
+  readonly folderName: string;
+  readonly fileName: string;
+  readonly expectedWindowTitle: string;
+  readonly command: Record<string, JSONValue>;
+}
+
 export type NativePressResult = 'verified_navigation' | 'already_matched'
-  | 'unsupported' | 'uncertain' | 'stopped' | 'error';
+  | 'verified_locate' | 'unsupported' | 'uncertain' | 'stopped' | 'error';
+
+type StepResult = 'verified' | 'unsupported' | 'uncertain' | 'stopped';
 
 interface Active {
   readonly requestId: string;
@@ -96,8 +109,8 @@ function validObservation(value: NativePressObservation): boolean {
   return true;
 }
 
-/** Only the fixed synthetic Documents action is admitted while this driver is
- * qualified. The model cannot widen its target or expected outcome. */
+/** Only fixed synthetic Documents navigation and file selection are admitted.
+ * The model cannot widen the target, operation or expected outcome. */
 export class NativePressAuthority {
   readonly #journal: AttemptJournal;
   readonly #worker: NativePressWorker;
@@ -119,8 +132,24 @@ export class NativePressAuthority {
   start(request: NativePressRequest): Promise<NativePressResult> {
     if (!ID.test(request.requestId) || request.bundleId !== FIXTURE_BUNDLE
       || request.folderName !== FOLDER
-      || request.expectedWindowTitle !== EXPECTED_TITLE
-      || this.#seen.has(request.requestId) || this.#seen.size >= 1_000) {
+      || request.expectedWindowTitle !== EXPECTED_TITLE) {
+      return Promise.resolve('error');
+    }
+    return this.#start(request, 'navigate');
+  }
+
+  startLocate(request: NativeLocateRequest): Promise<NativePressResult> {
+    if (!ID.test(request.requestId) || request.bundleId !== FIXTURE_BUNDLE
+      || request.folderName !== FOLDER || request.fileName !== FILE
+      || request.expectedWindowTitle !== SELECTED_TITLE) {
+      return Promise.resolve('error');
+    }
+    return this.#start(request, 'locate');
+  }
+
+  #start(request: NativePressRequest | NativeLocateRequest,
+    mode: 'navigate' | 'locate'): Promise<NativePressResult> {
+    if (this.#seen.has(request.requestId) || this.#seen.size >= 1_000) {
       return Promise.resolve('error');
     }
     this.#seen.add(request.requestId);
@@ -130,7 +159,7 @@ export class NativePressAuthority {
       abort: new AbortController(), stopped: false, journalStarted: false,
       workerTouched: false, done: Promise.resolve('error') };
     this.#active = active;
-    active.done = this.#run(request, active).finally(() => {
+    active.done = this.#run(request, active, mode).finally(() => {
       if (this.#active === active) this.#active = undefined;
     });
     return active.done;
@@ -151,7 +180,8 @@ export class NativePressAuthority {
     if (active.journalStarted && this.#journal.attemptsForTask(active.requestId)
       .some(attempt => attempt.phase === 'at_dispatch_boundary'
         || (attempt.outcome?.deliveryStatus !== undefined
-          && attempt.outcome.deliveryStatus !== 'not_dispatched'))) {
+          && attempt.outcome.deliveryStatus !== 'not_dispatched'
+          && attempt.outcome.verification !== 'matched'))) {
       this.#requiresRecovery = true;
     }
     const workerFenced = await this.#boundedStop(active.requestId);
@@ -172,7 +202,11 @@ export class NativePressAuthority {
     } finally { if (timer) clearTimeout(timer); }
   }
 
-  async #run(request: NativePressRequest, active: Active): Promise<NativePressResult> {
+  async #run(request: NativePressRequest | NativeLocateRequest, active: Active,
+    mode: 'navigate' | 'locate'): Promise<NativePressResult> {
+    if (mode === 'locate') {
+      return this.#runLocate(request as NativeLocateRequest, active);
+    }
     let executionId: string | undefined;
     try {
       const command = request.command;
@@ -332,6 +366,212 @@ export class NativePressAuthority {
           this.#workerFenceFailed = true;
         }
       }
+    }
+  }
+
+  async #runLocate(request: NativeLocateRequest,
+    active: Active): Promise<NativePressResult> {
+    try {
+      const command = request.command;
+      const expectedCommand = 'Locate synthetic fixture file Documents/Budget.xlsx';
+      if (command.type !== 'command' || command.source !== 'text'
+        || command.mode !== 'command' || command.isFinal !== true
+        || command.taskId !== request.requestId || command.taskEpoch !== 1
+        || command.goalRevision !== 1 || command.text !== expectedCommand
+        || command.originSurface === undefined || command.originSurface === null
+        || typeof command.originSurface !== 'object'
+        || Array.isArray(command.originSurface)
+        || command.originSurface.appBundleId !== 'com.aurium.systemone.dev') {
+        return 'error';
+      }
+      const revision = { taskId: request.requestId, taskEpoch: 1, goalRevision: 1 };
+      const endpoint = bindEndpoint(['command']);
+      const input = new CommittedInputSession(endpoint, revision);
+      const route = input.accept(endpoint, Buffer.from(JSON.stringify(command)));
+      if (route.kind !== 'interpret_command') return 'error';
+      const path = bindCommandValue(route.input, 'synthetic-file-path',
+        'Locate synthetic fixture file ', 'Documents/Budget.xlsx');
+      active.workerTouched = true;
+      const first = await this.#worker.observePress({
+        taskId: request.requestId, bundleId: request.bundleId,
+        signal: active.abort.signal,
+      });
+      if (active.stopped) return 'stopped';
+      if (!validObservation(first) || !first.complete
+        || first.windowTitles.length !== 1) return 'unsupported';
+      const initialTitle = first.windowTitles[0];
+      if (![ 'SystemOne Fixture', 'SystemOne Fixture — Downloads',
+        EXPECTED_TITLE, SELECTED_TITLE ].includes(initialTitle!)) {
+        return 'unsupported';
+      }
+      const registry = new TaskAdmissionRegistry(revision, input);
+      const admission = registry.admit(route.input, {
+        admissionId: randomUUID(), goal: route.input.text,
+        outcomeKind: 'LOCATE', scopeRef: first.scopeRef,
+        completionVerifierRef: 'native-fixture-selected-title-v1',
+        policyRevision: POLICY, approvedEffects: ['READ', 'NAVIGATE'],
+        parameters: [path],
+      });
+      registry.claimForTask(admission);
+      this.#journal.startTask(request.requestId, 1, 1);
+      active.journalStarted = true;
+      if (active.stopped) return 'stopped';
+      if (initialTitle === SELECTED_TITLE) {
+        const matched = await this.#worker.verifyPress({
+          taskId: request.requestId, expectedWindowTitle: SELECTED_TITLE,
+        });
+        if (active.stopped) return 'stopped';
+        if (!matched) return 'unsupported';
+        this.#journal.completeTask(request.requestId,
+          'native-selected-current-' + request.requestId);
+        return 'already_matched';
+      }
+      let fileObservation = first;
+      if (initialTitle !== EXPECTED_TITLE) {
+        const folderResult = await this.#locateStep(request.requestId, first,
+          FOLDER, EXPECTED_TITLE, active);
+        if (folderResult === 'stopped') return 'stopped';
+        if (folderResult !== 'verified') return folderResult;
+        if (active.stopped) return 'stopped';
+        fileObservation = await this.#worker.observePress({
+          taskId: request.requestId, bundleId: request.bundleId,
+          signal: active.abort.signal,
+        });
+        if (active.stopped) return 'stopped';
+        if (!validObservation(fileObservation) || !fileObservation.complete
+          || fileObservation.scopeRef !== first.scopeRef
+          || fileObservation.observationId === first.observationId
+          || fileObservation.windowTitles.length !== 1
+          || fileObservation.windowTitles[0] !== EXPECTED_TITLE) {
+          return 'unsupported';
+        }
+      }
+      const fileResult = await this.#locateStep(request.requestId,
+        fileObservation, FILE, SELECTED_TITLE, active);
+      if (fileResult === 'stopped') return 'stopped';
+      if (fileResult !== 'verified') return fileResult;
+      if (active.stopped) return 'stopped';
+      const finalAttempt = this.#journal.attemptsForTask(request.requestId)
+        .at(-1);
+      const evidenceRef = finalAttempt?.outcome?.evidenceRef;
+      if (!evidenceRef) return 'uncertain';
+      this.#journal.completeTask(request.requestId, evidenceRef);
+      return 'verified_locate';
+    } catch {
+      return active.stopped ? 'stopped' : 'error';
+    } finally {
+      if (active.journalStarted
+        && this.#journal.getTaskState(active.requestId) === 'active') {
+        this.#journal.cancelTask(active.requestId);
+      }
+      if (active.workerTouched && !active.stopped
+        && (!active.journalStarted
+          || this.#journal.getTaskState(active.requestId) !== 'completed')) {
+        if (!await this.#boundedStop(active.requestId)) {
+          this.#workerFenceFailed = true;
+        }
+      }
+    }
+  }
+
+  async #locateStep(taskId: string, observation: NativePressObservation,
+    label: string, expectedTitle: string, active: Active): Promise<StepResult> {
+    let executionId: string | undefined;
+    try {
+      if (active.stopped) return 'stopped';
+      if (observation.windowTitles.length !== 1
+        || (label === FILE && observation.windowTitles[0] !== EXPECTED_TITLE)) {
+        return 'unsupported';
+      }
+      const matching = observation.controls.filter(control =>
+        control.role === 'AXButton' && control.label === label
+        && control.enabled && !control.secure && control.canPress);
+      const offered = buildActionCandidates({
+        source: { surface: 'native', observationId: observation.observationId,
+          complete: observation.complete,
+          controls: observation.controls.map(control => ({
+            targetRef: control.id, role: control.role, label: control.label,
+            context: '', visible: true, enabled: control.enabled,
+            editable: false, invokable: !control.secure && control.canPress,
+            destinationUrl: null,
+          })) },
+        invocations: matching.map(control => ({ targetRef: control.id,
+          expectedRef: label === FILE ? 'selected-file' : 'documents-window',
+          expectedDescription: label === FILE
+            ? 'Documents/Budget.xlsx selected and closed'
+            : 'Documents folder identity' })),
+        policyRevision: POLICY,
+      });
+      const selected = selectBoundCandidate(offered, 'invoke',
+        matching.map(control => control.id));
+      if (!selected || matching.length !== 1) return 'unsupported';
+      const candidate = matching[0]!;
+      const action = { taskId, scopeRef: observation.scopeRef,
+        observationId: observation.observationId,
+        candidateId: candidate.id, role: candidate.role, label: candidate.label,
+        expectedWindowTitle: expectedTitle, policyRevision: POLICY };
+      const permit: PreparedAttempt = Object.freeze({
+        executionId: randomUUID(), permitRef: randomUUID(),
+        taskId, taskEpoch: 1, goalRevision: 1,
+        scopeRef: observation.scopeRef, observationId: observation.observationId,
+        candidateId: candidate.id,
+        candidateSetDigest: digest(observation.controls.map(control => ({
+          id: control.id, role: control.role, label: control.label,
+          enabled: control.enabled, secure: control.secure,
+          canPress: control.canPress,
+        }))),
+        actionDigest: digest(action), policyRevision: POLICY,
+        leaseGeneration: 1,
+      });
+      const prepared = await this.#worker.preparePress({
+        taskId, observationId: observation.observationId,
+        candidateId: candidate.id, expectedWindowTitle: expectedTitle,
+        executionId: permit.executionId, permitRef: permit.permitRef,
+        actionDigest: permit.actionDigest,
+        candidateSetDigest: permit.candidateSetDigest,
+        policyRevision: permit.policyRevision, signal: active.abort.signal,
+      });
+      if (active.stopped) return 'stopped';
+      if (prepared.kind !== 'ready' || !ID.test(prepared.preparationRef)) {
+        return 'unsupported';
+      }
+      this.#journal.prepare(permit);
+      executionId = permit.executionId;
+      if (active.stopped) return 'stopped';
+      this.#journal.markDispatchBoundary(permit.executionId);
+      const result = await this.#worker.commitPress({
+        taskId, executionId: permit.executionId, permitRef: permit.permitRef,
+        preparationRef: prepared.preparationRef, permit,
+      });
+      let matched = false;
+      if (result === 'returned_unverified' && !active.stopped) {
+        matched = await this.#worker.verifyPress({
+          taskId, expectedWindowTitle: expectedTitle,
+        });
+      }
+      const outcome = result === 'not_dispatched'
+        ? { deliveryStatus: 'not_dispatched' as const,
+          effectStatus: 'not_applied' as const,
+          verification: 'unavailable' as const }
+        : matched && !active.stopped
+          ? { deliveryStatus: 'dispatched' as const,
+            effectStatus: 'applied' as const, verification: 'matched' as const,
+            evidenceRef: 'native-window-' + permit.executionId }
+          : { deliveryStatus: result === 'unknown' ? 'unknown' as const
+            : 'dispatched' as const, effectStatus: 'unknown' as const,
+            verification: 'unavailable' as const };
+      this.#journal.recordOutcome(permit.executionId, outcome);
+      if (active.stopped) return 'stopped';
+      if (result === 'not_dispatched') return 'unsupported';
+      return matched ? 'verified' : 'uncertain';
+    } catch {
+      if (executionId && this.#journal.getAttempt(executionId)?.phase
+        === 'at_dispatch_boundary') {
+        this.#journal.recordOutcome(executionId, { deliveryStatus: 'unknown',
+          effectStatus: 'unknown', verification: 'unavailable' });
+        return 'uncertain';
+      }
+      return active.stopped ? 'stopped' : 'unsupported';
     }
   }
 }

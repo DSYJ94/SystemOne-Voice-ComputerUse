@@ -28,10 +28,12 @@ private func systemOneHotkeyHandler(_ event: EventHandlerCallRef?,
 @MainActor
 final class SystemOneDev: NSObject, NSApplicationDelegate {
     private enum ActiveSurface {
-        case managed, managedNavigation, portal, native, nativeNavigation, chrome
+        case managed, managedNavigation, portal, native, nativeNavigation,
+             nativeLocate, chrome
     }
     private var nativeActionActive: Bool {
         activeSurface == .native || activeSurface == .nativeNavigation
+            || activeSurface == .nativeLocate
     }
     private var statusItem: NSStatusItem?
     private var panel: NSPanel?
@@ -222,6 +224,12 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         let fixtureDocuments = NSButton(title: "Show Fixture Documents",
             target: self, action: #selector(startFixtureDocuments))
         fixtureDocuments.setAccessibilityLabel("Navigate synthetic Fixture to Documents")
+        let fixtureLocate = NSButton(title: "Locate Fixture Budget.xlsx",
+            target: self, action: #selector(startFixtureLocate))
+        fixtureLocate.setAccessibilityLabel("Select synthetic Documents/Budget.xlsx without opening")
+        let fixtureActions = NSStackView(views: [fixtureDocuments, fixtureLocate])
+        fixtureActions.orientation = .horizontal
+        fixtureActions.spacing = 8
         let nativeActions = NSStackView(views: [access, inspect, nativeFill])
         nativeActions.orientation = .horizontal
         nativeActions.spacing = 8
@@ -256,7 +264,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         let stack = NSStackView(views: [shortcuts, focus, heading, explanation,
                                         url, label, value, status, actions, portal, nativeHeading,
                                         nativeExplanation, bundle, nativeLabel,
-                                        nativeValue, nativeActions, fixtureDocuments, scroll,
+                                        nativeValue, nativeActions, fixtureActions, scroll,
                                         chromeHeading, chromeExplanation,
                                         chromeLabel, chromeValue, chromeFill])
         stack.orientation = .vertical
@@ -552,6 +560,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             statusField?.stringValue = "Checking the exact native app and field…"
         case "observing_native_navigation":
             statusField?.stringValue = "Checking the synthetic Fixture's Documents control and current window…"
+        case "observing_native_locate":
+            statusField?.stringValue = "Finding synthetic Documents/Budget.xlsx with fresh observations…"
         case "observing_chrome":
             statusField?.stringValue = "Rechecking the exact existing Chrome tab and field…"
         case "dispatching": statusField?.stringValue = activeSurface == .managedNavigation
@@ -575,15 +585,21 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             statusField?.stringValue = "Verified: the native field holds the supplied text."
         case "verified_native_navigation":
             statusField?.stringValue = "Verified: the Fixture window shows Documents. Budget.xlsx has not been selected or opened."
+        case "verified_native_locate":
+            statusField?.stringValue = "Verified: Documents/Budget.xlsx is selected in the Fixture and remains closed."
         case "verified_chrome_dom_fill":
             statusField?.stringValue = "Verified: the existing Chrome field currently holds the supplied text. No server save is claimed."
         case "already_matched":
-            statusField?.stringValue = activeSurface == .nativeNavigation
-                ? "Verified: the Fixture was already showing Documents; no press was sent."
-                : "Verified: the field already held that text; no setter was sent."
-        case "unsupported": statusField?.stringValue = activeSurface == .nativeNavigation
-            ? "Documents control absent, ambiguous or outside observed coverage. No press sent."
-            : "Field absent, ambiguous or outside observed coverage. No fill sent."
+            statusField?.stringValue = activeSurface == .nativeLocate
+                ? "Verified: Documents/Budget.xlsx was already selected and closed; no press was sent."
+                : activeSurface == .nativeNavigation
+                    ? "Verified: the Fixture was already showing Documents; no press was sent."
+                    : "Verified: the field already held that text; no setter was sent."
+        case "unsupported": statusField?.stringValue = activeSurface == .nativeLocate
+            ? "The synthetic path or control was absent, ambiguous or changed. File selection was not verified."
+            : activeSurface == .nativeNavigation
+                ? "Documents control absent, ambiguous or outside observed coverage. No press sent."
+                : "Field absent, ambiguous or outside observed coverage. No fill sent."
         case "uncertain":
             statusField?.stringValue = nativeActionActive
                 ? "Native outcome uncertain. Inspect the Fixture before retrying."
@@ -594,7 +610,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             }
         case "blocked_recovery": statusField?.stringValue = "Earlier effect unresolved. Re-observation is required before another task."
         case "stopping": statusField?.stringValue = "Stopping browser and fencing future actions…"
-        case "stopped": statusField?.stringValue = "Stopped. An already-sent edit may have taken effect."
+        case "stopped": statusField?.stringValue = "Stopped. An already-sent action may have taken effect."
         case "busy": statusField?.stringValue = "A task is already active."
         case "error": statusField?.stringValue = "The request was rejected or failed. No success is claimed."
         case "ready":
@@ -896,6 +912,47 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         activeRequestID = taskID
         activeSurface = .nativeNavigation
         statusField?.stringValue = "Fixture navigation sent to the local controller…"
+    }
+
+    @objc private func startFixtureLocate() {
+        guard let input = controllerInput, controller?.isRunning == true,
+              activeRequestID == nil, stopRequestID == nil,
+              !inspectionPending else {
+            statusField?.stringValue = "Controller unavailable or a task is active."
+            return
+        }
+        guard AXIsProcessTrustedWithOptions(nil) else {
+            statusField?.stringValue = "Accessibility is not granted to this SystemOne Dev build."
+            return
+        }
+        let taskID = UUID().uuidString.lowercased()
+        let command: [String: Any] = [
+            "type": "command", "protocolVersion": "2.0",
+            "messageId": UUID().uuidString.lowercased(),
+            "taskId": taskID, "taskEpoch": 1, "goalRevision": 1,
+            "source": "text", "mode": "command",
+            "utteranceId": UUID().uuidString.lowercased(),
+            "utteranceRevision": 1,
+            "text": "Locate synthetic fixture file Documents/Budget.xlsx",
+            "isFinal": true,
+            "createdAt": ISO8601DateFormatter().string(from: Date()),
+            "originSurface": ["adapter": "native", "surfaceId": "systemone-panel",
+                "appBundleId": "com.aurium.systemone.dev",
+                "windowId": "command-panel", "contentRevision": taskID],
+        ]
+        let request: [String: Any] = ["type": "start_native_locate",
+            "requestId": taskID, "bundleId": "com.aurium.systemone.fixture",
+            "folderName": "Documents", "fileName": "Budget.xlsx",
+            "expectedWindowTitle":
+                "SystemOne Fixture — Documents — Budget.xlsx selected",
+            "command": command]
+        guard send(request, through: input) else {
+            statusField?.stringValue = "Could not send fixture locate request."
+            return
+        }
+        activeRequestID = taskID
+        activeSurface = .nativeLocate
+        statusField?.stringValue = "Synthetic file selection sent to the local controller…"
     }
 
     @objc private func startChromeFill() {

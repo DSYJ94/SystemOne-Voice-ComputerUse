@@ -999,3 +999,27 @@ Developer ID release. One attempted command used the nonexistent npm script
 `test:native-worker-digest`; the documented script is
 `test:native-permit-digest`, which was then run and passed. The mistaken command
 is not counted as a test failure or pass.
+
+## Fixed synthetic native LOCATE task, 28 September 2026
+
+`npm run check` passed **230/230** TypeScript/Node tests, zero skipped, with
+typecheck. Seven focused LOCATE tests cover one task with two verified presses,
+skipping an already visible folder or selected file, a duplicate exact file
+label, changed folder between steps, an already opened file, Stop during the
+first dispatch, Stop between verified steps, and an unknown second effect.
+The controller child-process test confirms two separately signed commits and
+two journaled attempts under one task ID, with no Open control sent.
+`npm run test:native-ax` and `npm run test:native-host-permit` passed.
+`npm run test:native-permit-digest` passed TypeScript/Swift parity for the
+field, folder and file actions and rejects a substituted Open control.
+`npm run build:native-dev` compiled and ad-hoc signed the updated panel and
+AppKit worker. `git diff --check` passed.
+
+The first digest run in the restricted shell failed while Swift wrote to its
+user module cache; it also printed an SDK/compiler mismatch during that
+failure. A privileged rerun passed. The test script now uses an isolated
+temporary module cache, and a fresh restricted-shell rerun passed. The apps
+were **not launched**. Real Accessibility behavior, the title precondition
+on an actual Fixture window, Stop during a live AX call and release signing
+remain unverified. The Fixture title is a synthetic outcome oracle, not
+evidence of a real file path or Finder compatibility.
