@@ -35,6 +35,10 @@ final class NativeWorkerPermitLedger {
             try execute("PRAGMA journal_mode = DELETE;")
             try execute("PRAGMA synchronous = FULL;")
             try execute("PRAGMA busy_timeout = 1000;")
+            guard try pragmaValue("PRAGMA journal_mode") == "delete",
+                  try pragmaValue("PRAGMA synchronous") == "2" else {
+                throw LedgerError.unavailable
+            }
             try execute("CREATE TABLE IF NOT EXISTS consumed ("
                 + "execution_id TEXT PRIMARY KEY, permit_ref TEXT NOT NULL UNIQUE, "
                 + "task_id TEXT NOT NULL, action_digest TEXT NOT NULL);")
@@ -65,15 +69,16 @@ final class NativeWorkerPermitLedger {
         guard sqlite3_prepare_v2(database,
             "INSERT INTO consumed VALUES (?, ?, ?, ?)", -1,
             &statement, nil) == SQLITE_OK, let statement else { return false }
-        defer { sqlite3_finalize(statement) }
         let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-        guard sqlite3_bind_text(statement, 1, executionID, -1, transient) == SQLITE_OK,
-              sqlite3_bind_text(statement, 2, permitRef, -1, transient) == SQLITE_OK,
-              sqlite3_bind_text(statement, 3, taskID, -1, transient) == SQLITE_OK,
-              sqlite3_bind_text(statement, 4, actionDigest, -1, transient) == SQLITE_OK else {
-            return false
-        }
-        return sqlite3_step(statement) == SQLITE_DONE
+        let bound = sqlite3_bind_text(statement, 1, executionID, -1, transient) == SQLITE_OK &&
+              sqlite3_bind_text(statement, 2, permitRef, -1, transient) == SQLITE_OK &&
+              sqlite3_bind_text(statement, 3, taskID, -1, transient) == SQLITE_OK &&
+              sqlite3_bind_text(statement, 4, actionDigest, -1, transient) == SQLITE_OK
+        let inserted = bound && sqlite3_step(statement) == SQLITE_DONE
+        // An implicit SQLite transaction may finish only when the statement is
+        // finalized. Do not authorize AX dispatch on a finalize/commit error.
+        let finalized = sqlite3_finalize(statement) == SQLITE_OK
+        return inserted && finalized
     }
 
     private func execute(_ sql: String) throws {
@@ -94,6 +99,20 @@ final class NativeWorkerPermitLedger {
               sqlite3_step(statement) == SQLITE_DONE else {
             throw LedgerError.unavailable
         }
+    }
+
+    private func pragmaValue(_ sql: String) throws -> String {
+        guard let database else { throw LedgerError.unavailable }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1,
+                                 &statement, nil) == SQLITE_OK,
+              let statement else { throw LedgerError.unavailable }
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_step(statement) == SQLITE_ROW,
+              let value = sqlite3_column_text(statement, 0) else {
+            throw LedgerError.unavailable
+        }
+        return String(cString: value)
     }
 
     private static func checkOwnedPath(_ path: URL, mode: Int,
