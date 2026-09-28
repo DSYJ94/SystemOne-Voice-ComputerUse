@@ -30,6 +30,7 @@ swiftc -swift-version 6 -parse-as-library -framework AppKit -framework Carbon \
   "$repository_root/apps/native-dev/main.swift" \
   "$repository_root/apps/native-dev/DevChromeListener.swift" \
   "$repository_root/apps/native-dev/NativeFieldWorker.swift" \
+  "$repository_root/apps/native-dev/NativeInspectionSession.swift" \
   "$repository_root/apps/native-dev/NativeWorkerPermitLedger.swift" \
   "$repository_root/apps/native-dev/NativeHostPermit.swift" \
   "$repository_root/apps/native-dev/NativeWorkerPermitDigest.swift" \

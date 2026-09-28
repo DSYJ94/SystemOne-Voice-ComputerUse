@@ -97,9 +97,11 @@ field fill. There is no general-purpose executor or release binary yet.
   keyboard/focus path still needs a manual Mac check; see the
   [shortcut test guide](docs/NATIVE_SHORTCUT_TEST.md).
 - A read-only native Accessibility observation package with bounded traversal,
-  private observation-scoped handles and synthetic stale-target checks. The
-  development AppKit panel can now inspect one explicitly named running app
-  off its UI thread and show local labels/capabilities without field values.
+  explicit coverage gaps, private observation-scoped handles and synthetic
+  stale-target checks. The development AppKit panel can inspect one explicitly
+  named running app, then drill into a numbered observed region without
+  treating subtree coverage as whole-app coverage. Secure labels and descendants
+  are omitted; no field values or actions are read/sent by this inspector.
   It is not yet connected to task admission, action dispatch or the controller.
 - A restricted native `AXValue` driver now prepares one observed nonsecure text
   field, compares its prior value privately, and uses a one-use Stop fence and

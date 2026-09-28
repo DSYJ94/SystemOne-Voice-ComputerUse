@@ -1050,3 +1050,26 @@ Developer ID signing and notarization remain unverified. Static packaging
 review found that the current ad-hoc app/Chrome-host CDHash pins cannot be
 embedded together without a signing cycle; see
 [bundled runtime](BUNDLED_DEV_RUNTIME.md).
+
+## Scoped native AX coverage and development inspector, 28 September 2026
+
+`npm run test:native-ax` passed the synthetic registry, value and press checks.
+The registry checks cover explicit truncation/depth/foreign/secure gaps,
+sanitized secure labels and capabilities, exact-node subtree drill-down,
+stale prior handles and rejection of secure drill-down. A value-action fixture
+now expects incomplete coverage when its secure field is intentionally omitted.
+`npm run build:native-dev` compiled and ad-hoc signed the development app;
+`npm run check` typechecked and passed **237/237** TypeScript/Node tests.
+
+An initial Swift compile failed because a new public gap type lacked a public
+initializer; that was fixed. A subsequent test compile failed because the
+assertion helper takes a non-throwing closure; the throwing resolve was moved
+outside it. The next run exposed the prior value fixture's now-invalid
+whole-tree completeness expectation; it was changed to assert the precise
+secure-content gap. Only the final passing runs count.
+
+No app was launched, no Accessibility grant was requested and no real app was
+observed or controlled in this slice. The inspector is development-only,
+read-only and does not enter the controller's candidate/permit path. AX API
+timeouts, real-app tree coverage, secure-control behavior across apps and
+Stop responsiveness under a blocked call still require a manual Mac check.

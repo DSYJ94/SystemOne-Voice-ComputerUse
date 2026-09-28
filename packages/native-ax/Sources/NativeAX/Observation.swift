@@ -75,20 +75,55 @@ public enum AXObservationError: Error, Equatable {
     case targetChanged
     case staleObservation
     case staleNode
+    case secureRegion
     case invalidLimits
 }
 
 public struct AXObservedNode: Equatable, Sendable {
     public let id: String
     public let parentID: String?
+    /// Bounded ancestor labels for display/candidate descriptions only.
+    /// A later action must revalidate its retained handle and target.
+    public let ancestorContext: String
     public let description: AXDescription
+}
+
+public enum AXObservationScope: Equatable, Sendable {
+    case application
+    /// A complete subtree is not proof that the whole application was covered.
+    case subtree(sourceObservationID: String, sourceNodeID: String)
+}
+
+public enum AXCoverageGapReason: String, Equatable, Sendable {
+    case nodeLimit
+    case deadline
+    case depthLimit
+    case childrenTruncated
+    case inaccessibleNode
+    case inaccessibleChildren
+    case foreignNode
+    case secureContentOmitted
+}
+
+public struct AXCoverageGap: Equatable, Sendable {
+    public let anchorNodeID: String?
+    public let reason: AXCoverageGapReason
+
+    public init(anchorNodeID: String?, reason: AXCoverageGapReason) {
+        self.anchorNodeID = anchorNodeID
+        self.reason = reason
+    }
 }
 
 public struct AXObservation: Equatable, Sendable {
     public let id: String
     public let scopeRef: String
+    public let scope: AXObservationScope
     public let nodes: [AXObservedNode]
-    /** False means a target might be outside observed coverage. */
+    /// Bounded clues for drill-down. Their absence proves coverage only within
+    /// this scope; it never proves unsupported AX content does not exist.
+    public let coverageGaps: [AXCoverageGap]
+    /** False means a target might be outside observed coverage in this scope. */
     public let complete: Bool
 }
 
@@ -122,51 +157,101 @@ public final class NativeAXObservationRegistry<Backend: AXObservationBackend> {
         invalidate()
         guard backend.isCurrentTarget(target) else { throw AXObservationError.targetChanged }
         let root = try backend.root(for: target)
+        return try collect(root, target: target, scope: .application)
+    }
+
+    /// Drill into one retained node without trusting a label or global search.
+    /// This invalidates every handle from the prior observation. The returned
+    /// completeness flag applies only to this subtree, never the whole app.
+    public func observeSubtree(observationID: String, nodeID: String,
+                               target: AXTarget) throws -> AXObservation {
+        let root = try resolve(observationID: observationID, nodeID: nodeID,
+                               target: target)
+        guard descriptions[nodeID]?.secure == false else {
+            throw AXObservationError.secureRegion
+        }
+        invalidate()
+        return try collect(root, target: target,
+                           scope: .subtree(sourceObservationID: observationID,
+                                           sourceNodeID: nodeID))
+    }
+
+    private func collect(_ root: Backend.Handle, target: AXTarget,
+                         scope: AXObservationScope) throws -> AXObservation {
         let observationID = UUID().uuidString
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: budget)
         var queue: [(Backend.Handle, String?, Int)] = [(root, nil, 0)]
         var nodes: [AXObservedNode] = []
-        var complete = true
+        var gaps: [AXCoverageGap] = []
+        var incomplete = false
+        var paths: [String: String] = [:]
+        func mark(_ reason: AXCoverageGapReason, anchor: String?) {
+            incomplete = true
+            if gaps.count < 32 {
+                gaps.append(AXCoverageGap(anchorNodeID: anchor, reason: reason))
+            }
+        }
 
         while !queue.isEmpty {
-            guard nodes.count < maxNodes, clock.now < deadline else {
-                complete = false
+            if nodes.count >= maxNodes {
+                mark(.nodeLimit, anchor: queue.first?.1)
+                break
+            }
+            if clock.now >= deadline {
+                mark(.deadline, anchor: queue.first?.1)
                 break
             }
             let (handle, parentID, depth) = queue.removeFirst()
             let description: AXDescription
-            do { description = try backend.describe(handle) }
+            do { description = Self.sanitized(try backend.describe(handle)) }
             catch {
-                complete = false
+                mark(.inaccessibleNode, anchor: parentID)
                 continue
             }
             guard backend.belongsToTarget(handle, target: target) else {
-                complete = false
+                mark(.foreignNode, anchor: parentID)
                 continue
             }
-            guard clock.now < deadline else { complete = false; break }
+            guard clock.now < deadline else {
+                mark(.deadline, anchor: parentID)
+                break
+            }
             let nodeID = "\(observationID):\(nodes.count)"
+            let ancestorContext = parentID.flatMap { paths[$0] } ?? ""
             nodes.append(AXObservedNode(id: nodeID, parentID: parentID,
+                                        ancestorContext: ancestorContext,
                                         description: description))
             handles[nodeID] = handle
             descriptions[nodeID] = description
+            let segment = description.secure ? description.role
+                : description.label.isEmpty ? description.role
+                : "\(description.role): \(description.label.prefix(80))"
+            paths[nodeID] = String((ancestorContext.isEmpty ? segment
+                : ancestorContext + " / " + segment).suffix(160))
+            if description.secure {
+                mark(.secureContentOmitted, anchor: nodeID)
+                continue
+            }
             if depth >= maxDepth {
                 // Child count is not read at this depth; absence is unproven.
-                complete = false
+                mark(.depthLimit, anchor: nodeID)
                 continue
             }
             do {
                 let remaining = maxNodes - nodes.count - queue.count
                 if remaining <= 0 {
-                    complete = false
+                    mark(.nodeLimit, anchor: nodeID)
                     continue
                 }
                 let page = try backend.children(of: handle, limit: remaining)
-                if clock.now >= deadline { complete = false; break }
-                if page.hasMore { complete = false }
+                if clock.now >= deadline {
+                    mark(.deadline, anchor: nodeID)
+                    break
+                }
+                if page.hasMore { mark(.childrenTruncated, anchor: nodeID) }
                 queue.append(contentsOf: page.handles.map { ($0, nodeID, depth + 1) })
-            } catch { complete = false }
+            } catch { mark(.inaccessibleChildren, anchor: nodeID) }
         }
         guard backend.isCurrentTarget(target) else {
             invalidate()
@@ -175,7 +260,8 @@ public final class NativeAXObservationRegistry<Backend: AXObservationBackend> {
         currentID = observationID
         currentTarget = target
         return AXObservation(id: observationID, scopeRef: target.scopeRef,
-                             nodes: nodes, complete: complete)
+                             scope: scope, nodes: nodes,
+                             coverageGaps: gaps, complete: !incomplete)
     }
 
     /// Returns a local handle only while this observation and its descriptor
@@ -189,7 +275,7 @@ public final class NativeAXObservationRegistry<Backend: AXObservationBackend> {
         guard backend.isCurrentTarget(target), let handle = handles[nodeID],
               let prior = descriptions[nodeID],
               backend.belongsToTarget(handle, target: target),
-              (try? backend.describe(handle)) == prior else {
+              (try? Self.sanitized(backend.describe(handle))) == prior else {
             throw AXObservationError.staleNode
         }
         return handle
@@ -200,5 +286,12 @@ public final class NativeAXObservationRegistry<Backend: AXObservationBackend> {
         currentTarget = nil
         handles.removeAll()
         descriptions.removeAll()
+    }
+
+    private static func sanitized(_ description: AXDescription) -> AXDescription {
+        guard description.secure else { return description }
+        return AXDescription(role: description.role, label: "",
+                             enabled: description.enabled, secure: true,
+                             capabilities: [], bounds: description.bounds)
     }
 }

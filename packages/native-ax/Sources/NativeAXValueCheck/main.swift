@@ -60,7 +60,10 @@ private func scenario(_ body: (FakeBackend, NativeAXObservationRegistry<FakeBack
     let registry = try NativeAXObservationRegistry(backend: backend, maxNodes: 8,
                                                     maxDepth: 2)
     let observation = try registry.observe(target)
-    check(observation.complete, "complete synthetic observation")
+    check(!observation.complete &&
+          observation.coverageGaps.count == 1 &&
+          observation.coverageGaps[0].reason == .secureContentOmitted,
+          "secure field makes the observation explicitly incomplete")
     try body(backend, registry, observation, NativeValueFence())
 }
 

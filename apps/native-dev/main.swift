@@ -49,6 +49,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     private var nativeBundleField: NSTextField?
     private var nativeLabelField: NSTextField?
     private var nativeValueField: NSTextField?
+    private var nativeRegionField: NSTextField?
     private var nativeOutput: NSTextView?
     private var chromeLabelField: NSTextField?
     private var chromeValueField: NSTextField?
@@ -56,6 +57,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     private var chromeGrantID: String?
     private var chromeURL: String?
     private let nativeWorker = DevNativeFieldWorker()
+    private let nativeInspector = NativeInspectionSession()
     private var chromeListener: DevChromeListener?
     private var inspectionEpoch = 0
     private var inspectionPending = false
@@ -219,6 +221,16 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
                               action: #selector(requestAccessibility))
         let inspect = NSButton(title: "Inspect app", target: self,
                                action: #selector(inspectNativeApp))
+        let region = NSTextField()
+        region.placeholderString = "Shown region #"
+        region.setAccessibilityLabel("Number of displayed native region to inspect")
+        region.widthAnchor.constraint(equalToConstant: 130).isActive = true
+        nativeRegionField = region
+        let drill = NSButton(title: "Inspect region", target: self,
+                             action: #selector(inspectNativeRegion))
+        let regionActions = NSStackView(views: [region, drill])
+        regionActions.orientation = .horizontal
+        regionActions.spacing = 8
         let nativeFill = NSButton(title: "Fill native field", target: self,
                                   action: #selector(startNativeFill))
         let fixtureDocuments = NSButton(title: "Documents",
@@ -248,7 +260,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         scroll.documentView = output
         scroll.hasVerticalScroller = true
         scroll.borderType = .bezelBorder
-        scroll.heightAnchor.constraint(equalToConstant: 120).isActive = true
+        scroll.heightAnchor.constraint(equalToConstant: 100).isActive = true
         let chromeHeading = NSTextField(labelWithString: "Existing Chrome — local fixture field")
         chromeHeading.font = .boldSystemFont(ofSize: 16)
         let chromeExplanation = NSTextField(wrappingLabelWithString:
@@ -268,7 +280,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         let stack = NSStackView(views: [shortcuts, focus, heading, explanation,
                                         url, label, value, status, actions, portal, nativeHeading,
                                         nativeExplanation, bundle, nativeLabel,
-                                        nativeValue, nativeActions, fixtureActions, scroll,
+                                        nativeValue, nativeActions, fixtureActions,
+                                        regionActions, scroll,
                                         chromeHeading, chromeExplanation,
                                         chromeLabel, chromeValue, chromeFill])
         stack.orientation = .vertical
@@ -1023,8 +1036,15 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     @objc private func stop() {
         if inspectionPending {
             inspectionEpoch += 1
-            inspectionPending = false
-            nativeOutput?.string = "Inspection stopped. No native action was sent."
+            let epoch = inspectionEpoch
+            nativeOutput?.string = "Stopping native inspection…"
+            Task { [weak self] in
+                guard let self else { return }
+                await self.nativeInspector.cancel()
+                guard self.inspectionEpoch == epoch else { return }
+                self.inspectionPending = false
+                self.nativeOutput?.string = "Inspection stopped. No native action was sent."
+            }
             return
         }
         guard let target = activeRequestID, let input = controllerInput else {
@@ -1102,26 +1122,49 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         let epoch = inspectionEpoch
         inspectionPending = true
         nativeOutput?.string = "Inspecting the Accessibility tree off the UI thread…"
+        let inspector = nativeInspector
         Task.detached(priority: .userInitiated) { [weak self] in
             let result: String
             do {
-                let registry = try NativeAXObservationRegistry(backend: SystemAXBackend(),
-                    maxNodes: 80, maxDepth: 5, budget: .seconds(2))
-                let observation = try registry.observe(target)
-                let controls = observation.nodes.filter {
-                    !$0.description.secure && !$0.description.label.isEmpty
-                }
-                let lines = controls.prefix(12).map { node in
-                    let detail = node.description
-                    let capabilities = detail.capabilities.isEmpty
-                        ? "read-only" : detail.capabilities.joined(separator: ", ")
-                    return "\(detail.role): \(detail.label) [\(capabilities)]"
-                }
-                result = "Observed \(observation.nodes.count) nodes; "
-                    + (observation.complete ? "coverage complete" : "coverage incomplete")
-                    + ". No field values read.\n" + lines.joined(separator: "\n")
+                result = try await inspector.inspect(target)
             } catch {
                 result = "Native observation unavailable: \(error). No action was sent."
+            }
+            await MainActor.run { [weak self] in
+                guard let self, self.inspectionPending,
+                      self.inspectionEpoch == epoch else { return }
+                self.inspectionPending = false
+                self.nativeOutput?.string = result
+            }
+        }
+    }
+
+    @objc private func inspectNativeRegion() {
+        guard !inspectionPending, activeRequestID == nil else {
+            nativeOutput?.string = "Another task is active. Stop it first."
+            return
+        }
+        let bundleID = nativeBundleField?.stringValue.trimmingCharacters(
+            in: .whitespacesAndNewlines) ?? ""
+        guard bundleID != Bundle.main.bundleIdentifier,
+              let indexText = nativeRegionField?.stringValue.trimmingCharacters(
+                in: .whitespacesAndNewlines),
+              let index = Int(indexText), index >= 0, index < 24 else {
+            nativeOutput?.string = "Enter a displayed region number from 0 to 23."
+            return
+        }
+        inspectionEpoch += 1
+        let epoch = inspectionEpoch
+        inspectionPending = true
+        nativeOutput?.string = "Inspecting the numbered region off the UI thread…"
+        let inspector = nativeInspector
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let result: String
+            do {
+                result = try await inspector.drill(bundleID: bundleID,
+                                                   displayedIndex: index)
+            } catch {
+                result = "Region inspection unavailable: \(error). No action was sent."
             }
             await MainActor.run { [weak self] in
                 guard let self, self.inspectionPending,
