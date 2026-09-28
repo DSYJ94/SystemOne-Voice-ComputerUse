@@ -42,10 +42,11 @@ established by the current fixture-only native or browser tests.
   [#20 managed-browser observation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/20),
   [#21 admitted managed-browser fill](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/21),
   [#22 native-to-managed development bridge](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/22),
-  [#23 native read-only inspection](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/23).
+  [#23 native read-only inspection](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/23),
+  [#24 guarded native value driver](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/24).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/native-ax-worker`,
-  stacked on `codex/native-managed-input-bridge`.
+- The current implementation branch is `codex/native-ax-action-driver`,
+  stacked on `codex/native-ax-worker`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -101,6 +102,10 @@ user input. Labels and capabilities remain local; field values are not read.
 Compilation and synthetic registry checks pass; live observation remains
 unverified while the earlier manual browser test stays available. See
 [native inspection test](NATIVE_INSPECTION_TEST.md).
+The B11 source now includes a guarded native `AXValue` driver and synthetic
+Stop/interference checks. It is not connected to the UI, host journal or a
+signed worker permit, so there is still no native action in the development
+app. See [native action status](NATIVE_ACTION.md).
 It fences both stores on Stop. Stop distinguishes browser context closure from
 an independent local save still pending and reports an incomplete worker fence
 for the latter. Context closure does not prove an already-dispatched action had

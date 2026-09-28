@@ -17,3 +17,7 @@ swiftc -swift-version 6 -I "$build_dir" -L "$build_dir" -lNativeAX \
   "$repo_root/packages/native-ax/Sources/NativeAXCheck/main.swift" \
   -o "$build_dir/NativeAXCheck"
 DYLD_LIBRARY_PATH="$build_dir" "$build_dir/NativeAXCheck"
+swiftc -swift-version 6 -I "$build_dir" -L "$build_dir" -lNativeAX \
+  "$repo_root/packages/native-ax/Sources/NativeAXValueCheck/main.swift" \
+  -o "$build_dir/NativeAXValueCheck"
+DYLD_LIBRARY_PATH="$build_dir" "$build_dir/NativeAXValueCheck"

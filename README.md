@@ -59,6 +59,11 @@ field fill. There is no general-purpose executor or release binary yet.
   development AppKit panel can now inspect one explicitly named running app
   off its UI thread and show local labels/capabilities without field values.
   It is not yet connected to task admission, action dispatch or the controller.
+- A restricted native `AXValue` driver now prepares one observed nonsecure text
+  field, compares its prior value privately, and uses a one-use Stop fence and
+  durable-boundary callback before setting it. Synthetic interference and Stop
+  checks pass. The driver is **not callable from the app UI** or task controller;
+  native actions remain unqualified. See [native action status](docs/NATIVE_ACTION.md).
 - A fixture-only managed-browser Stop path cancels the task record and closes
   the isolated Chromium context. A delayed-control test confirms no download
   request after Stop. Stop reports an incomplete worker fence when a local save

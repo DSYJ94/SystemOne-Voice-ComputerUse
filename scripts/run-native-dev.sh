@@ -9,6 +9,7 @@ if [[ ! -x "$binary" ||
       "$repository_root/apps/native-dev/main.swift" -nt "$binary" ||
       "$repository_root/packages/native-ax/Sources/NativeAX/Observation.swift" -nt "$binary" ||
       "$repository_root/packages/native-ax/Sources/NativeAX/SystemAXBackend.swift" -nt "$binary" ||
+      "$repository_root/packages/native-ax/Sources/NativeAX/ValueAction.swift" -nt "$binary" ||
       "$script_dir/build-native-dev.sh" -nt "$binary" ]]; then
   "$script_dir/build-native-dev.sh"
 fi

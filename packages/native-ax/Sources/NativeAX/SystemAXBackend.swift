@@ -130,3 +130,29 @@ public struct SystemAXBackend: AXObservationBackend {
                         width: dimensions.width, height: dimensions.height)
     }
 }
+
+extension SystemAXBackend: AXValueActionBackend {
+    public func value(of handle: AXUIElement) throws -> String {
+        guard let detail = try? describe(handle), !detail.secure,
+              detail.enabled, detail.capabilities.contains("setValue"),
+              [kAXTextFieldRole as String, kAXTextAreaRole as String]
+                .contains(detail.role) else { throw SystemAXError.invalidData }
+        var raw: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(handle,
+            kAXValueAttribute as CFString, &raw)
+        guard result == .success, let text = raw as? String else {
+            throw SystemAXError.unavailable(result)
+        }
+        return text
+    }
+
+    public func setValue(_ value: String, on handle: AXUIElement) throws {
+        guard let detail = try? describe(handle), !detail.secure,
+              detail.enabled, detail.capabilities.contains("setValue"),
+              [kAXTextFieldRole as String, kAXTextAreaRole as String]
+                .contains(detail.role) else { throw SystemAXError.invalidData }
+        let result = AXUIElementSetAttributeValue(handle,
+            kAXValueAttribute as CFString, value as CFString)
+        guard result == .success else { throw SystemAXError.unavailable(result) }
+    }
+}
