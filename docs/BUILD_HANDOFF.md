@@ -46,10 +46,11 @@ established by the current fixture-only native or browser tests.
   [#24 guarded native value driver](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/24),
   [#25 journaled native task authority](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/25),
   [#26 development native controller bridge](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/26),
-  [#27 existing-Chrome controller read path](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/27).
+  [#27 existing-Chrome controller read path](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/27),
+  [#28 guarded existing-Chrome loopback fill](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/28).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/chrome-controller-read-session`,
-  stacked on `codex/native-ax-controller-bridge`.
+- The current implementation branch is `codex/chrome-guarded-field-fill`,
+  stacked on `codex/chrome-controller-read-session`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
