@@ -86,16 +86,17 @@ did not open the owner's Chrome or establish a distributable signing identity.
 production MV3 extension in Playwright Chromium with a temporary user-data
 directory. The copy adds a loopback host grant and test-only handler invocation
 so no toolbar gesture or owner profile is required. It stages and registers an
-ad-hoc-signed Swift host only under that directory, then verifies
-an actual `chrome.runtime.connectNative` frame reaches a code-signed synthetic
-controller and returns to the extension. The production service-worker source
-then completes a `hello`/`observe` exchange, reports the fixture's semantic
-`Find invoice` field without its synthetic input value, and revokes the grant
-after a reload. Replacing the
-controller CDHash in the host's debug configuration causes a browser-visible
-disconnect with no second probe delivered. The check does not exercise a real
-toolbar click or `activeTab` grant, run the AppKit listener, perform a fill, or
-test Google Chrome/current-profile behavior. Chromium's test lookup under its
+ad-hoc-signed Swift host only under that directory. A second ad-hoc-signed test
+executable uses the production `DevChromeListener` source. An actual
+`chrome.runtime.connectNative` frame crosses both Swift processes, with host
+and listener code identities checked in opposite directions, before a synthetic
+Node controller replies. The production service-worker source then completes a
+`hello`/`observe` exchange, reports the fixture's semantic `Find invoice` field
+without its synthetic input value, and revokes the grant
+after a reload. Replacing either peer CDHash causes a browser-visible
+disconnect without another probe delivered. The check does not exercise a real
+toolbar click or `activeTab` grant, run the complete AppKit app, perform a fill,
+or test Google Chrome/current-profile behavior. Chromium's test lookup under its
 temporary user-data directory was observed locally; it must not be assumed to
 describe Google Chrome's installed lookup on other machines.
 

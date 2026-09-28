@@ -147,11 +147,11 @@ exact origin and configuration. Its install/verify/remove checks use only a
 temporary synthetic directory. Release bundling and a separate-account
 extension-to-host qualification still precede any owner-profile test.
 A temporary Playwright Chromium profile now connects a test-modified copy of
-the production extension to the signed Swift host and signed synthetic
-controller using real native messaging. The production service-worker source
-observes a semantic fixture field and revokes the grant on reload; a changed
-controller hash disconnects. Real toolbar invocation, AppKit listener
-integration and installed Google Chrome remain open.
+the production extension to the signed Swift host and a signed test executable
+built from the production `DevChromeListener` source. Both peer identities are
+checked, with changed hashes rejected. The production service-worker source
+observes a semantic fixture field and revokes the grant on reload. Real toolbar
+invocation, complete AppKit integration and installed Google Chrome remain open.
 Host/helper release identity, TCC attribution after installation and
 update, voice, CLM inference, privacy review, crash recovery across real workers,
 packaging/notarization and clean-Mac installation are unverified. Treat effects
