@@ -47,6 +47,7 @@ export class ManagedFillTask {
     parameterRef: string, clock: () => number = () => performance.now()) {
     if (admission.outcomeKind !== 'FILL'
       || !admission.approvedEffects.includes('LOCAL_EDIT')
+      || !admission.approvedEffects.includes('EXTERNAL_WRITE')
       || admission.scopeRef !== session.scopeRef
       || observation.browserSessionId !== session.scopeRef.slice('managed-browser:'.length)
       || !observation.controls.some(control =>

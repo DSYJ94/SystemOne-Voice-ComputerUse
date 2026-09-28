@@ -16,6 +16,11 @@ field fill. There is no general-purpose executor or release binary yet.
   [fixture-only CLM probe](docs/CLM_REFERENCE_PROBE.md) can explicitly call an
   owned reference service; no model transport is connected to task execution.
   Host disclosure review is still required before approving real task input.
+- A [shared candidate foundation](docs/ACTION_CANDIDATES.md) now constructs
+  bounded, complete field-fill and observed-link actions for the current native,
+  managed and existing-Chrome drivers. It keeps target/parameter refs private
+  in the provider projection and requires a disclosure check for every
+  candidate description. This does not enable CLM decisions or broader actions.
 - A Swift digest library checked against the same Unicode and integrity fixtures.
 - Final-input routing with literal dictation separation, trusted-endpoint allowlists,
   and bounded request/reply correlation with monotonic deadlines and replay rejection.

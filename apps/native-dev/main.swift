@@ -126,7 +126,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         let heading = NSTextField(labelWithString: "Managed browser — fill or navigate")
         heading.font = .boldSystemFont(ofSize: 16)
         let explanation = NSTextField(wrappingLabelWithString:
-            "Choose an HTTPS page and an exact visible field or link label. Fill verifies the current field value. Navigate requires the exact expected link URL and verifies arrival there. This opens a fresh Chromium profile. Do not enter credentials.")
+            "Choose an HTTPS page and an exact visible field or link label. Fill verifies the current field value; page scripts may transmit the text when it changes. Navigate requires the exact expected link URL and verifies arrival there. This opens a fresh Chromium profile. Use disposable text; do not enter credentials.")
         explanation.textColor = .secondaryLabelColor
         let url = NSTextField()
         url.placeholderString = "https://example.com/form"

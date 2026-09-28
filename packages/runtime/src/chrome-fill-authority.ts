@@ -5,6 +5,8 @@ import { AttemptJournal } from './attempt-journal.ts';
 import { ChromeReadSession } from './chrome-read-session.ts';
 import { CommittedInputSession } from './committed-input.ts';
 import { TaskAdmissionRegistry } from './task-authority.ts';
+import { buildActionCandidates, fromChromeObservation,
+  selectBoundCandidate } from './action-candidates.ts';
 import type { JSONValue } from '../../protocol/src/json.ts';
 import type { PreparedAttempt } from './attempt-journal.ts';
 
@@ -127,7 +129,15 @@ export class ChromeFillAuthority {
       }
       const matches = observation.elements.filter(item => item.label === request.fieldLabel
         && item.editable && !item.disabled);
-      if (!observation.complete || matches.length !== 1) return 'unsupported';
+      const offered = buildActionCandidates({
+        source: fromChromeObservation(observation),
+        text: { textRef: 'fill-value', source: 'final_command',
+          allowedTargetRefs: matches.map(item => item.id) },
+        policyRevision: 'chrome-loopback-fill-v1',
+      });
+      const legal = selectBoundCandidate(offered, 'set_value',
+        matches.map(item => item.id));
+      if (!legal || matches.length !== 1) return 'unsupported';
       const candidate = matches[0]!;
       const scopeRef = `chrome:${request.grantId}`;
       const registry = new TaskAdmissionRegistry(revision, input);

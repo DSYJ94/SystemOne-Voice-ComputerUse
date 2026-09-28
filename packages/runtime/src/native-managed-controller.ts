@@ -14,6 +14,8 @@ import { NativeFillAuthority } from './native-fill-authority.ts';
 import { NativeFieldPipeWorker } from './native-field-pipe-worker.ts';
 import { ChromeReadSession } from './chrome-read-session.ts';
 import { ChromeFillAuthority } from './chrome-fill-authority.ts';
+import { buildActionCandidates, fromManagedObservation,
+  selectBoundCandidate } from './action-candidates.ts';
 import type { JSONValue } from '../../protocol/src/json.ts';
 
 const MAX_LINE_BYTES = 65_536;
@@ -417,7 +419,14 @@ export class NativeManagedController {
       if (active.cancelled) return;
       const matching = observed.controls.filter(control => control.editable
         && control.enabled && control.label === request.fieldLabel);
-      if (matching.length !== 1 || !observed.coverage.complete) {
+      const offered = buildActionCandidates({
+        source: fromManagedObservation(observed),
+        text: { textRef: 'fill-value', source: 'final_command',
+          allowedTargetRefs: matching.map(control => control.id) },
+        policyRevision: 'managed-policy-v1',
+      });
+      if (matching.length !== 1 || !selectBoundCandidate(offered, 'set_value',
+        matching.map(control => control.id))) {
         this.#send(request.requestId, 'unsupported');
         return;
       }
@@ -426,7 +435,10 @@ export class NativeManagedController {
         admissionId: randomUUID(), goal: route.input.text,
         outcomeKind: 'FILL', scopeRef: session.scopeRef,
         completionVerifierRef: 'managed-field-v1',
-        policyRevision: 'managed-policy-v1', approvedEffects: ['READ', 'LOCAL_EDIT'],
+        // A page's input/change handler can issue network requests even when
+        // the requested DOM operation is only a field fill.
+        policyRevision: 'managed-policy-v1',
+        approvedEffects: ['READ', 'LOCAL_EDIT', 'EXTERNAL_WRITE'],
         parameters: [{ parameterRef: 'fill-value',
           sourceRef: request.requestId, valueDigest: digest(request.value) }],
       });
@@ -498,7 +510,14 @@ export class NativeManagedController {
         && control.label === request.linkLabel
         && control.destinationUrl === request.destinationUrl
         && control.destinationUrl !== observed.url);
-      if (matching.length !== 1 || !observed.coverage.complete) {
+      const offered = buildActionCandidates({
+        source: fromManagedObservation(observed),
+        destinations: [{ urlRef: 'destination',
+          exactUrl: request.destinationUrl }],
+        policyRevision: 'managed-policy-v1',
+      });
+      if (matching.length !== 1 || !selectBoundCandidate(offered, 'navigate',
+        matching.map(control => control.id))) {
         this.#send(request.requestId, 'unsupported');
         return;
       }
