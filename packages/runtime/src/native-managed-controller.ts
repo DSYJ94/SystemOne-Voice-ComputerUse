@@ -78,6 +78,16 @@ interface StartNativeLocate {
   readonly command: Record<string, JSONValue>;
 }
 
+interface StartNativeOpen {
+  readonly type: 'start_native_open';
+  readonly requestId: string;
+  readonly bundleId: string;
+  readonly folderName: string;
+  readonly fileName: string;
+  readonly expectedWindowTitle: string;
+  readonly command: Record<string, JSONValue>;
+}
+
 interface StartChromeFill {
   readonly type: 'start_chrome_fill';
   readonly requestId: string;
@@ -96,7 +106,7 @@ interface StartPortalWorkflow {
 }
 
 type NativeRequest = StartFill | StartNavigate | StartNativeFill | StartNativePress
-  | StartNativeLocate
+  | StartNativeLocate | StartNativeOpen
   | StartChromeFill | StartPortalWorkflow | Stop;
 type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
   | 'verified_dom_fill' | 'unsupported' | 'uncertain' | 'stopping'
@@ -104,6 +114,7 @@ type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
   | 'observing_native' | 'verified_native_fill' | 'already_matched'
   | 'observing_native_navigation' | 'verified_native_navigation'
   | 'observing_native_locate' | 'verified_native_locate'
+  | 'observing_native_open' | 'verified_native_open'
   | 'observing_chrome' | 'verified_chrome_dom_fill' | 'verified_navigation'
   | 'portal_located' | 'portal_opened' | 'portal_downloaded'
   | 'verified_portal_download' | 'portal_paused';
@@ -176,6 +187,21 @@ function requestFromLine(line: Uint8Array): NativeRequest {
       throw new ContractError('invalid native locate request');
     }
     return { type: 'start_native_locate', requestId: value.requestId as string,
+      bundleId: value.bundleId, folderName: value.folderName,
+      fileName: value.fileName, expectedWindowTitle: value.expectedWindowTitle,
+      command: value.command };
+  }
+  if (value.type === 'start_native_open') {
+    if (Object.keys(value).sort().join(',')
+        !== 'bundleId,command,expectedWindowTitle,fileName,folderName,requestId,type'
+      || value.bundleId !== 'com.aurium.systemone.fixture'
+      || value.folderName !== 'Documents' || value.fileName !== 'Budget.xlsx'
+      || value.expectedWindowTitle
+        !== 'SystemOne Fixture — Documents — Budget.xlsx opened'
+      || value.command === undefined || !isRecord(value.command)) {
+      throw new ContractError('invalid native open request');
+    }
+    return { type: 'start_native_open', requestId: value.requestId as string,
       bundleId: value.bundleId, folderName: value.folderName,
       fileName: value.fileName, expectedWindowTitle: value.expectedWindowTitle,
       command: value.command };
@@ -354,19 +380,23 @@ export class NativeManagedController {
       return;
     }
     if (request.type === 'start_native_press'
-      || request.type === 'start_native_locate') {
+      || request.type === 'start_native_locate'
+      || request.type === 'start_native_open') {
       const authority = this.#pressAuthority;
       if (!authority) { this.#send(request.requestId, 'error'); return; }
-      this.#send(request.requestId, request.type === 'start_native_locate'
-        ? 'observing_native_locate' : 'observing_native_navigation');
+      this.#send(request.requestId, request.type === 'start_native_open'
+        ? 'observing_native_open' : request.type === 'start_native_locate'
+          ? 'observing_native_locate' : 'observing_native_navigation');
       const active = { requestId: request.requestId, authority,
         done: Promise.resolve() };
       this.#nativeActive = active;
-      active.done = (request.type === 'start_native_locate'
-        ? authority.startLocate(request) : authority.start(request)).then(result => {
+      active.done = (request.type === 'start_native_open'
+        ? authority.startOpen(request) : request.type === 'start_native_locate'
+          ? authority.startLocate(request) : authority.start(request)).then(result => {
         const phase: Phase = result === 'verified_navigation'
           ? 'verified_native_navigation'
           : result === 'verified_locate' ? 'verified_native_locate'
+            : result === 'verified_open' ? 'verified_native_open'
           : result === 'already_matched' ? 'already_matched'
             : result === 'unsupported' ? 'unsupported'
               : result === 'uncertain' ? 'uncertain'

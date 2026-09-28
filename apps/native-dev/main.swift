@@ -29,11 +29,11 @@ private func systemOneHotkeyHandler(_ event: EventHandlerCallRef?,
 final class SystemOneDev: NSObject, NSApplicationDelegate {
     private enum ActiveSurface {
         case managed, managedNavigation, portal, native, nativeNavigation,
-             nativeLocate, chrome
+             nativeLocate, nativeOpen, chrome
     }
     private var nativeActionActive: Bool {
         activeSurface == .native || activeSurface == .nativeNavigation
-            || activeSurface == .nativeLocate
+            || activeSurface == .nativeLocate || activeSurface == .nativeOpen
     }
     private var statusItem: NSStatusItem?
     private var panel: NSPanel?
@@ -221,13 +221,17 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
                                action: #selector(inspectNativeApp))
         let nativeFill = NSButton(title: "Fill native field", target: self,
                                   action: #selector(startNativeFill))
-        let fixtureDocuments = NSButton(title: "Show Fixture Documents",
+        let fixtureDocuments = NSButton(title: "Documents",
             target: self, action: #selector(startFixtureDocuments))
         fixtureDocuments.setAccessibilityLabel("Navigate synthetic Fixture to Documents")
-        let fixtureLocate = NSButton(title: "Locate Fixture Budget.xlsx",
+        let fixtureLocate = NSButton(title: "Locate Budget.xlsx",
             target: self, action: #selector(startFixtureLocate))
         fixtureLocate.setAccessibilityLabel("Select synthetic Documents/Budget.xlsx without opening")
-        let fixtureActions = NSStackView(views: [fixtureDocuments, fixtureLocate])
+        let fixtureOpen = NSButton(title: "Open Budget.xlsx",
+            target: self, action: #selector(startFixtureOpen))
+        fixtureOpen.setAccessibilityLabel("Open synthetic Documents/Budget.xlsx")
+        let fixtureActions = NSStackView(views: [fixtureDocuments, fixtureLocate,
+                                                 fixtureOpen])
         fixtureActions.orientation = .horizontal
         fixtureActions.spacing = 8
         let nativeActions = NSStackView(views: [access, inspect, nativeFill])
@@ -562,6 +566,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             statusField?.stringValue = "Checking the synthetic Fixture's Documents control and current window…"
         case "observing_native_locate":
             statusField?.stringValue = "Finding synthetic Documents/Budget.xlsx with fresh observations…"
+        case "observing_native_open":
+            statusField?.stringValue = "Checking synthetic Documents/Budget.xlsx before opening…"
         case "observing_chrome":
             statusField?.stringValue = "Rechecking the exact existing Chrome tab and field…"
         case "dispatching": statusField?.stringValue = activeSurface == .managedNavigation
@@ -587,17 +593,23 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             statusField?.stringValue = "Verified: the Fixture window shows Documents. Budget.xlsx has not been selected or opened."
         case "verified_native_locate":
             statusField?.stringValue = "Verified: Documents/Budget.xlsx is selected in the Fixture and remains closed."
+        case "verified_native_open":
+            statusField?.stringValue = "Verified: the synthetic Fixture reports Documents/Budget.xlsx opened."
         case "verified_chrome_dom_fill":
             statusField?.stringValue = "Verified: the existing Chrome field currently holds the supplied text. No server save is claimed."
         case "already_matched":
-            statusField?.stringValue = activeSurface == .nativeLocate
-                ? "Verified: Documents/Budget.xlsx was already selected and closed; no press was sent."
-                : activeSurface == .nativeNavigation
+            statusField?.stringValue = activeSurface == .nativeOpen
+                ? "Verified: the synthetic file was already open; no press was sent."
+                : activeSurface == .nativeLocate
+                    ? "Verified: Documents/Budget.xlsx was already selected and closed; no press was sent."
+                    : activeSurface == .nativeNavigation
                     ? "Verified: the Fixture was already showing Documents; no press was sent."
                     : "Verified: the field already held that text; no setter was sent."
-        case "unsupported": statusField?.stringValue = activeSurface == .nativeLocate
-            ? "The synthetic path or control was absent, ambiguous or changed. File selection was not verified."
-            : activeSurface == .nativeNavigation
+        case "unsupported": statusField?.stringValue = activeSurface == .nativeOpen
+            ? "The synthetic path or control was absent, ambiguous or changed. File opening was not verified."
+            : activeSurface == .nativeLocate
+                ? "The synthetic path or control was absent, ambiguous or changed. File selection was not verified."
+                : activeSurface == .nativeNavigation
                 ? "Documents control absent, ambiguous or outside observed coverage. No press sent."
                 : "Field absent, ambiguous or outside observed coverage. No fill sent."
         case "uncertain":
@@ -915,6 +927,14 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     }
 
     @objc private func startFixtureLocate() {
+        startFixtureFileWorkflow(open: false)
+    }
+
+    @objc private func startFixtureOpen() {
+        startFixtureFileWorkflow(open: true)
+    }
+
+    private func startFixtureFileWorkflow(open: Bool) {
         guard let input = controllerInput, controller?.isRunning == true,
               activeRequestID == nil, stopRequestID == nil,
               !inspectionPending else {
@@ -933,26 +953,31 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             "source": "text", "mode": "command",
             "utteranceId": UUID().uuidString.lowercased(),
             "utteranceRevision": 1,
-            "text": "Locate synthetic fixture file Documents/Budget.xlsx",
+            "text": open ? "Open synthetic fixture file Documents/Budget.xlsx"
+                         : "Locate synthetic fixture file Documents/Budget.xlsx",
             "isFinal": true,
             "createdAt": ISO8601DateFormatter().string(from: Date()),
             "originSurface": ["adapter": "native", "surfaceId": "systemone-panel",
                 "appBundleId": "com.aurium.systemone.dev",
                 "windowId": "command-panel", "contentRevision": taskID],
         ]
-        let request: [String: Any] = ["type": "start_native_locate",
+        let request: [String: Any] = ["type": open ? "start_native_open"
+                                                 : "start_native_locate",
             "requestId": taskID, "bundleId": "com.aurium.systemone.fixture",
             "folderName": "Documents", "fileName": "Budget.xlsx",
-            "expectedWindowTitle":
-                "SystemOne Fixture — Documents — Budget.xlsx selected",
+            "expectedWindowTitle": open
+                ? "SystemOne Fixture — Documents — Budget.xlsx opened"
+                : "SystemOne Fixture — Documents — Budget.xlsx selected",
             "command": command]
         guard send(request, through: input) else {
-            statusField?.stringValue = "Could not send fixture locate request."
+            statusField?.stringValue = "Could not send fixture file request."
             return
         }
         activeRequestID = taskID
-        activeSurface = .nativeLocate
-        statusField?.stringValue = "Synthetic file selection sent to the local controller…"
+        activeSurface = open ? .nativeOpen : .nativeLocate
+        statusField?.stringValue = open
+            ? "Synthetic file opening sent to the local controller…"
+            : "Synthetic file selection sent to the local controller…"
     }
 
     @objc private func startChromeFill() {

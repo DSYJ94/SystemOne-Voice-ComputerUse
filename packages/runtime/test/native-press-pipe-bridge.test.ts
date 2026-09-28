@@ -175,7 +175,7 @@ test('controller child journals signed native press, verifies, and fences late S
     }
   });
 
-test('controller child keeps one LOCATE task across two signed native presses',
+test('controller child keeps LOCATE and OPEN tasks across separately signed presses',
   async () => {
     const root = mkdtempSync(join(tmpdir(), 'systemone-native-locate-pipe-'));
     const journalPath = join(root, 'attempts.sqlite');
@@ -226,8 +226,9 @@ test('controller child keeps one LOCATE task across two signed native presses',
                 enabled: true, secure: false, canPress: true },
               ...(title === 'SystemOne Fixture — Documents'
                 ? [{ id: 'file-node', role: 'AXButton', label: 'Budget.xlsx',
-                  enabled: true, secure: false, canPress: true },
-                  { id: 'open-node', role: 'AXButton',
+                  enabled: true, secure: false, canPress: true }] : []),
+              ...(title === 'SystemOne Fixture — Documents — Budget.xlsx selected'
+                ? [{ id: 'open-node', role: 'AXButton',
                     label: 'Open selected file', enabled: true,
                     secure: false, canPress: true }] : []),
             ] });
@@ -237,8 +238,11 @@ test('controller child keeps one LOCATE task across two signed native presses',
           assert.equal(currentCandidate === 'documents-node'
             ? request.expectedWindowTitle === 'SystemOne Fixture — Documents'
             : currentCandidate === 'file-node'
-              && request.expectedWindowTitle
-                === 'SystemOne Fixture — Documents — Budget.xlsx selected',
+              ? request.expectedWindowTitle
+                === 'SystemOne Fixture — Documents — Budget.xlsx selected'
+              : currentCandidate === 'open-node'
+                && request.expectedWindowTitle
+                  === 'SystemOne Fixture — Documents — Budget.xlsx opened',
             true);
           reply(request, { kind: 'ready', preparationRef: randomUUID() });
           break;
@@ -256,7 +260,9 @@ test('controller child keeps one LOCATE task across two signed native presses',
             (request.permit as Record<string, unknown>).candidateId));
           title = currentCandidate === 'documents-node'
             ? 'SystemOne Fixture — Documents'
-            : 'SystemOne Fixture — Documents — Budget.xlsx selected';
+            : currentCandidate === 'file-node'
+              ? 'SystemOne Fixture — Documents — Budget.xlsx selected'
+              : 'SystemOne Fixture — Documents — Budget.xlsx opened';
           reply(request, 'returned_unverified');
           break;
         }
@@ -294,6 +300,26 @@ test('controller child keeps one LOCATE task across two signed native presses',
       assert.deepEqual(operations.slice(0, 8),
         ['observe_press', 'prepare_press', 'commit_press', 'verify_press',
           'observe_press', 'prepare_press', 'commit_press', 'verify_press']);
+      await waitFor(() => statuses.some(s => s.requestId === taskId
+        && s.phase === 'ready'));
+      title = 'SystemOne Fixture';
+      const openTaskId = randomUUID();
+      send({ type: 'start_native_open', requestId: openTaskId,
+        bundleId: 'com.aurium.systemone.fixture', folderName: 'Documents',
+        fileName: 'Budget.xlsx',
+        expectedWindowTitle:
+          'SystemOne Fixture — Documents — Budget.xlsx opened',
+        command: { ...command(openTaskId),
+          text: 'Open synthetic fixture file Documents/Budget.xlsx' } });
+      await waitFor(() => statuses.some(s => s.requestId === openTaskId
+        && s.phase === 'verified_native_open'));
+      assert.equal(title, 'SystemOne Fixture — Documents — Budget.xlsx opened');
+      assert.deepEqual(signedCandidates,
+        ['documents-node', 'file-node', 'documents-node', 'file-node', 'open-node']);
+      assert.deepEqual(operations.slice(8, 20),
+        ['observe_press', 'prepare_press', 'commit_press', 'verify_press',
+          'observe_press', 'prepare_press', 'commit_press', 'verify_press',
+          'observe_press', 'prepare_press', 'commit_press', 'verify_press']);
       child.stdin.end();
       const exit = await new Promise<number | null>(resolve => child.once('exit',
         resolve));
@@ -304,6 +330,11 @@ test('controller child keeps one LOCATE task across two signed native presses',
         const attempts = journal.attemptsForTask(taskId);
         assert.equal(attempts.length, 2);
         assert.ok(attempts.every(attempt =>
+          attempt.outcome?.verification === 'matched'));
+        assert.equal(journal.getTaskState(openTaskId), 'completed');
+        const openAttempts = journal.attemptsForTask(openTaskId);
+        assert.equal(openAttempts.length, 3);
+        assert.ok(openAttempts.every(attempt =>
           attempt.outcome?.verification === 'matched'));
       } finally { journal.close(); }
     } finally {

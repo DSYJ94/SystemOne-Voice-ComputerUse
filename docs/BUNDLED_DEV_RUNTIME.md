@@ -65,3 +65,12 @@ a clean supported Mac without developer tools. The official Node archive hash
 was compared with an HTTPS checksum manifest; a signed release process must
 also authenticate that manifest and record its provenance. A passing ad-hoc
 signature or local relocation check is not a substitute for those gates.
+
+The current ad-hoc Chrome development bridge pins the app's CDHash in the
+host's adjacent configuration, while the app pins the host's CDHash. Copying
+both into one sealed bundle as-is would make the outer app hash depend on a
+configuration that embeds that same app hash. Release packaging therefore
+needs a non-circular authenticated peer policy, such as the Apple-anchored
+Team ID already supported by the host/listener checks, before combining and
+signing them. This is a release design gate, not evidence that the host is
+bundled or that an installed Chrome profile works.
