@@ -72,10 +72,14 @@ does not register the manifest or touch a Chrome profile. Its host configuration
 is outside a signed release bundle and is not a production trust anchor.
 `zsh scripts/check-chrome-dev-listener.sh` checks a signed temporary host and
 listener exchange. Synthetic tests now cover the controller/extension fill
-contract, host journal boundary, Stop after dispatch, and DOM stale/duplicate
-field rejection in headless Chromium. These checks do not open the owner's
-Chrome, verify a real installed extension-to-host action, or establish a
-distributable signing identity.
+contract, host journal boundary and Stop after dispatch. A temporary MV3 test
+extension using the production semantic functions confirms that separate
+`chrome.scripting.executeScript` calls in Playwright Chromium retain the
+observation-scoped handle, reject a duplicate field and reject the old handle
+after reload. This checks an actual isolated extension world but does not
+exercise the production extension's native-host messages. These checks do not
+open the owner's Chrome, verify a real installed extension-to-host action, or
+establish a distributable signing identity.
 
 Release packaging must place the host at its final absolute path and run
 `node scripts/stage-chrome-native-host.mjs EXTENSION_ID HOST_PATH MANIFEST_PATH
@@ -87,8 +91,9 @@ not a current-profile test procedure; neither operation is automated yet.
 Before an owner-run current-profile test, first qualify the installed
 exact-origin manifest, host/app signing pair, activeTab grant/revoke cycle,
 read-only observation and fixed loopback field action in a separate
-non-sensitive Chrome profile. Check whether the extension isolated-world
-handle persists across `executeScript` calls, then test Stop and reconnection.
+non-sensitive Chrome profile. The temporary MV3 test establishes isolated-world
+handle persistence only in Playwright Chromium; test it again in the installed
+bridge, followed by Stop and reconnection.
 Broader actions require effect classification and site-specific policy; Chrome
 may reject synthetic input where trusted user gestures are required. Keep file
 transfer disabled until outbound and destination enforcement is qualified. An

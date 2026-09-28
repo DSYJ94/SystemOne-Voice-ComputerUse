@@ -568,8 +568,24 @@ in headless Playwright Chromium, checking current field value and stale or
 duplicate field refusal. `npm run build:native-dev` compiled and ad-hoc signed
 the development panel with its Chrome field controls. `git diff --check` passed.
 
-No installed extension, native-host registration, real Chrome profile or
-end-to-end isolated-world `executeScript` sequence was exercised. The DOM
+At this stage, no installed extension, native-host registration, real Chrome
+profile or end-to-end isolated-world `executeScript` sequence was exercised. The DOM
 test runs the functions in a synthetic page, not Chrome's extension isolated
 world. Current-profile compatibility, trusted-input behavior, Stop during a
 real injection, release signing and clean installation remain unverified.
+
+## Temporary MV3 isolated-world check, 28 September 2026
+
+`node --test extensions/chrome/test/isolated-world.test.mjs` passed **1/1**.
+It launched Playwright's bundled Chromium with a disposable persistent profile
+and a temporary MV3 extension importing the production semantic functions.
+Against the loopback portal, separate document-targeted `chrome.scripting`
+calls retained a field handle, filled and verified its DOM value, rejected a
+new duplicate field, and rejected the old handle after reload. The temporary
+profile and extension directory were removed after the test. The final
+`npm run check` passed TypeScript checking and **192/192** tests.
+
+This is stronger than page-world `evaluate`, but still omits the production
+extension's native-messaging transport and any installed Chrome profile.
+It does not establish trusted-input behavior, server persistence, Stop during
+a real native-host action, or distributable signing.
