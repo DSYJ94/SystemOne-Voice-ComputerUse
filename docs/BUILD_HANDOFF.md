@@ -59,7 +59,8 @@ established by the current fixture-only native or browser tests.
   [#37 guarded Chrome host registration](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/37),
   [#38 isolated Chrome native transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/38),
   [#39 Chrome host/listener integration](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/39),
-  [#40 Chrome action-scoped grant](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/40).
+  [#40 Chrome action-scoped grant](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/40),
+  [#41 isolated Chrome journaled fill](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/41).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current implementation branch is `codex/chrome-journaled-fill`,
   stacked on `codex/chrome-grant-boundary`.
