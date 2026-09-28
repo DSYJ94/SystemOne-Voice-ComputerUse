@@ -5,7 +5,7 @@ import Foundation
 
 @MainActor
 final class SystemOneDev: NSObject, NSApplicationDelegate {
-    private enum ActiveSurface { case managed, native }
+    private enum ActiveSurface { case managed, native, chrome }
     private var statusItem: NSStatusItem?
     private var panel: NSPanel?
     private var urlField: NSTextField?
@@ -16,6 +16,11 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     private var nativeLabelField: NSTextField?
     private var nativeValueField: NSTextField?
     private var nativeOutput: NSTextView?
+    private var chromeLabelField: NSTextField?
+    private var chromeValueField: NSTextField?
+    private var chromeConnectionID: String?
+    private var chromeGrantID: String?
+    private var chromeURL: String?
     private let nativeWorker = DevNativeFieldWorker()
     private var chromeListener: DevChromeListener?
     private var inspectionEpoch = 0
@@ -72,7 +77,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     }
 
     private func makePanel() {
-        let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 710),
+        let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 850),
                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "SystemOne Dev"
         window.isFloatingPanel = true
@@ -152,10 +157,28 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         scroll.hasVerticalScroller = true
         scroll.borderType = .bezelBorder
         scroll.heightAnchor.constraint(equalToConstant: 120).isActive = true
+        let chromeHeading = NSTextField(labelWithString: "Existing Chrome — local fixture field")
+        chromeHeading.font = .boldSystemFont(ofSize: 16)
+        let chromeExplanation = NSTextField(wrappingLabelWithString:
+            "Open the synthetic portal in your existing Chrome profile, click the SystemOne extension on that tab, then fill its Find invoice field. Use disposable text: page scripts may send it over the network. This verifies only the current DOM value.")
+        chromeExplanation.textColor = .secondaryLabelColor
+        let chromeLabel = NSTextField()
+        chromeLabel.placeholderString = "Exact label: Find invoice"
+        chromeLabel.stringValue = "Find invoice"
+        chromeLabel.setAccessibilityLabel("Existing Chrome field label")
+        chromeLabelField = chromeLabel
+        let chromeValue = NSTextField()
+        chromeValue.placeholderString = "Synthetic search text"
+        chromeValue.setAccessibilityLabel("Existing Chrome field value")
+        chromeValueField = chromeValue
+        let chromeFill = NSButton(title: "Fill existing Chrome field", target: self,
+                                  action: #selector(startChromeFill))
         let stack = NSStackView(views: [heading, explanation, url, label, value,
                                         status, actions, nativeHeading,
                                         nativeExplanation, bundle, nativeLabel,
-                                        nativeValue, nativeActions, scroll])
+                                        nativeValue, nativeActions, scroll,
+                                        chromeHeading, chromeExplanation,
+                                        chromeLabel, chromeValue, chromeFill])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 9
@@ -175,6 +198,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             nativeLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
             nativeValue.widthAnchor.constraint(equalTo: stack.widthAnchor),
             scroll.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            chromeExplanation.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            chromeLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            chromeValue.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
         panel = window
     }
@@ -317,6 +343,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
                 continue
             }
             if object["type"] as? String == "chrome_observation",
+               let connectionID = object["connectionId"] as? String,
+               let grantID = object["grantId"] as? String,
                let title = object["title"] as? String,
                let url = object["url"] as? String,
                let elements = object["elements"] as? [[String: Any]] {
@@ -325,7 +353,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
                           let label = item["label"] as? String else { return nil }
                     return "\(role): \(label)"
                 }
-                nativeOutput?.string = "Existing Chrome read-only tab: \(title)\n\(url)\n"
+                chromeConnectionID = connectionID
+                chromeGrantID = grantID
+                chromeURL = url
+                nativeOutput?.string = "Existing Chrome tab: \(title)\n\(url)\n"
                     + labels.joined(separator: "\n")
                 statusField?.stringValue = "Existing Chrome tab observed. No action was sent."
                 continue
@@ -352,13 +383,17 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         case "observing": statusField?.stringValue = "Checking the exact visible field…"
         case "observing_native":
             statusField?.stringValue = "Checking the exact native app and field…"
+        case "observing_chrome":
+            statusField?.stringValue = "Rechecking the exact existing Chrome tab and field…"
         case "dispatching": statusField?.stringValue = "Filling the field; Stop may not undo this edit."
         case "verified_dom_fill":
             statusField?.stringValue = "Verified: this page's field holds the supplied text. Inspect it, then press Stop to close this browser."
         case "verified_native_fill":
             statusField?.stringValue = "Verified: the native field holds the supplied text."
+        case "verified_chrome_dom_fill":
+            statusField?.stringValue = "Verified: the existing Chrome field currently holds the supplied text. No server save is claimed."
         case "already_matched":
-            statusField?.stringValue = "Verified: the native field already held that text; no setter was sent."
+            statusField?.stringValue = "Verified: the field already held that text; no setter was sent."
         case "unsupported": statusField?.stringValue = "Field absent, ambiguous or outside observed coverage. No fill sent."
         case "uncertain":
             statusField?.stringValue = activeSurface == .native
@@ -497,6 +532,46 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         activeRequestID = taskID
         activeSurface = .native
         statusField?.stringValue = "Native request sent to the local controller…"
+    }
+
+    @objc private func startChromeFill() {
+        guard let input = controllerInput, controller?.isRunning == true,
+              activeRequestID == nil, stopRequestID == nil,
+              let connectionID = chromeConnectionID,
+              let grantID = chromeGrantID, let url = chromeURL else {
+            statusField?.stringValue = "Connect the extension to a synthetic portal tab first."
+            return
+        }
+        let field = chromeLabelField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let value = chromeValueField?.stringValue ?? ""
+        guard field == "Find invoice", value.utf8.count <= 1_024,
+              let parsed = URLComponents(string: url), parsed.scheme == "http",
+              parsed.host == "127.0.0.1" else {
+            statusField?.stringValue = "Only the loopback fixture's Find invoice field is supported."
+            return
+        }
+        let taskID = UUID().uuidString.lowercased()
+        let command: [String: Any] = [
+            "type": "command", "protocolVersion": "2.0", "messageId": UUID().uuidString.lowercased(),
+            "taskId": taskID, "taskEpoch": 1, "goalRevision": 1,
+            "source": "text", "mode": "command", "utteranceId": UUID().uuidString.lowercased(),
+            "utteranceRevision": 1,
+            "text": "Fill \(field) in existing Chrome tab \(url) with supplied text", "isFinal": true,
+            "createdAt": ISO8601DateFormatter().string(from: Date()),
+            "originSurface": ["adapter": "native", "surfaceId": "systemone-panel",
+                "appBundleId": "com.aurium.systemone.dev", "windowId": "command-panel",
+                "contentRevision": taskID],
+        ]
+        let request: [String: Any] = ["type": "start_chrome_fill",
+            "requestId": taskID, "connectionId": connectionID, "grantId": grantID,
+            "fieldLabel": field, "value": value, "command": command]
+        guard send(request, through: input) else {
+            statusField?.stringValue = "Could not send the Chrome request."
+            return
+        }
+        activeRequestID = taskID
+        activeSurface = .chrome
+        statusField?.stringValue = "Existing Chrome request sent to the local controller…"
     }
 
     @objc private func stop() {

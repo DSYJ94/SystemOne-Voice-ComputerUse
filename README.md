@@ -39,13 +39,13 @@ field fill. There is no general-purpose executor or release binary yet.
   controller, show verification, and Stop the isolated browser. This is not a
   general browser executor or an authenticated release worker. Existing Chrome
   is not connected.
-- An initial existing-Chrome Manifest V3 extension source requires a toolbar
-  click, binds a read-only DOM observation to one exact tab/document and revokes
-  on navigation or native-port disconnect. A Swift native-messaging host and
-  opt-in development AppKit listener pass a signed synthetic socket/framing
-  check; a private controller session validates bounded read-only snapshots.
-  No host is installed in Chrome, no real profile has been exercised, and no
-  existing-Chrome action works yet.
+- The existing-Chrome Manifest V3 extension source requires a toolbar click
+  and exact tab/document grant. Its development path now supports one
+  journaled fill of the synthetic loopback portal's `Find invoice` field,
+  with a fresh semantic observation and current DOM-value check. The Swift
+  native-messaging host and opt-in AppKit listener pass signed synthetic
+  socket/framing checks. No host is installed in Chrome, no real profile has
+  been exercised, and the action remains unqualified in a real extension.
 - Fixture-scoped outcome checks re-observe the portal and distinguish an exact
   search result, an opened detail and a saved document. These are not wired to
   the general host controller or a production completion engine.
@@ -150,8 +150,8 @@ For the current PR stack, open gates and next implementation order, see
 the schema's existing golden digests unless the contract is intentionally revised.
 Python and Swift remain independent checks of the TypeScript fixture output.
 
-CLM/ASR model downloads, release signing, microphone capture, native fixture
-editing, existing-Chrome automation and remote inference are not part of the automated
+CLM/ASR model downloads, release signing, microphone capture, live native fixture
+editing, live existing-Chrome automation and remote inference are not part of the automated
 check commands above. The automated browser check covers only the synthetic
 portal in an isolated profile. The opt-in native fixture test is separate. Do not add models
 to the effect path until scripted drivers and durable dispatch/Stop tests pass.

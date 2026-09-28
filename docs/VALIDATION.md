@@ -554,3 +554,22 @@ No browser-to-host-to-controller run, Chrome action, trusted-input behavior,
 file transfer, current-profile compatibility, signed release identity or
 clean-Mac installation was tested. A signed host process can be invoked outside
 Chrome, so this transport check alone is not proof of user-granted authority.
+
+## Existing-Chrome guarded loopback fill source, 28 September 2026
+
+`npm run check` passed TypeScript checking and **191/191** Node tests with local
+loopback access. The new host tests cover a fresh complete field observation,
+journal marker before action, one-use permit, ambiguous/incomplete rejection,
+Stop during observation, and Stop after dispatch with a late receipt that
+cannot complete the task. Lost replies remain unresolved in the journal.
+An extension mock checks one action and replay rejection. A separate
+`node --test extensions/chrome/test/semantic-controls.test.mjs` passed **1/1**
+in headless Playwright Chromium, checking current field value and stale or
+duplicate field refusal. `npm run build:native-dev` compiled and ad-hoc signed
+the development panel with its Chrome field controls. `git diff --check` passed.
+
+No installed extension, native-host registration, real Chrome profile or
+end-to-end isolated-world `executeScript` sequence was exercised. The DOM
+test runs the functions in a synthetic page, not Chrome's extension isolated
+world. Current-profile compatibility, trusted-input behavior, Stop during a
+real injection, release signing and clean installation remain unverified.

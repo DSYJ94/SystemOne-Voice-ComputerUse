@@ -122,7 +122,9 @@ extension source now has explicit one-tab read-only grants. A Swift
 native-messaging host, opt-in AppKit listener and Node controller read session
 pass signed synthetic framing and strict binding tests. Exact-origin development
 artifacts can be staged without installation. No host is installed in Chrome,
-no real profile has been observed, and no Chrome action works.
+no real profile has been observed. A narrow journaled Chrome field-fill source
+exists for the loopback portal fixture, with synthetic tests; no real extension
+action has been qualified.
 Host/helper release identity, TCC attribution after installation and
 update, voice, CLM inference, privacy review, crash recovery across real workers,
 packaging/notarization and clean-Mac installation are unverified. Treat effects
@@ -144,8 +146,8 @@ undo an already-dispatched effect.
    installation and TCC attribution on an authorized Mac.
 4. Complete B13 candidate projection, scripted B15-B17 multi-hop/recovery and
    B18 transitions; then qualify CLM under B14. For B19, qualify the staged
-   host/listener/extension read path on a separate Chrome profile, then add
-   host-authorized fixed actions, Stop/reconnect and current-profile tests.
+   host/listener/extension path and fixed loopback fill on a separate Chrome
+   profile; then extend the effect policy, Stop/reconnect and current-profile tests.
    Do not substitute managed Chromium for B19.
 
 Release gates G1-G6 remain unverified; consult the review handoff and status

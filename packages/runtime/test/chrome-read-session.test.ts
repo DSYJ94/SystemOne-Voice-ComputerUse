@@ -31,8 +31,10 @@ function hello(state: ReturnType<typeof fixture>, binding = grant) {
 
 function observation(requestId: JSONValue, binding = { ...grant, connected: true }) {
   return { type: 'observation', requestId, binding,
-    snapshot: { title: 'Synthetic account', url: grant.url,
-      elements: [{ role: 'button', label: 'Open', disabled: false }] } };
+    snapshot: { observationId: 'observation-1', title: 'Synthetic account',
+      url: grant.url, complete: true,
+      elements: [{ id: 'observation-1:0', role: 'button', label: 'Open',
+        disabled: false, editable: false }] } };
 }
 
 test('bound existing-Chrome hello produces one read-only observation', () => {
@@ -76,8 +78,10 @@ test('wrong extension, profile, document and values fail without reporting', () 
   const nextRequest = state.sent.at(-1)!;
   assert.throws(() => state.session.receive({ ...observation(nextRequest.requestId!,
     { ...next, connected: true }),
-    snapshot: { title: 'Synthetic', url: next.url,
-      elements: [{ role: 'input', label: 'Password', disabled: false, value: 'secret' }] } }),
+    snapshot: { observationId: 'observation-2', title: 'Synthetic',
+      url: next.url, complete: true,
+      elements: [{ id: 'observation-2:0', role: 'input', label: 'Password',
+        disabled: false, editable: true, value: 'secret' }] } }),
   /control/);
   assert.equal(state.reported.length, 0);
   assert.equal(state.session.activeGrantCount, 0);
