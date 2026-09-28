@@ -49,7 +49,9 @@ field fill. There is no general-purpose executor or release binary yet.
   been exercised, and the action remains unqualified in a real extension.
 - An ignored, movable development app bundles a checksum-verified official
   Apple Silicon Node runtime, locked production packages and Playwright
-  Chromium. Its controller and managed-browser worker pass a synthetic portal
+  Chromium. The AppKit parent checks the launched signed Node child's pinned
+  code hash before accepting controller output; headless positive and mismatch
+  checks pass. Its controller and managed-browser worker pass a synthetic portal
   smoke check after relocation. It remains ad-hoc signed and lacks the Chrome
   host, models, notarization and clean-Mac qualification; see
   [bundled runtime](docs/BUNDLED_DEV_RUNTIME.md).

@@ -93,6 +93,14 @@ cp "$repository_root/package.json" "$repository_root/package-lock.json" "$runtim
 /usr/bin/xattr -cr "$app"
 codesign --force --sign - --identifier com.aurium.systemone.bundlednode \
   "$contents/Frameworks/node"
+node_cdhash=$(codesign -dv --verbose=4 "$contents/Frameworks/node" 2>&1 \
+  | sed -n 's/^CDHash=//p')
+if [[ ! "$node_cdhash" =~ '^[a-f0-9]{40,128}$' ]]; then
+  print -u2 'Could not pin the signed bundled Node code hash.'
+  exit 1
+fi
+/usr/libexec/PlistBuddy -c \
+  "Add :SystemOneControllerNodeCDHash string $node_cdhash" "$contents/Info.plist"
 codesign --force --sign - --identifier com.aurium.systemone.dev "$app"
 codesign --verify --deep --strict "$app"
 

@@ -96,6 +96,64 @@ public struct PeerRequirement: Sendable {
     }
 }
 
+/// Code identity for a child launched over private inherited pipes. The caller
+/// must also retain and check the exact Process object; a PID alone is not a
+/// durable process identity and this is not a substitute for socket audit tokens.
+public struct RunningProcessRequirement: Sendable {
+    public let signingIdentifier: String
+    public let teamIdentifier: String?
+    public let allowedCDHashes: Set<String>
+
+    public init(signingIdentifier: String, teamIdentifier: String? = nil,
+                allowedCDHashes: Set<String> = []) throws {
+        let checked = try PeerRequirement(effectiveUserID: geteuid(),
+            signingIdentifier: signingIdentifier, teamIdentifier: teamIdentifier,
+            allowedCDHashes: allowedCDHashes)
+        self.signingIdentifier = checked.signingIdentifier
+        self.teamIdentifier = checked.teamIdentifier
+        self.allowedCDHashes = checked.allowedCDHashes
+    }
+
+    fileprivate func validate(_ code: SecCode) throws -> CodeIdentity {
+        let identity = try validatedCodeIdentity(code)
+        guard identity.signingIdentifier == signingIdentifier else {
+            throw PeerIdentityError.requirementMismatch("signing identifier")
+        }
+        if let teamIdentifier, identity.teamIdentifier != teamIdentifier {
+            throw PeerIdentityError.requirementMismatch("team identifier")
+        }
+        if !allowedCDHashes.isEmpty && !allowedCDHashes.contains(identity.cdHash) {
+            throw PeerIdentityError.requirementMismatch("CDHash")
+        }
+        if let teamIdentifier {
+            let text = "anchor apple generic and identifier \"\(signingIdentifier)\" " +
+                "and certificate leaf[subject.OU] = \"\(teamIdentifier)\""
+            var requirement: SecRequirement?
+            let status = SecRequirementCreateWithString(text as CFString, [], &requirement)
+            guard status == errSecSuccess, let requirement else {
+                throw PeerIdentityError.securityCall("SecRequirementCreateWithString", status)
+            }
+            guard SecCodeCheckValidity(code, [], requirement) == errSecSuccess else {
+                throw PeerIdentityError.requirementMismatch("Apple-anchored code requirement")
+            }
+        }
+        return identity
+    }
+}
+
+public func authenticateRunningProcess(
+    pid: pid_t, requirement: RunningProcessRequirement
+) throws -> CodeIdentity {
+    guard pid > 0 else { throw PeerIdentityError.invalidRequirement }
+    let attributes = [kSecGuestAttributePid as String: NSNumber(value: pid)] as CFDictionary
+    var code: SecCode?
+    let status = SecCodeCopyGuestWithAttributes(nil, attributes, [], &code)
+    guard status == errSecSuccess, let code else {
+        throw PeerIdentityError.securityCall("SecCodeCopyGuestWithAttributes", status)
+    }
+    return try requirement.validate(code)
+}
+
 public enum PeerIdentityError: Error, Equatable, CustomStringConvertible {
     case invalidSocket
     case socketCall(String, Int32)

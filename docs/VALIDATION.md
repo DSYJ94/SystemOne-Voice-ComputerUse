@@ -657,3 +657,35 @@ and expected recovery blocking. The active slot correctly returned `busy`.
 The test now asserts `busy` before the late result and `blocked_recovery`
 after it. The final `npm run check` passed **199/199 tests**, zero skipped or
 failed. No real app, Chrome profile or account was operated in this run.
+
+## Bundled controller running-code identity, 28 September 2026
+
+`swift build --package-path packages/protocol/swift --target PeerIdentity`
+compiled the new PID-based dynamic-code check. `swift run --package-path
+packages/protocol/swift RunningProcessCheck
+'.build/bundled-dev/SystemOne Dev.app/Contents/Frameworks/node'
+com.aurium.systemone.bundlednode
+46adcf0df2f075b27c228926b105cac6072fa3d6` passed: the launched signed
+Node was accepted, while wrong signing identifier and CDHash requirements were
+rejected. The current ad-hoc signature has no Team ID.
+
+`zsh scripts/build-native-dev.sh` and `zsh scripts/build-bundled-dev.sh
+.build/release-deps/node-v26.5.0-darwin-arm64.tar.xz
+/Users/daryl/Library/Caches/ms-playwright` compiled and signed the development
+app, pinned the nested Node CDHash in the outer signed metadata, and built the
+movable bundle. The actual AppKit executable's
+`--check-controller-identity` path passed without opening a panel. `node
+scripts/check-bundled-dev.mjs ABSOLUTE_APP_PATH` passed the AppKit identity,
+direct controller and isolated Chromium portal checks. An isolated copy with
+the expected CDHash changed to all `f` values and re-signed ad hoc exited 1
+with `Controller identity check failed to start.` The canonical bundle was
+not modified by the negative test.
+
+This authenticates a development child code identity only. It does not prove
+the release host/worker channel, Team ID/Developer ID certificate chain,
+durable permit consumption, TCC attribution after installation, real-app
+effects, notarization or clean-Mac delivery.
+Final `npm run check` passed **199/199 tests**. `npm run test:mac-peer`
+accepted the expected signed peer and rejected wrong signing identifier and
+CDHash; it controlled no app or browser. Swift linked with the same
+command-line-tools missing search-path warnings as before.

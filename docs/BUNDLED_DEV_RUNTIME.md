@@ -30,10 +30,26 @@ archive. It copies the runtime source modules and schema, installs production
 npm packages from the committed lockfile with scripts disabled, and copies the
 Playwright 1.63.0 Chromium and headless-shell revision `1243`. It rewrites the
 app metadata to use paths inside its own bundle, then ad-hoc signs the bundled
-Node and outer app. The smoke checker verifies the bundle signature, rejects
+Node and outer app. The signed app metadata pins the bundled Node signing
+identifier and code hash. On launch, the AppKit parent checks the exact running
+child process through Apple's
+[dynamic code-signing lookup](https://developer.apple.com/documentation/security/seccodecopyguestwithattributes%28_%3A_%3A_%3A_%3A%29)
+before accepting controller output and checks it again before
+sending commands or handling worker replies. The smoke checker verifies this
+headlessly through the actual AppKit executable, then verifies the bundle
+signature, rejects
 external controller paths in `Info.plist`, starts the bundled controller with
 a restricted `PATH`, and makes the bundled Chromium observe the loopback
 invoice portal. It does not launch the AppKit UI or touch a user Chrome profile.
+
+An isolated copy with only its expected Node code hash changed was re-signed
+ad hoc and the headless AppKit startup rejected the mismatch. The standalone
+external-source development build remains unauthenticated by design and is
+never a release configuration. This PID/code-signature check relies on the
+native parent retaining the exact launched `Process`; a PID alone is not a
+durable peer identity. Release must add Developer ID identity, an authenticated
+supervisor/worker channel, durable worker-side permit checks and update-safe
+identity rotation.
 
 The local output is about 715 MB without model weights. The official Node
 binary linked only system libraries in the local `otool -L` check; the
