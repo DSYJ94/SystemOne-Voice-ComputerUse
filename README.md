@@ -113,12 +113,14 @@ field fill. There is no general-purpose executor or release binary yet.
   checks and the bundled app accepts its key from the verified child. A live
   AX run and Developer ID peer/update qualification remain unverified. See
   [native action status](docs/NATIVE_ACTION.md).
-- A separate native semantic-press source now compiles for observed buttons and
-  menu items. Its isolated synthetic test checks the one-use Stop fence, stale
-  controls, failed journal boundary and ambiguous post-dispatch outcome. The
-  compiled Fixture has Documents/Downloads navigation and distinct select/open
-  states for a duplicate file name. Press is not yet connected to the host
-  authority or live task controller, so this is not a usable file workflow.
+- A native semantic-press source handles observed buttons and menu items. One
+  fixed synthetic Documents navigation now runs through the persistent
+  controller's admitted task, signed one-use permit, worker replay ledger and
+  journaled dispatch, followed by an independent Fixture window-title check.
+  The compiled Fixture has Documents/Downloads navigation and distinct
+  select/open states for a duplicate file name. Child-process tests pass, but
+  the AppKit action has not been manually run; this is not yet a file LOCATE or
+  OPEN workflow. See the [native navigation check](docs/NATIVE_NAVIGATION_TEST.md).
 - A separate native host task class binds a final text command, complete
   candidate set, supplied-value digest and one journaled attempt before calling
   an abstract AX worker. Synthetic Stop, late-result and unknown-effect tests

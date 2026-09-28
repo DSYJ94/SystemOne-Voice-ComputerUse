@@ -29,13 +29,19 @@ try {
   const signer = new NativeHostPermitSigner();
   const other = new NativeHostPermitSigner();
   const claim = signer.sign(permit, 'prep-1', now);
-  const check = (key, message, at = now) => {
-    const run = spawnSync(binary, [key, JSON.stringify(message), String(at)],
+  const check = (key, message, at = now, policy) => {
+    const run = spawnSync(binary, [key, JSON.stringify(message), String(at),
+      ...(policy ? [policy] : [])],
       { encoding: 'utf8' });
     assert.equal(run.status, 0, run.stderr);
     return run.stdout.trim();
   };
   assert.equal(check(signer.publicKey, claim), 'accepted');
+  const pressPolicy = 'native-ax-press-fixture-v1';
+  const pressClaim = signer.sign({ ...permit, policyRevision: pressPolicy },
+    'prep-1', now);
+  assert.equal(check(signer.publicKey, pressClaim, now, pressPolicy), 'accepted');
+  assert.equal(check(signer.publicKey, pressClaim), 'rejected');
   assert.equal(check(other.publicKey, claim), 'rejected');
   assert.equal(check(signer.publicKey,
     { ...claim, signature: other.sign(permit, 'prep-1', now).signature }), 'rejected');

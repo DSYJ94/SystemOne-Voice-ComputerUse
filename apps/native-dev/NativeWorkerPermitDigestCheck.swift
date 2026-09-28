@@ -3,8 +3,8 @@ import Foundation
 @main
 struct NativeWorkerPermitDigestCheck {
     static func main() throws {
-        guard CommandLine.arguments.count == 3 else {
-            fatalError("expected candidate-set and action digests")
+        guard CommandLine.arguments.count == 5 else {
+            fatalError("expected field and press candidate/action digests")
         }
         let controls: [[String: Any]] = [[
             "id": "node-1", "role": "AXTextField", "label": "Fixture Name",
@@ -43,6 +43,35 @@ struct NativeWorkerPermitDigestCheck {
             label: "Fixture Name", value: "different-value",
             policyRevision: NativeWorkerPermitDigest.policyRevision)
         guard altered != actionDigest else { fatalError("changed value kept digest") }
-        print("PASS: worker digests match TypeScript; changed set, action, policy and value denied")
+        let pressControls: [[String: Any]] = [[
+            "id": "node-2", "role": "AXButton", "label": "Documents",
+            "enabled": true, "secure": false, "canPress": true,
+        ]]
+        let pressSet = try NativeWorkerPermitDigest.candidateSet(pressControls)
+        let pressAction = try NativeWorkerPermitDigest.pressAction(
+            taskID: "task-1", scopeRef: "native:scope-1",
+            observationID: "obs-1", candidateID: "node-2",
+            role: "AXButton", label: "Documents",
+            expectedWindowTitle: "SystemOne Fixture — Documents",
+            policyRevision: NativeWorkerPermitDigest.pressPolicyRevision)
+        guard pressSet == CommandLine.arguments[3],
+              pressAction == CommandLine.arguments[4],
+              NativeWorkerPermitDigest.pressMatches(controls: pressControls,
+                  taskID: "task-1", scopeRef: "native:scope-1",
+                  observationID: "obs-1", candidateID: "node-2",
+                  role: "AXButton", label: "Documents",
+                  expectedWindowTitle: "SystemOne Fixture — Documents",
+                  policyRevision: NativeWorkerPermitDigest.pressPolicyRevision,
+                  candidateSetDigest: pressSet, actionDigest: pressAction),
+              !NativeWorkerPermitDigest.pressMatches(controls: pressControls,
+                  taskID: "task-1", scopeRef: "native:scope-1",
+                  observationID: "obs-1", candidateID: "node-2",
+                  role: "AXButton", label: "Documents",
+                  expectedWindowTitle: "SystemOne Fixture — Downloads",
+                  policyRevision: NativeWorkerPermitDigest.pressPolicyRevision,
+                  candidateSetDigest: pressSet, actionDigest: pressAction) else {
+            fatalError("native press digest or expected title binding changed")
+        }
+        print("PASS: field and press digests match TypeScript; changed bindings denied")
     }
 }

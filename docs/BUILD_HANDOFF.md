@@ -69,8 +69,8 @@ established by the current fixture-only native or browser tests.
   [#47 development global shortcuts](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/47),
   [#48 native semantic press source](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/48).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/native-semantic-press`,
-  stacked on `codex/native-global-shortcuts`.
+- The current implementation branch is `codex/native-press-controller`,
+  stacked on `codex/native-semantic-press`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -232,9 +232,11 @@ and external-source mode still lacks code authentication.
 2. Integrate B03/B09/B15 host authority, release worker identity, signed
    permit validation and a real native/managed-browser Stop barrier. Qualify
    dispatch timing and unknown outcomes before broadening native or browser
-   actions. The isolated semantic-press source and Documents/Downloads fixture
-   are ready for a signed-permit controller path, exact folder/file predicates,
-   and interference tests. Do not treat an AXPress receipt as LOCATE or OPEN.
+   actions. The fixed Documents press now uses the signed-permit controller
+   path and an exact fixture window-title check. The next native step is one
+   persistent folder-to-file LOCATE task with exact path/selection predicates,
+   interference and recovery checks. Do not treat an AXPress receipt as LOCATE
+   or OPEN.
 3. Build B04/B07/B08 signed native UX and B10/B11 general native observations/
    actions; add B12 headed managed workflows with explicit limits. Prove clean
    installation and TCC attribution on an authorized Mac.

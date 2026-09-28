@@ -97,6 +97,31 @@ public struct SystemAXBackend: AXObservationBackend {
         return AXUIElementGetPid(handle, &pid) == .success && pid == target.pid
     }
 
+    /// Reads only bounded window titles for a host-private navigation check.
+    /// This is not a general text-value export or proof that a file was opened.
+    public func windowTitles(for target: AXTarget) throws -> [String] {
+        let app = try root(for: target)
+        var count: CFIndex = 0
+        let countStatus = AXUIElementGetAttributeValueCount(app,
+            kAXWindowsAttribute as CFString, &count)
+        guard countStatus == .success, (1...16).contains(count) else {
+            throw SystemAXError.invalidData
+        }
+        var raw: CFArray?
+        let status = AXUIElementCopyAttributeValues(app,
+            kAXWindowsAttribute as CFString, 0, count, &raw)
+        guard status == .success, let windows = raw as? [AXUIElement],
+              windows.count == count else { throw SystemAXError.invalidData }
+        return try windows.map { window in
+            guard belongsToTarget(window, target: target),
+                  let title = stringAttribute(window, kAXTitleAttribute),
+                  !title.isEmpty, title.count <= 160 else {
+                throw SystemAXError.invalidData
+            }
+            return title
+        }
+    }
+
     private func stringAttribute(_ handle: AXUIElement, _ key: String) -> String? {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(handle, key as CFString, &value) == .success

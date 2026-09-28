@@ -5,6 +5,7 @@ import Foundation
 /// signature or a replacement for an authenticated, durable execution permit.
 enum NativeWorkerPermitDigest {
     static let policyRevision = "native-ax-policy-v1"
+    static let pressPolicyRevision = "native-ax-press-fixture-v1"
 
     static func candidateSet(_ controls: [[String: Any]]) throws -> String {
         try CanonicalJSON.digest(controls)
@@ -37,5 +38,36 @@ enum NativeWorkerPermitDigest {
             return false
         }
         return candidateSetDigest == expectedSet && actionDigest == expectedAction
+    }
+
+    static func pressAction(taskID: String, scopeRef: String,
+                            observationID: String, candidateID: String,
+                            role: String, label: String,
+                            expectedWindowTitle: String,
+                            policyRevision: String) throws -> String {
+        try CanonicalJSON.digest([
+            "taskId": taskID, "scopeRef": scopeRef,
+            "observationId": observationID, "candidateId": candidateID,
+            "role": role, "label": label,
+            "expectedWindowTitle": expectedWindowTitle,
+            "policyRevision": policyRevision,
+        ])
+    }
+
+    static func pressMatches(controls: [[String: Any]], taskID: String,
+                             scopeRef: String, observationID: String,
+                             candidateID: String, role: String, label: String,
+                             expectedWindowTitle: String,
+                             policyRevision: String,
+                             candidateSetDigest: String,
+                             actionDigest: String) -> Bool {
+        guard policyRevision == pressPolicyRevision,
+              let set = try? candidateSet(controls),
+              let action = try? pressAction(taskID: taskID,
+                  scopeRef: scopeRef, observationID: observationID,
+                  candidateID: candidateID, role: role, label: label,
+                  expectedWindowTitle: expectedWindowTitle,
+                  policyRevision: policyRevision) else { return false }
+        return candidateSetDigest == set && actionDigest == action
     }
 }
