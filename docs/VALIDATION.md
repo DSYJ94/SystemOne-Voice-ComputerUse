@@ -340,3 +340,14 @@ cloned scripted-start records. The portal fixture still uses in-process authorit
 the tests do not establish authenticated OS peer identity, per-action host permits,
 general browser control, existing Chrome or release readiness. The native AX and
 Swift checks were not rerun because their sources were unchanged.
+
+## Local-save Stop fence accounting, 27 September 2026
+
+The focused scripted portal suite passed **10/10** tests and `npm run check`
+passed typechecking and **147/147** Node tests with local loopback access.
+In the held save-verification case, the synthetic browser reports a
+successful close while the local save remains pending. Stop now reports
+`browserFenced=true`, `localSaveFenced=false` and `workerFenced=false`; the
+late continuation cannot report task completion or write the output file.
+This accounts for the independent file path but does not prove a true OS worker
+barrier or undo any already-dispatched file effect.

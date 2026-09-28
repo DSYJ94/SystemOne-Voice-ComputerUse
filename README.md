@@ -44,7 +44,8 @@ Accessibility field; there is no general-purpose executor or release binary yet.
   not yet connected to the app or its task controller.
 - A fixture-only managed-browser Stop path cancels the task record and closes
   the isolated Chromium context. A delayed-control test confirms no download
-  request after Stop; already-dispatched effects remain uncertain and block a
+  request after Stop. Stop reports an incomplete worker fence when a local save
+  remains pending even if Chromium has closed; already-dispatched effects remain uncertain and block a
   new scripted task until an explicit recovery path is built.
 - Clarification and resume intent records bound to displayed prompts, task revisions,
   current observations and recovered checkpoints.

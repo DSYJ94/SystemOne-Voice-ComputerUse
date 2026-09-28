@@ -336,7 +336,7 @@ test('Stop during save verification prevents a later file write', async () => {
   const saveStarted = new Promise<void>(resolve => { saving = resolve; });
   const fake = {
     origin,
-    stop: async () => ({ workerFenced: false }),
+    stop: async () => ({ workerFenced: true }),
     observe: async () => current,
     search: async () => { current = results; return current; },
     openInvoice: async () => { current = detail; return current; },
@@ -362,6 +362,9 @@ test('Stop during save verification prevents a later file write', async () => {
     await saveStarted;
     const stopped = await task.stop();
     assert.equal(stopped.record.state, 'cancelled');
+    assert.equal(stopped.browserFenced, true);
+    assert.equal(stopped.localSaveFenced, false);
+    assert.equal(stopped.workerFenced, false);
     releaseSave();
     assert.equal((await pending).state, 'cancelled');
     await assert.rejects(readFile(destinationPath), /ENOENT/);
