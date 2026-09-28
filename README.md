@@ -113,13 +113,14 @@ field fill. There is no general-purpose executor or release binary yet.
   checks and the bundled app accepts its key from the verified child. A live
   AX run and Developer ID peer/update qualification remain unverified. See
   [native action status](docs/NATIVE_ACTION.md).
-- A native semantic-press source handles observed buttons and menu items. One
-  fixed synthetic Documents/Budget.xlsx LOCATE task now spans folder navigation
-  and file selection in the persistent controller. Each press gets a fresh
-  observation, signed one-use permit, worker replay check and journaled
-  dispatch; independent Fixture window-title checks distinguish navigation,
-  selection and opening. Child-process tests pass, but the AppKit actions have
-  not been manually run. This is not Finder or a general file workflow. See
+- A native semantic-press source handles observed buttons and menu items.
+  Fixed synthetic Documents/Budget.xlsx LOCATE and OPEN tasks span folder
+  navigation, exact file selection and, only for OPEN, the separate Open control
+  in the persistent controller. Each press gets a fresh observation, signed
+  one-use permit, worker replay check and journaled dispatch; independent
+  Fixture window-title checks distinguish navigation, selection and opening.
+  Child-process tests pass, but the AppKit actions have not been manually run.
+  This is not Finder or a general file workflow. See
   the [native fixture check](docs/NATIVE_NAVIGATION_TEST.md).
 - A separate native host task class binds a final text command, complete
   candidate set, supplied-value digest and one journaled attempt before calling

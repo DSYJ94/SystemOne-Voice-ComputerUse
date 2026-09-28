@@ -251,7 +251,9 @@ final class DevNativeFieldWorker: @unchecked Sendable {
               ((expectedTitle == "SystemOne Fixture — Documents"
                 && node.description.label == "Documents")
                || (expectedTitle == "SystemOne Fixture — Documents — Budget.xlsx selected"
-                && node.description.label == "Budget.xlsx")),
+                && node.description.label == "Budget.xlsx")
+               || (expectedTitle == "SystemOne Fixture — Documents — Budget.xlsx opened"
+                && node.description.label == "Open selected file")),
               let executionID = message["executionId"] as? String,
               let permitRef = message["permitRef"] as? String,
               let actionDigest = message["actionDigest"] as? String,
@@ -275,6 +277,12 @@ final class DevNativeFieldWorker: @unchecked Sendable {
             if expectedTitle == "SystemOne Fixture — Documents — Budget.xlsx selected" {
                 guard try state.backend.windowTitles(for: state.target)
                     == ["SystemOne Fixture — Documents"] else {
+                    return ["kind": "unsupported"]
+                }
+            } else if expectedTitle
+                == "SystemOne Fixture — Documents — Budget.xlsx opened" {
+                guard try state.backend.windowTitles(for: state.target)
+                    == ["SystemOne Fixture — Documents — Budget.xlsx selected"] else {
                     return ["kind": "unsupported"]
                 }
             }
@@ -341,6 +349,12 @@ final class DevNativeFieldWorker: @unchecked Sendable {
                     == ["SystemOne Fixture — Documents"] else {
                     throw NativePressActionError.targetChanged
                 }
+            } else if state.expectedWindowTitle
+                == "SystemOne Fixture — Documents — Budget.xlsx opened" {
+                guard try state.backend.windowTitles(for: state.target)
+                    == ["SystemOne Fixture — Documents — Budget.xlsx selected"] else {
+                    throw NativePressActionError.targetChanged
+                }
             }
         }) {
         case .verified: return "verified"
@@ -397,7 +411,8 @@ final class DevNativeFieldWorker: @unchecked Sendable {
         guard let state, state.taskID == taskID, state.mode == "press",
               let expectedTitle = message["expectedWindowTitle"] as? String,
               ["SystemOne Fixture — Documents",
-               "SystemOne Fixture — Documents — Budget.xlsx selected"]
+               "SystemOne Fixture — Documents — Budget.xlsx selected",
+               "SystemOne Fixture — Documents — Budget.xlsx opened"]
                 .contains(expectedTitle),
               (state.expectedWindowTitle == nil
                 || expectedTitle == state.expectedWindowTitle),

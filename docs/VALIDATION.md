@@ -1023,3 +1023,30 @@ were **not launched**. Real Accessibility behavior, the title precondition
 on an actual Fixture window, Stop during a live AX call and release signing
 remain unverified. The Fixture title is a synthetic outcome oracle, not
 evidence of a real file path or Finder compatibility.
+
+## Distinct synthetic native OPEN outcome, 28 September 2026
+
+`npm run check` passed **237/237** TypeScript/Node tests, zero skipped, with
+typecheck. The OPEN tests cover a three-press task from Reset, a one-press
+task from the selected state, no-effect verification when already opened,
+the LOCATE command being unable to authorize Open, duplicate Open controls,
+interference after selection, Stop between selection and Open, unknown Open
+delivery and a late Open receipt after Stop. The controller child-process
+test confirms separately signed Documents, selection and Open commits and
+three journaled attempts under one OPEN task ID. `npm run test:native-ax`
+and `npm run test:native-host-permit` passed. The expanded
+`npm run test:native-permit-digest` passed TypeScript/Swift parity for all
+three press outcomes and rejects swapping selected/opened title bindings.
+`npm run build:native-dev` compiled and ad-hoc signed the panel and worker.
+`git diff --check` passed.
+
+One restricted-shell `npm run check` attempt failed because the sandbox
+denied loopback listeners used by unrelated browser fixtures (`listen EPERM`
+on `127.0.0.1`). The unchanged suite passed with the established test
+permissions. No AppKit action was launched or OS permission requested. The
+Fixture changes only its own title/status; it does not open a real document.
+Actual Accessibility behavior, live Stop timing, Finder path identity,
+Developer ID signing and notarization remain unverified. Static packaging
+review found that the current ad-hoc app/Chrome-host CDHash pins cannot be
+embedded together without a signing cycle; see
+[bundled runtime](BUNDLED_DEV_RUNTIME.md).

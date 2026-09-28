@@ -30,6 +30,13 @@ const fileAction = { taskId: 'task-1', scopeRef: 'native:scope-1',
   label: 'Budget.xlsx',
   expectedWindowTitle: 'SystemOne Fixture — Documents — Budget.xlsx selected',
   policyRevision: 'native-ax-press-fixture-v1' };
+const openControls = [{ id: 'open-node', role: 'AXButton',
+  label: 'Open selected file', enabled: true, secure: false, canPress: true }];
+const openAction = { taskId: 'task-1', scopeRef: 'native:scope-1',
+  observationId: 'obs-3', candidateId: 'open-node', role: 'AXButton',
+  label: 'Open selected file',
+  expectedWindowTitle: 'SystemOne Fixture — Documents — Budget.xlsx opened',
+  policyRevision: 'native-ax-press-fixture-v1' };
 try {
   const binary = join(build, 'NativeWorkerPermitDigestCheck');
   const moduleCache = join(build, 'module-cache');
@@ -43,7 +50,8 @@ try {
   assert.equal(compile.status, 0, compile.stderr);
   const check = spawnSync(binary, [digest(controls), digest(action),
     digest(pressControls), digest(pressAction),
-    digest(fileControls), digest(fileAction)],
+    digest(fileControls), digest(fileAction),
+    digest(openControls), digest(openAction)],
     { encoding: 'utf8' });
   assert.equal(check.status, 0, check.stderr);
   process.stdout.write(check.stdout);

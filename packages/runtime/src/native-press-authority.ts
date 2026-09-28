@@ -15,6 +15,8 @@ const FOLDER = 'Documents';
 const EXPECTED_TITLE = 'SystemOne Fixture — Documents';
 const FILE = 'Budget.xlsx';
 const SELECTED_TITLE = 'SystemOne Fixture — Documents — Budget.xlsx selected';
+const OPEN_CONTROL = 'Open selected file';
+const OPENED_TITLE = 'SystemOne Fixture — Documents — Budget.xlsx opened';
 const POLICY = 'native-ax-press-fixture-v1';
 
 export interface NativePressControl {
@@ -72,8 +74,11 @@ export interface NativeLocateRequest {
   readonly command: Record<string, JSONValue>;
 }
 
+export interface NativeOpenRequest extends NativeLocateRequest {}
+
 export type NativePressResult = 'verified_navigation' | 'already_matched'
-  | 'verified_locate' | 'unsupported' | 'uncertain' | 'stopped' | 'error';
+  | 'verified_locate' | 'verified_open' | 'unsupported' | 'uncertain'
+  | 'stopped' | 'error';
 
 type StepResult = 'verified' | 'unsupported' | 'uncertain' | 'stopped';
 
@@ -109,7 +114,7 @@ function validObservation(value: NativePressObservation): boolean {
   return true;
 }
 
-/** Only fixed synthetic Documents navigation and file selection are admitted.
+/** Only fixed synthetic Documents navigation, file selection and Open are admitted.
  * The model cannot widen the target, operation or expected outcome. */
 export class NativePressAuthority {
   readonly #journal: AttemptJournal;
@@ -147,8 +152,17 @@ export class NativePressAuthority {
     return this.#start(request, 'locate');
   }
 
-  #start(request: NativePressRequest | NativeLocateRequest,
-    mode: 'navigate' | 'locate'): Promise<NativePressResult> {
+  startOpen(request: NativeOpenRequest): Promise<NativePressResult> {
+    if (!ID.test(request.requestId) || request.bundleId !== FIXTURE_BUNDLE
+      || request.folderName !== FOLDER || request.fileName !== FILE
+      || request.expectedWindowTitle !== OPENED_TITLE) {
+      return Promise.resolve('error');
+    }
+    return this.#start(request, 'open');
+  }
+
+  #start(request: NativePressRequest | NativeLocateRequest | NativeOpenRequest,
+    mode: 'navigate' | 'locate' | 'open'): Promise<NativePressResult> {
     if (this.#seen.has(request.requestId) || this.#seen.size >= 1_000) {
       return Promise.resolve('error');
     }
@@ -202,10 +216,11 @@ export class NativePressAuthority {
     } finally { if (timer) clearTimeout(timer); }
   }
 
-  async #run(request: NativePressRequest | NativeLocateRequest, active: Active,
-    mode: 'navigate' | 'locate'): Promise<NativePressResult> {
-    if (mode === 'locate') {
-      return this.#runLocate(request as NativeLocateRequest, active);
+  async #run(request: NativePressRequest | NativeLocateRequest | NativeOpenRequest,
+    active: Active, mode: 'navigate' | 'locate' | 'open'):
+    Promise<NativePressResult> {
+    if (mode !== 'navigate') {
+      return this.#runFileWorkflow(request as NativeLocateRequest, active, mode);
     }
     let executionId: string | undefined;
     try {
@@ -369,11 +384,13 @@ export class NativePressAuthority {
     }
   }
 
-  async #runLocate(request: NativeLocateRequest,
-    active: Active): Promise<NativePressResult> {
+  async #runFileWorkflow(request: NativeLocateRequest, active: Active,
+    mode: 'locate' | 'open'): Promise<NativePressResult> {
     try {
       const command = request.command;
-      const expectedCommand = 'Locate synthetic fixture file Documents/Budget.xlsx';
+      const commandPrefix = mode === 'open'
+        ? 'Open synthetic fixture file ' : 'Locate synthetic fixture file ';
+      const expectedCommand = commandPrefix + 'Documents/Budget.xlsx';
       if (command.type !== 'command' || command.source !== 'text'
         || command.mode !== 'command' || command.isFinal !== true
         || command.taskId !== request.requestId || command.taskEpoch !== 1
@@ -390,7 +407,7 @@ export class NativePressAuthority {
       const route = input.accept(endpoint, Buffer.from(JSON.stringify(command)));
       if (route.kind !== 'interpret_command') return 'error';
       const path = bindCommandValue(route.input, 'synthetic-file-path',
-        'Locate synthetic fixture file ', 'Documents/Budget.xlsx');
+        commandPrefix, 'Documents/Budget.xlsx');
       active.workerTouched = true;
       const first = await this.#worker.observePress({
         taskId: request.requestId, bundleId: request.bundleId,
@@ -401,14 +418,18 @@ export class NativePressAuthority {
         || first.windowTitles.length !== 1) return 'unsupported';
       const initialTitle = first.windowTitles[0];
       if (![ 'SystemOne Fixture', 'SystemOne Fixture — Downloads',
-        EXPECTED_TITLE, SELECTED_TITLE ].includes(initialTitle!)) {
+        EXPECTED_TITLE, SELECTED_TITLE, OPENED_TITLE ].includes(initialTitle!)
+        || (mode === 'locate' && initialTitle === OPENED_TITLE)) {
         return 'unsupported';
       }
       const registry = new TaskAdmissionRegistry(revision, input);
       const admission = registry.admit(route.input, {
         admissionId: randomUUID(), goal: route.input.text,
-        outcomeKind: 'LOCATE', scopeRef: first.scopeRef,
-        completionVerifierRef: 'native-fixture-selected-title-v1',
+        outcomeKind: mode === 'open' ? 'OPEN' : 'LOCATE',
+        scopeRef: first.scopeRef,
+        completionVerifierRef: mode === 'open'
+          ? 'native-fixture-opened-title-v1'
+          : 'native-fixture-selected-title-v1',
         policyRevision: POLICY, approvedEffects: ['READ', 'NAVIGATE'],
         parameters: [path],
       });
@@ -416,47 +437,74 @@ export class NativePressAuthority {
       this.#journal.startTask(request.requestId, 1, 1);
       active.journalStarted = true;
       if (active.stopped) return 'stopped';
-      if (initialTitle === SELECTED_TITLE) {
+      if (initialTitle === request.expectedWindowTitle) {
         const matched = await this.#worker.verifyPress({
-          taskId: request.requestId, expectedWindowTitle: SELECTED_TITLE,
+          taskId: request.requestId,
+          expectedWindowTitle: request.expectedWindowTitle,
         });
         if (active.stopped) return 'stopped';
         if (!matched) return 'unsupported';
         this.#journal.completeTask(request.requestId,
-          'native-selected-current-' + request.requestId);
+          'native-current-' + request.requestId);
         return 'already_matched';
       }
-      let fileObservation = first;
-      if (initialTitle !== EXPECTED_TITLE) {
+      let stageObservation = first;
+      let currentTitle = initialTitle;
+      if (currentTitle !== EXPECTED_TITLE
+        && currentTitle !== SELECTED_TITLE) {
         const folderResult = await this.#locateStep(request.requestId, first,
           FOLDER, EXPECTED_TITLE, active);
         if (folderResult === 'stopped') return 'stopped';
         if (folderResult !== 'verified') return folderResult;
         if (active.stopped) return 'stopped';
-        fileObservation = await this.#worker.observePress({
+        stageObservation = await this.#worker.observePress({
           taskId: request.requestId, bundleId: request.bundleId,
           signal: active.abort.signal,
         });
         if (active.stopped) return 'stopped';
-        if (!validObservation(fileObservation) || !fileObservation.complete
-          || fileObservation.scopeRef !== first.scopeRef
-          || fileObservation.observationId === first.observationId
-          || fileObservation.windowTitles.length !== 1
-          || fileObservation.windowTitles[0] !== EXPECTED_TITLE) {
+        if (!validObservation(stageObservation) || !stageObservation.complete
+          || stageObservation.scopeRef !== first.scopeRef
+          || stageObservation.observationId === first.observationId
+          || stageObservation.windowTitles.length !== 1
+          || stageObservation.windowTitles[0] !== EXPECTED_TITLE) {
           return 'unsupported';
         }
+        currentTitle = EXPECTED_TITLE;
       }
-      const fileResult = await this.#locateStep(request.requestId,
-        fileObservation, FILE, SELECTED_TITLE, active);
-      if (fileResult === 'stopped') return 'stopped';
-      if (fileResult !== 'verified') return fileResult;
+      if (currentTitle === EXPECTED_TITLE) {
+        const fileResult = await this.#locateStep(request.requestId,
+          stageObservation, FILE, SELECTED_TITLE, active);
+        if (fileResult === 'stopped') return 'stopped';
+        if (fileResult !== 'verified') return fileResult;
+        if (active.stopped) return 'stopped';
+        if (mode === 'locate') {
+          return this.#completeFileWorkflow(request.requestId,
+            'verified_locate');
+        }
+        const priorObservationId = stageObservation.observationId;
+        stageObservation = await this.#worker.observePress({
+          taskId: request.requestId, bundleId: request.bundleId,
+          signal: active.abort.signal,
+        });
+        if (active.stopped) return 'stopped';
+        if (!validObservation(stageObservation) || !stageObservation.complete
+          || stageObservation.scopeRef !== first.scopeRef
+          || stageObservation.observationId === priorObservationId
+          || stageObservation.windowTitles.length !== 1
+          || stageObservation.windowTitles[0] !== SELECTED_TITLE) {
+          return 'unsupported';
+        }
+        currentTitle = SELECTED_TITLE;
+      }
+      if (mode !== 'open' || currentTitle !== SELECTED_TITLE) {
+        return 'unsupported';
+      }
+      const openResult = await this.#locateStep(request.requestId,
+        stageObservation, OPEN_CONTROL, OPENED_TITLE, active);
+      if (openResult === 'stopped') return 'stopped';
+      if (openResult !== 'verified') return openResult;
       if (active.stopped) return 'stopped';
-      const finalAttempt = this.#journal.attemptsForTask(request.requestId)
-        .at(-1);
-      const evidenceRef = finalAttempt?.outcome?.evidenceRef;
-      if (!evidenceRef) return 'uncertain';
-      this.#journal.completeTask(request.requestId, evidenceRef);
-      return 'verified_locate';
+      return this.#completeFileWorkflow(request.requestId, 'verified_open');
     } catch {
       return active.stopped ? 'stopped' : 'error';
     } finally {
@@ -474,13 +522,24 @@ export class NativePressAuthority {
     }
   }
 
+  #completeFileWorkflow(taskId: string,
+    result: 'verified_locate' | 'verified_open'): NativePressResult {
+    const finalAttempt = this.#journal.attemptsForTask(taskId).at(-1);
+    const evidenceRef = finalAttempt?.outcome?.evidenceRef;
+    if (!evidenceRef) return 'uncertain';
+    this.#journal.completeTask(taskId, evidenceRef);
+    return result;
+  }
+
   async #locateStep(taskId: string, observation: NativePressObservation,
     label: string, expectedTitle: string, active: Active): Promise<StepResult> {
     let executionId: string | undefined;
     try {
       if (active.stopped) return 'stopped';
       if (observation.windowTitles.length !== 1
-        || (label === FILE && observation.windowTitles[0] !== EXPECTED_TITLE)) {
+        || (label === FILE && observation.windowTitles[0] !== EXPECTED_TITLE)
+        || (label === OPEN_CONTROL
+          && observation.windowTitles[0] !== SELECTED_TITLE)) {
         return 'unsupported';
       }
       const matching = observation.controls.filter(control =>
@@ -496,10 +555,12 @@ export class NativePressAuthority {
             destinationUrl: null,
           })) },
         invocations: matching.map(control => ({ targetRef: control.id,
-          expectedRef: label === FILE ? 'selected-file' : 'documents-window',
-          expectedDescription: label === FILE
-            ? 'Documents/Budget.xlsx selected and closed'
-            : 'Documents folder identity' })),
+          expectedRef: label === OPEN_CONTROL ? 'opened-file'
+            : label === FILE ? 'selected-file' : 'documents-window',
+          expectedDescription: label === OPEN_CONTROL
+            ? 'Documents/Budget.xlsx opened'
+            : label === FILE ? 'Documents/Budget.xlsx selected and closed'
+              : 'Documents folder identity' })),
         policyRevision: POLICY,
       });
       const selected = selectBoundCandidate(offered, 'invoke',

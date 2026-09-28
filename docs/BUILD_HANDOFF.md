@@ -69,10 +69,11 @@ established by the current fixture-only native or browser tests.
   [#47 development global shortcuts](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/47),
   [#48 native semantic press source](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/48),
   [#49 fixed native Documents controller action](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/49),
-  [#50 synthetic native file LOCATE task](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/50).
+  [#50 synthetic native file LOCATE task](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/50),
+  [#51 distinct synthetic native OPEN task](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/51).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/native-fixture-locate`,
-  stacked on `codex/native-press-controller`.
+- The current implementation branch is `codex/native-fixture-open`,
+  stacked on `codex/native-fixture-locate`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -236,12 +237,11 @@ and external-source mode still lacks code authentication.
    dispatch timing and unknown outcomes before broadening native or browser
    actions. The fixed Documents press now uses the signed-permit controller
    path and an exact fixture window-title check. The fixed synthetic
-   Documents/Budget.xlsx LOCATE task now retains one admission across fresh
-   folder and file observations, two separately signed presses and a final
-   selected-but-closed predicate. The next native step is owner-run AppKit
-   qualification, followed by an independently verified OPEN predicate before
-   considering a real file manager. Do not treat an AXPress receipt as LOCATE
-   or OPEN.
+   Documents/Budget.xlsx LOCATE and OPEN tasks now retain one admission across
+   fresh observations, separately signed presses and distinct selected and opened
+   predicates. The next native step is owner-run AppKit qualification followed
+   by supported real-app identity and selection verification. Do not treat an
+   AXPress receipt as LOCATE or OPEN.
 3. Build B04/B07/B08 signed native UX and B10/B11 general native observations/
    actions; add B12 headed managed workflows with explicit limits. Prove clean
    installation and TCC attribution on an authorized Mac.

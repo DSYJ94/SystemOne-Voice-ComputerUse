@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { AttemptJournal } from '../src/attempt-journal.ts';
 import { NativePressAuthority } from '../src/native-press-authority.ts';
-import type { NativeLocateRequest, NativePressControl, NativePressObservation,
+import type { NativeLocateRequest, NativeOpenRequest,
+  NativePressControl, NativePressObservation,
   NativePressWorker } from '../src/native-press-authority.ts';
 
 const ROOT = 'SystemOne Fixture';
@@ -24,21 +25,30 @@ class FixtureWorker implements NativePressWorker {
   title = ROOT;
   scope = 'native:fixture-scope';
   duplicateFile = false;
+  duplicateOpen = false;
   observeCalls = 0;
   commits: string[] = [];
   verifications: string[] = [];
   prepared: string | undefined;
   stopCalls = 0;
   firstCommitGate?: Deferred<'returned_unverified' | 'not_dispatched' | 'unknown'>;
+  thirdCommitGate?: Deferred<'returned_unverified' | 'not_dispatched' | 'unknown'>;
   secondObserveGate?: Deferred<void>;
+  thirdObserveGate?: Deferred<void>;
   interfereAfterFolder = false;
+  interfereAfterSelection = false;
   secondCommitResult: 'returned_unverified' | 'not_dispatched' | 'unknown'
+    = 'returned_unverified';
+  thirdCommitResult: 'returned_unverified' | 'not_dispatched' | 'unknown'
     = 'returned_unverified';
 
   async observePress(): Promise<NativePressObservation> {
     this.observeCalls++;
     if (this.observeCalls === 2 && this.secondObserveGate) {
       await this.secondObserveGate.promise;
+    }
+    if (this.observeCalls === 3 && this.thirdObserveGate) {
+      await this.thirdObserveGate.promise;
     }
     const controls: NativePressControl[] = [
       { id: 'documents-button', role: 'AXButton', label: 'Documents',
@@ -52,8 +62,14 @@ class FixtureWorker implements NativePressWorker {
       if (this.duplicateFile) controls.push({ id: 'other-budget-button',
         role: 'AXButton', label: 'Budget.xlsx', enabled: true,
         secure: false, canPress: true });
-      controls.push({ id: 'open-button', role: 'AXButton',
-        label: 'Open selected file', enabled: true, secure: false, canPress: true });
+      if (this.title === SELECTED || this.title === OPENED) {
+        controls.push({ id: 'open-button', role: 'AXButton',
+          label: 'Open selected file', enabled: true, secure: false,
+          canPress: true });
+        if (this.duplicateOpen) controls.push({ id: 'other-open-button',
+          role: 'AXButton', label: 'Open selected file',
+          enabled: true, secure: false, canPress: true });
+      }
     }
     return { observationId: randomUUID(), scopeRef: this.scope,
       bundleId: 'com.aurium.systemone.fixture', complete: true,
@@ -65,10 +81,14 @@ class FixtureWorker implements NativePressWorker {
     assert.equal(input.policyRevision, 'native-ax-press-fixture-v1');
     if (input.candidateId === 'documents-button') {
       assert.equal(input.expectedWindowTitle, DOCUMENTS);
-    } else {
+    } else if (input.candidateId === 'budget-button') {
       assert.equal(input.candidateId, 'budget-button');
       assert.equal(input.expectedWindowTitle, SELECTED);
       assert.equal(this.title, DOCUMENTS);
+    } else {
+      assert.equal(input.candidateId, 'open-button');
+      assert.equal(input.expectedWindowTitle, OPENED);
+      assert.equal(this.title, SELECTED);
     }
     this.prepared = input.candidateId;
     return { kind: 'ready', preparationRef: randomUUID() };
@@ -83,8 +103,14 @@ class FixtureWorker implements NativePressWorker {
       if (result === 'returned_unverified') this.title = DOCUMENTS;
       return result;
     }
-    if (this.secondCommitResult === 'returned_unverified') this.title = SELECTED;
-    return this.secondCommitResult;
+    if (candidate === 'budget-button') {
+      if (this.secondCommitResult === 'returned_unverified') this.title = SELECTED;
+      return this.secondCommitResult;
+    }
+    const openResult = this.thirdCommitGate
+      ? await this.thirdCommitGate.promise : this.thirdCommitResult;
+    if (openResult === 'returned_unverified') this.title = OPENED;
+    return openResult;
   }
 
   async verifyPress(input: { expectedWindowTitle: string }): Promise<boolean> {
@@ -92,6 +118,10 @@ class FixtureWorker implements NativePressWorker {
     const matched = this.title === input.expectedWindowTitle;
     if (matched && input.expectedWindowTitle === DOCUMENTS
       && this.interfereAfterFolder) this.title = 'SystemOne Fixture — Downloads';
+    if (matched && input.expectedWindowTitle === SELECTED
+      && this.interfereAfterSelection) {
+      this.title = 'SystemOne Fixture — Downloads';
+    }
     return matched;
   }
 
@@ -112,6 +142,13 @@ function request(requestId = randomUUID()): NativeLocateRequest {
         appBundleId: 'com.aurium.systemone.dev', windowId: 'command-panel',
         contentRevision: requestId },
     } };
+}
+
+function openRequest(requestId = randomUUID()): NativeOpenRequest {
+  const locate = request(requestId);
+  return { ...locate, expectedWindowTitle: OPENED,
+    command: { ...locate.command,
+      text: 'Open synthetic fixture file Documents/Budget.xlsx' } };
 }
 
 function harness(t: { after(callback: () => void): void }): {
@@ -228,4 +265,101 @@ test('unknown file selection blocks automatic retry', async t => {
     'unknown');
   assert.equal(authority.needsRecovery, true);
   assert.equal(await authority.startLocate(request()), 'uncertain');
+});
+
+test('OPEN follows folder and exact selection under one task', async t => {
+  const { worker, journal, authority } = harness(t);
+  const input = openRequest();
+  assert.equal(await authority.startOpen(input), 'verified_open');
+  assert.equal(worker.title, OPENED);
+  assert.deepEqual(worker.commits,
+    ['documents-button', 'budget-button', 'open-button']);
+  assert.deepEqual(worker.verifications, [DOCUMENTS, SELECTED, OPENED]);
+  assert.equal(worker.observeCalls, 3);
+  assert.equal(journal.getTaskState(input.requestId), 'completed');
+  const attempts = journal.attemptsForTask(input.requestId);
+  assert.equal(attempts.length, 3);
+  assert.ok(attempts.every(attempt => attempt.outcome?.verification === 'matched'));
+});
+
+test('OPEN from selected state sends one press; already opened sends none', async t => {
+  const { worker, journal, authority } = harness(t);
+  worker.title = SELECTED;
+  const selected = openRequest();
+  assert.equal(await authority.startOpen(selected), 'verified_open');
+  assert.deepEqual(worker.commits, ['open-button']);
+  assert.equal(journal.attemptsForTask(selected.requestId).length, 1);
+  const already = openRequest();
+  assert.equal(await authority.startOpen(already), 'already_matched');
+  assert.equal(journal.attemptsForTask(already.requestId).length, 0);
+});
+
+test('LOCATE command cannot authorize OPEN', async t => {
+  const { worker, authority } = harness(t);
+  const changed = openRequest();
+  changed.command.text = 'Locate synthetic fixture file Documents/Budget.xlsx';
+  assert.equal(await authority.startOpen(changed), 'error');
+  assert.equal(worker.observeCalls, 0);
+});
+
+test('duplicate Open control or interference after selection never dispatches Open',
+  async t => {
+    const { worker, journal, authority } = harness(t);
+    worker.title = SELECTED;
+    worker.duplicateOpen = true;
+    const duplicate = openRequest();
+    assert.equal(await authority.startOpen(duplicate), 'unsupported');
+    assert.deepEqual(worker.commits, []);
+    worker.title = DOCUMENTS;
+    worker.duplicateOpen = false;
+    worker.interfereAfterSelection = true;
+    const changed = openRequest();
+    assert.equal(await authority.startOpen(changed), 'unsupported');
+    assert.deepEqual(worker.commits, ['budget-button']);
+    assert.equal(journal.getTaskState(changed.requestId), 'cancelled');
+  });
+
+test('Stop between verified selection and Open sends no Open press', async t => {
+  const { worker, journal, authority } = harness(t);
+  worker.thirdObserveGate = new Deferred();
+  const input = openRequest();
+  const pending = authority.startOpen(input);
+  await waitFor(() => worker.observeCalls === 3);
+  const stopped = await authority.stop();
+  assert.equal(stopped.workerFenced, true);
+  worker.thirdObserveGate.resolve();
+  assert.equal(await pending, 'stopped');
+  assert.deepEqual(worker.commits, ['documents-button', 'budget-button']);
+  assert.equal(journal.getTaskState(input.requestId), 'cancelled');
+  assert.equal(authority.needsRecovery, false);
+});
+
+test('unknown Open effect cannot be reported as completion or retried', async t => {
+  const { worker, journal, authority } = harness(t);
+  worker.title = SELECTED;
+  worker.thirdCommitResult = 'unknown';
+  const input = openRequest();
+  assert.equal(await authority.startOpen(input), 'uncertain');
+  assert.deepEqual(worker.commits, ['open-button']);
+  assert.equal(journal.attemptsForTask(input.requestId)[0]?.outcome?.effectStatus,
+    'unknown');
+  assert.equal(authority.needsRecovery, true);
+  assert.equal(await authority.startOpen(openRequest()), 'uncertain');
+});
+
+test('Stop after Open dispatch cannot turn a late Open receipt into success', async t => {
+  const { worker, journal, authority } = harness(t);
+  worker.title = SELECTED;
+  worker.thirdCommitGate = new Deferred();
+  const input = openRequest();
+  const pending = authority.startOpen(input);
+  await waitFor(() => worker.commits.length === 1);
+  const stopped = await authority.stop();
+  assert.equal(stopped.workerFenced, true);
+  worker.thirdCommitGate.resolve('returned_unverified');
+  assert.equal(await pending, 'stopped');
+  assert.equal(worker.title, OPENED, 'a dispatched Open may still take effect');
+  assert.equal(worker.verifications.includes(OPENED), false);
+  assert.equal(journal.getTaskState(input.requestId), 'cancelled');
+  assert.equal(authority.needsRecovery, true);
 });
