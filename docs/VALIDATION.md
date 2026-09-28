@@ -828,3 +828,23 @@ with `--enable-unsafe-extension-debugging` and Playwright's private debugging
 pipe, both confined to disposable Chromium. This flag is test-only, not a
 requirement for existing-profile support. Physical toolbar behavior and Google
 Chrome's installed profile remain unverified.
+
+## Isolated Chromium journaled field action, 28 September 2026
+
+`npm run test:chrome-browser-transport` passed on macOS 26.6.2 arm64. The
+production extension source, signed native host and signed listener source
+exchanged a real action request through Chromium's native-messaging transport.
+The host admitted a final synthetic text command, recorded a one-use permit
+and durable dispatch boundary, then the extension filled the fixture's
+`Find invoice` field. The controller recorded a matched receipt and completed
+the task only after checking the current DOM value. A duplicate editable
+label returned `unsupported` with no journal attempt or changed field; a replay
+of the successful request returned `error`. No `/invoices` request occurred,
+so the test establishes a field edit, not form submission or a completed search.
+
+The test still uses the disposable Chromium profile, copied service worker with
+test-only hooks, DevTools action trigger, ad-hoc signatures and loopback portal.
+It does not qualify a physical toolbar click, full AppKit integration, Google
+Chrome/current-profile installation, real-site trusted-input behavior or
+release signing. `npm run check` passed **206/206 tests**, zero skipped, with
+TypeScript typecheck; `git diff --check` passed.

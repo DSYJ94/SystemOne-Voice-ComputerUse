@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync,
   writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -9,6 +10,8 @@ import { once } from 'node:events';
 import { chromium } from 'playwright';
 import { startPortalFixture } from '../packages/fixtures/portal.ts';
 import { ChromeReadSession } from '../packages/runtime/src/chrome-read-session.ts';
+import { ChromeFillAuthority } from '../packages/runtime/src/chrome-fill-authority.ts';
+import { AttemptJournal } from '../packages/runtime/src/attempt-journal.ts';
 import { installChromeNativeHost, verifyChromeNativeHost } from
   './register-chrome-native-host.mjs';
 import { stageChromeNativeHost } from './stage-chrome-native-host.mjs';
@@ -25,11 +28,13 @@ const profile = join(root, 'profile');
 const staged = join(root, 'staged');
 const socketPath = join(root, 'controller.sock');
 const registration = join(profile, 'NativeMessagingHosts');
+const journal = new AttemptJournal(join(root, 'attempts.sqlite'));
 let context;
 let listenerProcess;
 let fixture;
 let extensionId;
 let liveSession;
+let liveAuthority;
 let sessionError;
 const sessions = new Map();
 const received = [];
@@ -62,7 +67,10 @@ function onListenerEvent(event) {
     const session = sessions.get(event.connectionId);
     session?.close();
     sessions.delete(event.connectionId);
-    if (liveSession === session) liveSession = undefined;
+    if (liveSession === session) {
+      liveSession = undefined;
+      liveAuthority = undefined;
+    }
     return;
   }
   if (event.type !== 'message') return;
@@ -79,6 +87,7 @@ function onListenerEvent(event) {
         reply => sendListener(event.connectionId, reply),
         (binding, snapshot) => observations.push({ binding, snapshot }));
       sessions.set(event.connectionId, session);
+      liveAuthority = new ChromeFillAuthority(journal, session);
     }
     liveSession = session;
     session.receive(message);
@@ -177,6 +186,20 @@ async function browserWorker() {
   return context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
 }
 
+function fillRequest(grantId, url, value) {
+  const requestId = randomUUID();
+  return { requestId, grantId, fieldLabel: 'Find invoice', value,
+    command: { type: 'command', protocolVersion: '2.0',
+      messageId: randomUUID(), taskId: requestId, taskEpoch: 1,
+      goalRevision: 1, source: 'text', mode: 'command',
+      utteranceId: randomUUID(), utteranceRevision: 1,
+      text: `Fill Find invoice in existing Chrome tab ${url} with supplied text`,
+      isFinal: true, createdAt: new Date().toISOString(),
+      originSurface: { adapter: 'native', surfaceId: 'systemone-panel',
+        appBundleId: 'com.aurium.systemone.dev', windowId: 'command-panel',
+        contentRevision: requestId } } };
+}
+
 try {
   fixture = await startPortalFixture();
   extensionFiles();
@@ -262,6 +285,33 @@ try {
   assert.equal(JSON.stringify(observations[0].snapshot)
     .includes('synthetic-private-value'), false);
   assert.equal(observations[0].binding.extensionId, extensionId);
+  assert.ok(liveAuthority, 'authenticated Chrome authority missing');
+  const grantId = observations[0].binding.grantId;
+  await page.evaluate(() => {
+    const duplicate = document.createElement('input');
+    duplicate.id = 'duplicate-query';
+    duplicate.setAttribute('aria-label', 'Find invoice');
+    document.querySelector('form').append(duplicate);
+  });
+  const duplicateRequest = fillRequest(grantId, page.url(), 'INV-104');
+  assert.equal(await liveAuthority.start(duplicateRequest), 'unsupported');
+  assert.equal(journal.attemptsForTask(duplicateRequest.requestId).length, 0);
+  assert.equal(await page.locator('#query').inputValue(), 'synthetic-private-value');
+  await page.locator('#duplicate-query').evaluate(element => element.remove());
+
+  const request = fillRequest(grantId, page.url(), 'INV-104');
+  assert.equal(await liveAuthority.start(request), 'verified');
+  assert.equal(await page.locator('#query').inputValue(), 'INV-104');
+  assert.equal(fixture.requestCount('/invoices'), 0,
+    'filling the field must not submit the search form');
+  assert.equal(journal.getTaskState(request.requestId), 'completed');
+  const [attempt] = journal.attemptsForTask(request.requestId);
+  assert.ok(attempt, 'dispatched Chrome action missing from durable journal');
+  assert.equal(attempt.outcome?.deliveryStatus, 'dispatched');
+  assert.equal(attempt.outcome?.verification, 'matched');
+  assert.equal(journal.unresolvedAttempts().length, 0);
+  assert.equal(await liveAuthority.start(request), 'error',
+    'the same request must not replay');
   await page.reload();
   await until(() => liveSession?.activeGrantCount === 0,
     'navigation grant revocation');
@@ -290,11 +340,12 @@ try {
   assert.ok(wrongHost.error && !wrongHost.timeout,
     `wrong host identity unexpectedly accepted: ${JSON.stringify(wrongHost)}`);
   assert.equal(received.filter(message => message.type === 'probe').length, 1);
-  process.stdout.write('PASS: ungranted handler cannot read; Chromium action grants activeTab for signed host/listener semantic read, then revokes on reload; changed listener and host CDHashes rejected.\n');
+  process.stdout.write('PASS: ungranted handler cannot read; Chromium action grants activeTab for signed host/listener semantic read and journaled fixture field fill; ambiguous field and replay reject; reload revokes; changed listener and host CDHashes reject.\n');
 } finally {
   await context?.close();
   await fixture?.close();
   for (const session of sessions.values()) session.close();
   await stopListener();
+  journal.close();
   rmSync(root, { recursive: true, force: true });
 }
