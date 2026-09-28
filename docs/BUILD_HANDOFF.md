@@ -107,6 +107,11 @@ Stop fences the journal and closes the isolated context, while any dispatched
 uncertainty remains unresolved. The development bundle points to external
 source and Node paths; its child is not authenticated as a release worker.
 See [native managed test](NATIVE_MANAGED_TEST.md).
+The panel now also accepts one explicit managed `NAVIGATE` task: it matches an
+observed plain link to a user-supplied exact same-origin destination, journals
+one permit, and re-observes arrival before reporting it. It does not treat
+arrival as proof that a named item was opened. Stop and uncertainty use the
+same browser fence. See [managed navigation test](MANAGED_NAVIGATION_TEST.md).
 The development AppKit build now also compiles the B10 read-only
 Accessibility observer and can inspect one exact running bundle by explicit
 user input. Labels and capabilities remain local; field values are not read.

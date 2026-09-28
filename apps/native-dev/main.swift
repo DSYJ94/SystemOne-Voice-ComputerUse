@@ -5,7 +5,7 @@ import Foundation
 
 @MainActor
 final class SystemOneDev: NSObject, NSApplicationDelegate {
-    private enum ActiveSurface { case managed, native, chrome }
+    private enum ActiveSurface { case managed, managedNavigation, native, chrome }
     private var statusItem: NSStatusItem?
     private var panel: NSPanel?
     private var urlField: NSTextField?
@@ -123,31 +123,33 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         backdrop.autoresizingMask = [.width, .height]
         window.contentView = backdrop
 
-        let heading = NSTextField(labelWithString: "Managed browser — field fill")
+        let heading = NSTextField(labelWithString: "Managed browser — fill or navigate")
         heading.font = .boldSystemFont(ofSize: 16)
         let explanation = NSTextField(wrappingLabelWithString:
-            "Choose an HTTPS page and one visible text field. This development build opens a fresh Chromium profile and verifies only that field's current value. Do not enter credentials.")
+            "Choose an HTTPS page and an exact visible field or link label. Fill verifies the current field value. Navigate requires the exact expected link URL and verifies arrival there. This opens a fresh Chromium profile. Do not enter credentials.")
         explanation.textColor = .secondaryLabelColor
         let url = NSTextField()
         url.placeholderString = "https://example.com/form"
         url.setAccessibilityLabel("Approved page URL")
         urlField = url
         let label = NSTextField()
-        label.placeholderString = "Exact visible field label"
-        label.setAccessibilityLabel("Field label")
+        label.placeholderString = "Exact visible field or link label"
+        label.setAccessibilityLabel("Field or link label")
         labelField = label
         let value = NSTextField()
-        value.placeholderString = "Text to place in the field"
-        value.setAccessibilityLabel("Field value")
+        value.placeholderString = "Text to fill, or exact expected link URL"
+        value.setAccessibilityLabel("Field value or expected link URL")
         valueField = value
         let status = NSTextField(wrappingLabelWithString: "Starting local controller…")
         status.textColor = .secondaryLabelColor
         status.setAccessibilityLabel("SystemOne status")
         statusField = status
         let fill = NSButton(title: "Fill field", target: self, action: #selector(startFill))
+        let navigate = NSButton(title: "Navigate link", target: self,
+                                action: #selector(startManagedNavigate))
         let stopButton = NSButton(title: "Stop", target: self, action: #selector(stop))
         let hide = NSButton(title: "Hide", target: self, action: #selector(hidePanel))
-        let actions = NSStackView(views: [fill, stopButton, hide])
+        let actions = NSStackView(views: [fill, navigate, stopButton, hide])
         actions.orientation = .horizontal
         actions.spacing = 8
 
@@ -493,14 +495,20 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         guard requestID == activeRequestID || requestID == stopRequestID else { return }
         switch phase {
         case "starting": statusField?.stringValue = "Opening a fresh managed Chromium profile…"
-        case "observing": statusField?.stringValue = "Checking the exact visible field…"
+        case "observing": statusField?.stringValue = activeSurface == .managedNavigation
+            ? "Checking the exact visible link and destination…"
+            : "Checking the exact visible field…"
         case "observing_native":
             statusField?.stringValue = "Checking the exact native app and field…"
         case "observing_chrome":
             statusField?.stringValue = "Rechecking the exact existing Chrome tab and field…"
-        case "dispatching": statusField?.stringValue = "Filling the field; Stop may not undo this edit."
+        case "dispatching": statusField?.stringValue = activeSurface == .managedNavigation
+            ? "Navigating; Stop may not undo a request already sent."
+            : "Filling the field; Stop may not undo this edit."
         case "verified_dom_fill":
             statusField?.stringValue = "Verified: this page's field holds the supplied text. Inspect it, then press Stop to close this browser."
+        case "verified_navigation":
+            statusField?.stringValue = "Verified: the browser reached the exact expected URL. This does not prove a named item was opened. Inspect it, then press Stop."
         case "verified_native_fill":
             statusField?.stringValue = "Verified: the native field holds the supplied text."
         case "verified_chrome_dom_fill":
@@ -603,6 +611,52 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         activeRequestID = taskID
         activeSurface = .managed
         statusField?.stringValue = "Request sent to the local controller…"
+    }
+
+    @objc private func startManagedNavigate() {
+        guard let input = controllerInput, controller?.isRunning == true,
+              activeRequestID == nil, stopRequestID == nil,
+              !inspectionPending else {
+            statusField?.stringValue = "Controller unavailable or a task is active."
+            return
+        }
+        let url = urlField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let label = labelField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let destination = valueField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard let start = URLComponents(string: url),
+              let target = URLComponents(string: destination),
+              start.user == nil, start.password == nil,
+              target.user == nil, target.password == nil,
+              start.scheme == "https" || (start.scheme == "http" && start.host == "127.0.0.1"),
+              target.scheme == start.scheme, target.host == start.host,
+              target.port == start.port, target.fragment == nil,
+              !label.isEmpty, label.count <= 160,
+              url.utf8.count <= 2_048, destination.utf8.count <= 2_048 else {
+            statusField?.stringValue = "Use a page URL, exact link label and expected URL on the same approved origin."
+            return
+        }
+        let taskID = UUID().uuidString.lowercased()
+        let command: [String: Any] = [
+            "type": "command", "protocolVersion": "2.0", "messageId": UUID().uuidString.lowercased(),
+            "taskId": taskID, "taskEpoch": 1, "goalRevision": 1,
+            "source": "text", "mode": "command", "utteranceId": UUID().uuidString.lowercased(),
+            "utteranceRevision": 1,
+            "text": "Navigate via \(label) on \(url) to \(destination)", "isFinal": true,
+            "createdAt": ISO8601DateFormatter().string(from: Date()),
+            "originSurface": ["adapter": "native", "surfaceId": "systemone-panel",
+                "appBundleId": "com.aurium.systemone.dev", "windowId": "command-panel",
+                "contentRevision": taskID],
+        ]
+        let request: [String: Any] = ["type": "start_navigate", "requestId": taskID,
+            "url": url, "linkLabel": label, "destinationUrl": destination,
+            "command": command]
+        guard send(request, through: input) else {
+            statusField?.stringValue = "Could not send navigation to the controller."
+            return
+        }
+        activeRequestID = taskID
+        activeSurface = .managedNavigation
+        statusField?.stringValue = "Navigation request sent to the local controller…"
     }
 
     @objc private func startNativeFill() {

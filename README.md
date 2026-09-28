@@ -40,6 +40,10 @@ field fill. There is no general-purpose executor or release binary yet.
   explicitly entered field-fill request over private pipes to a persistent
   controller, show verification, and Stop the isolated browser. This is not a
   general browser executor or an authenticated release worker.
+  The panel also supports one `NAVIGATE` task through an observed plain link
+  when the user supplies its exact expected same-origin URL; arrival is
+  re-observed and kept distinct from opening a named object. See
+  [managed navigation test](docs/MANAGED_NAVIGATION_TEST.md).
 - The existing-Chrome Manifest V3 extension source requires a toolbar click
   and exact tab/document grant. Its development path now supports one
   journaled fill of the synthetic loopback portal's `Find invoice` field,

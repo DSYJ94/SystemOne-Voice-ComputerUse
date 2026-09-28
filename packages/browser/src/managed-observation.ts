@@ -25,6 +25,8 @@ export interface ManagedControl {
   readonly enabled: boolean;
   /** DOM capability only. Host permission is a separate one-use permit. */
   readonly editable: boolean;
+  /** Exact approved HTTP(S) destination of a plain link; otherwise null. */
+  readonly destinationUrl: string | null;
 }
 
 export interface ManagedObservation {
@@ -48,6 +50,12 @@ export interface ManagedObservation {
 /** Driver preparation only. A trusted controller must own the journal and
  * one-use permit and call send immediately after its durable boundary. */
 export interface PreparedManagedFill {
+  readonly controlId: string;
+  send(): Promise<boolean>;
+  release(): void;
+}
+
+export interface PreparedManagedNavigate {
   readonly controlId: string;
   send(): Promise<boolean>;
   release(): void;
@@ -171,9 +179,10 @@ export class ManagedObservationSession {
       if (!allowedRequest(beforeUrl, 'GET', this.#allowedOrigins)) {
         throw new Error('managed page left approved scope');
       }
-      const collection = await this.#page.evaluateHandle(({ maxControls, maxScanNodes }) => {
+      const collection = await this.#page.evaluateHandle(({ maxControls, maxScanNodes,
+        allowedOrigins }) => {
         const controls: { role: string; label: string; context: string;
-          enabled: boolean; editable: boolean }[] = [];
+          enabled: boolean; editable: boolean; destinationUrl: string | null }[] = [];
         const nodes: Element[] = [];
         const walker = document.createTreeWalker(document.documentElement, NodeFilter.SHOW_ELEMENT);
         let scanned = 0;
@@ -211,18 +220,30 @@ export class ManagedObservationSession {
           const editable = enabled && (tag === 'textarea'
             || (tag === 'input' && ['text', 'search', 'email', 'url', 'tel']
               .includes(inputType))) && !element.hasAttribute('readonly');
+          let destinationUrl: string | null = null;
+          if (element instanceof HTMLAnchorElement && !element.hasAttribute('download')
+            && (!element.target || element.target === '_self')) {
+            try {
+              const target = new URL(element.href);
+              if (allowedOrigins.includes(target.origin) && !target.username
+                && !target.password && target.href.length <= 2_048) {
+                destinationUrl = target.href;
+              }
+            } catch { /* Unsupported link destination. */ }
+          }
           controls.push({ role: (element.getAttribute('role') || tag).slice(0, 40),
-            label, context, enabled, editable });
+            label, context, enabled, editable, destinationUrl });
           nodes.push(element);
         }
         return { title: document.title.slice(0, 160),
           url: location.href.slice(0, 2_048), controls, nodes,
           truncated: scanned >= maxScanNodes || controls.length >= maxControls,
           hasOpenShadowRoots };
-      }, { maxControls: MAX_CONTROLS, maxScanNodes: MAX_SCAN_NODES });
+      }, { maxControls: MAX_CONTROLS, maxScanNodes: MAX_SCAN_NODES,
+        allowedOrigins: [...this.#allowedOrigins] });
       let description: { title: string; url: string;
         controls: { role: string; label: string; context: string;
-          enabled: boolean; editable: boolean }[];
+          enabled: boolean; editable: boolean; destinationUrl: string | null }[];
         truncated: boolean; hasOpenShadowRoots: boolean };
       const observationId = randomUUID();
       const nextHandles = new Map<string, ElementHandle<Element>>();
@@ -354,6 +375,82 @@ export class ManagedObservationSession {
               (element instanceof HTMLInputElement
                 || element instanceof HTMLTextAreaElement)
                 && element.value === expectedValue, value);
+          } finally { this.#actionPending = false; }
+        },
+        release: () => {
+          if (!sent && !released) { released = true; this.#actionPending = false; }
+        },
+      });
+    } catch (error) {
+      this.#actionPending = false;
+      throw error;
+    }
+  }
+
+  /** Resolves one observed plain link to its exact approved destination.
+   * send() navigates directly to the retained href; it never runs page script
+   * by clicking the link. Dynamic/on-click-only links are unsupported. */
+  async prepareNavigate(observationId: string, controlId: string,
+    destinationUrl: string, signal: AbortSignal): Promise<PreparedManagedNavigate> {
+    if (this.#closed || this.#observing || this.#actionPending) {
+      throw new Error('managed browser is stopped or busy');
+    }
+    const observed = this.#lastObservation;
+    const control = observed?.controls.find(item => item.id === controlId);
+    const handle = this.#handles.get(controlId);
+    if (!observed || observed.observationId !== observationId || !control
+      || !handle || !control.enabled || control.destinationUrl !== destinationUrl
+      || !allowedRequest(destinationUrl, 'GET', this.#allowedOrigins)
+      || signal.aborted) throw new Error('managed link is stale or unsupported');
+    this.#actionPending = true;
+    try {
+      if (this.#navigationRevision !== observed.navigationRevision
+        || this.#page.url() !== observed.url) {
+        throw new Error('managed document changed before navigation');
+      }
+      const current = await handle.evaluate(element => {
+        const container = element.closest('tr,li,fieldset,form,section,article,dialog,[role="row"],[role="dialog"]');
+        const context = ((container as HTMLElement | null)?.innerText ?? '')
+          .replace(/\s+/gu, ' ').trim().slice(0, 160);
+        const html = element as HTMLElement;
+        const label = (element.getAttribute('aria-label')
+          || element.getAttribute('title') || html.innerText || '')
+          .replace(/\s+/gu, ' ').trim().slice(0, 160);
+        const style = getComputedStyle(element);
+        return { connected: element.isConnected && element.ownerDocument === document,
+          role: (element.getAttribute('role') || element.tagName.toLowerCase()).slice(0, 40),
+          label, context, href: element instanceof HTMLAnchorElement ? element.href : null,
+          plain: element instanceof HTMLAnchorElement
+            && !element.hasAttribute('download')
+            && (!element.target || element.target === '_self'),
+          visible: style.display !== 'none' && style.visibility !== 'hidden'
+            && element.getClientRects().length > 0,
+          enabled: !element.matches(':disabled')
+            && element.getAttribute('aria-disabled') !== 'true' };
+      });
+      if (this.#closed || signal.aborted || !current.connected || !current.plain
+        || !current.visible || !current.enabled || current.href !== destinationUrl
+        || current.role !== control.role || current.label !== control.label
+        || current.context !== control.context
+        || this.#navigationRevision !== observed.navigationRevision
+        || this.#page.url() !== observed.url) {
+        throw new Error('managed link changed during preflight');
+      }
+      let sent = false;
+      let released = false;
+      return Object.freeze({ controlId,
+        send: async () => {
+          if (sent || released || this.#closed || signal.aborted
+            || this.#navigationRevision !== observed.navigationRevision
+            || this.#page.url() !== observed.url) {
+            throw new Error('managed navigation was revoked or replayed');
+          }
+          sent = true;
+          try {
+            const response = await this.#page.goto(destinationUrl,
+              { waitUntil: 'domcontentloaded', timeout: 10_000 });
+            return !this.#closed && !signal.aborted && response?.ok() === true
+              && this.#page.url() === destinationUrl;
           } finally { this.#actionPending = false; }
         },
         release: () => {
