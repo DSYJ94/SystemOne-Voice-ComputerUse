@@ -54,6 +54,12 @@ one-use preparation, task, execution and permit references. It now recomputes
 the protocol-2 candidate-set and action digests from its retained observation,
 presented label, supplied value and fixed native policy revision before
 preparing a setter. A digest consistency check is not a host signature or a
-durable worker-side execution permit. No recovery-clearance API exists yet, so a stopped boundary-crossed
+durable worker-side execution permit. The worker now also inserts the execution
+ID and permit reference into its own full-sync SQLite ledger before invoking
+the AX setter. A restarted worker rejects either replayed identifier, and a
+storage failure returns an unknown outcome without calling the setter. This
+persists replay consumption, not host authorization: the development pipe has
+no authenticated release permit, and deleting the local ledger is not an
+approved recovery mechanism. No recovery-clearance API exists yet, so a stopped boundary-crossed
 task intentionally stays blocked. Follow the [development test](NATIVE_COMPUTER_USE_TEST.md)
 for the optional live synthetic fixture check.

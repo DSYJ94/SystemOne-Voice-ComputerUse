@@ -705,3 +705,23 @@ Final `npm run check` passed **199/199 tests**, zero failed or skipped.
 `node scripts/check-bundled-dev.mjs ABSOLUTE_APP_PATH` passed its AppKit
 controller-identity and isolated Chromium fixture checks. The smoke check
 does not exercise a live AX setter or the new worker digest guard.
+
+## Native worker replay ledger, 28 September 2026
+
+`npm run test:native-worker-ledger` compiled a standalone Swift worker ledger
+against macOS SQLite 3.51.0. Separate processes consumed an execution ID once,
+then refused the same execution ID with either permit reference and a different
+execution ID with the old permit reference. A new pair was accepted. Existing
+world-readable, corrupt and symlink database paths failed closed. The created
+support directory and database had modes 0700 and 0600 respectively. This
+check did not call Accessibility; it does not simulate a power-loss durability
+failure or authenticate a host permit. The worker verifies SQLite's DELETE
+journal and FULL synchronous mode and requires successful statement finalization
+before dispatch; the same isolated ledger check and app build passed after this
+hardening.
+
+`npm run build:native-dev` compiled and ad-hoc signed the AppKit worker with
+SQLite linked. The sandboxed first attempt could not run its `/bin/ps` safety
+check; an approved unsandboxed retry succeeded. The first `npm run check`
+could not bind synthetic loopback ports in the sandbox. The approved retry
+passed **199/199 tests**, zero skipped. No live native action was performed.

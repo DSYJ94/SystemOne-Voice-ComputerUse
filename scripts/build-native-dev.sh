@@ -25,11 +25,12 @@ fi
 
 mkdir -p "$contents/MacOS" "$repository_root/.build/native-dev/module-cache"
 swiftc -swift-version 6 -parse-as-library -framework AppKit \
-  -framework Security -lbsm \
+  -framework Security -lbsm -lsqlite3 \
   -module-cache-path "$repository_root/.build/native-dev/module-cache" \
   "$repository_root/apps/native-dev/main.swift" \
   "$repository_root/apps/native-dev/DevChromeListener.swift" \
   "$repository_root/apps/native-dev/NativeFieldWorker.swift" \
+  "$repository_root/apps/native-dev/NativeWorkerPermitLedger.swift" \
   "$repository_root/apps/native-dev/NativeWorkerPermitDigest.swift" \
   "$repository_root/packages/protocol/swift/Sources/PeerIdentity/PeerIdentity.swift" \
   "$repository_root/packages/protocol/swift/Sources/ProtocolDigest/CanonicalJSON.swift" \
