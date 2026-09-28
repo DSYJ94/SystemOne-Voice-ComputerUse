@@ -56,10 +56,11 @@ established by the current fixture-only native or browser tests.
   [#34 native worker replay ledger](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/34),
   [#35 controller-signed native permit](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/35),
   [#36 managed semantic navigation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/36),
-  [#37 guarded Chrome host registration](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/37).
+  [#37 guarded Chrome host registration](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/37),
+  [#38 isolated Chrome native transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/38).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/chrome-host-registration`,
-  stacked on `codex/managed-semantic-navigation`.
+- The current implementation branch is `codex/chrome-isolated-transport`,
+  stacked on `codex/chrome-host-registration`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -145,6 +146,12 @@ An opt-in Chrome per-user manifest installer now checks the staged signed host,
 exact origin and configuration. Its install/verify/remove checks use only a
 temporary synthetic directory. Release bundling and a separate-account
 extension-to-host qualification still precede any owner-profile test.
+A temporary Playwright Chromium profile now connects a test-modified copy of
+the production extension to the signed Swift host and signed synthetic
+controller using real native messaging. The production service-worker source
+observes a semantic fixture field and revokes the grant on reload; a changed
+controller hash disconnects. Real toolbar invocation, AppKit listener
+integration and installed Google Chrome remain open.
 Host/helper release identity, TCC attribution after installation and
 update, voice, CLM inference, privacy review, crash recovery across real workers,
 packaging/notarization and clean-Mac installation are unverified. Treat effects
