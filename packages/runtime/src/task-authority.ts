@@ -2,6 +2,7 @@ import { ContractError } from '../../protocol/src/json.ts';
 import { receive } from '../../protocol/src/session.ts';
 import type { Message } from '../../protocol/src/contract.ts';
 import type { Endpoint, TaskRevision } from '../../protocol/src/session.ts';
+import { CommittedInputSession } from './committed-input.ts';
 import type { CommittedInput } from './committed-input.ts';
 
 const ID = /^[A-Za-z0-9_.:-]{1,160}$/;
@@ -50,13 +51,17 @@ export interface TaskAdmission extends TaskRevision, TaskAdmissionDraft {
  */
 export class TaskAdmissionRegistry {
   readonly #revision: TaskRevision;
+  readonly #inputSession: CommittedInputSession;
   readonly #commands = new Set<string>();
   readonly #admissions = new Set<string>();
+  readonly #issued = new WeakSet<object>();
+  readonly #claimed = new WeakSet<object>();
   #closed = false;
 
-  constructor(revision: TaskRevision) {
+  constructor(revision: TaskRevision, inputSession: CommittedInputSession) {
     assertRevision(revision);
     this.#revision = Object.freeze({ ...revision });
+    this.#inputSession = inputSession;
   }
 
   admit(input: CommittedInput, draft: TaskAdmissionDraft): TaskAdmission {
@@ -86,9 +91,10 @@ export class TaskAdmissionRegistry {
     if (new Set(parameters.map(x => x.parameterRef)).size !== parameters.length) {
       throw new ContractError('invalid task parameters');
     }
+    this.#inputSession.claimForAdmission(input);
     this.#commands.add(input.messageId);
     this.#admissions.add(draft.admissionId);
-    return Object.freeze({
+    const admission = Object.freeze({
       ...this.#revision,
       admissionId: draft.admissionId,
       commandMessageId: input.messageId,
@@ -100,6 +106,17 @@ export class TaskAdmissionRegistry {
       approvedEffects: Object.freeze(effects),
       parameters: Object.freeze(parameters),
     });
+    this.#issued.add(admission);
+    return admission;
+  }
+
+  /** One-use in-process transfer to a task controller. Object identity, not
+   * admissionId text, proves this registry issued the admission. */
+  claimForTask(admission: TaskAdmission): void {
+    if (this.#closed || !this.#issued.has(admission) || this.#claimed.has(admission)) {
+      throw new ContractError('task admission was not issued here or was claimed');
+    }
+    this.#claimed.add(admission);
   }
 
   close(): void { this.#closed = true; }

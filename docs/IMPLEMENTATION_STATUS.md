@@ -25,7 +25,7 @@ fixtures. Supported operations and limitations must be stated explicitly.
 | B05 fixtures | In progress | Fifteen schema messages, shared digest/Unicode fixtures, one resettable synthetic native text field, and a loopback-only invoice portal with duplicate titles, exact detail routes and fixed downloads. A narrow managed-browser driver uses the portal; broader native and adversarial fixtures remain. |
 | B26 conformance | In progress | Python oracle and TypeScript tests pass; standalone Swift digest check passes. XCTest cannot run with the installed SDK. Full cross-language negative fixtures, property/fuzz/race tests and CI remain. |
 | B05/B07 native fixture slice | Local test build | A synthetic AppKit fixture exposes one editable field. On this local Mac, the mock changed `Fixture Name` through Accessibility and the value was independently re-observed. This is one fixture action, not general native support. No shortcut, focus capture, voice, TCC attribution or production signing. |
-| B09 host dispatch gate foundation | In progress | A fixture-scoped TypeScript gate binds a selected candidate to the admitted task, exact observation, policy, target, argument provenance and one-use in-process permit. Synthetic drivers prove Stop before send, unresolved send after Stop, expiry and stale-target refusal. The scripted portal task now journals its own attempts and closes Chromium on Stop, but does not use this gate's host-issued permits or an authenticated worker. |
+| B09 host dispatch gate foundation | In progress | A fixture-scoped TypeScript gate binds a selected candidate to the admitted task, exact observation, policy, target, argument provenance and one-use in-process permit. Synthetic drivers prove Stop before send, unresolved send after Stop, expiry and stale-target refusal. The scripted portal task now requires a one-use in-process admission and journals its own attempts, but does not use the gate's host-issued execution permits or an authenticated worker. |
 | B10 native observation foundation | In progress | A separate Swift package provides a read-only Accessibility tree walker with node/depth/time limits, observation-scoped handles, target PID/bundle/path/launch identity, and stale-node checks. Synthetic registry checks pass. It has not observed a live non-fixture app, is not wired to the host, and does not provide execution authority, a Stop barrier or a production privacy projection. |
 | B12 managed Chromium worker | In progress | Playwright 1.63.0 launches a fresh temporary Chromium profile and a narrow scripted portal driver. Headless tests search, open an exact duplicate and download a fixed document. Stop closes this isolated context; a delayed-control test sees no download request after cancellation. General DOM snapshots, tabs/frames, uploads, headed UX, authenticated dispatch integration and packaging remain. |
 | B15 attempt journal foundation | In progress | SQLite records prepared attempts, the dispatch boundary, outcomes, cancellation, restart pause and host-verified task completion. The fixture portal task now writes all four scripted action attempts and Stop fences both the journal and task record; a simulated restart leaves an in-flight browser boundary paused and blocks replay. The two tables share a database but not one transaction. No authenticated host permit, signed supervisor or explicit unknown-effect recovery is connected. |
@@ -61,11 +61,16 @@ action, policy and elevated effects. It checks injected monotonic and wall clock
 then permits one consumption. This is in-memory contract authority only: endpoint
 objects do not authenticate an OS process, and consumption is not yet durable.
 
-`TaskAdmissionRegistry` converts only an already validated final command into a
-host-private task contract. It binds outcome kind, parameter provenance digests,
+`TaskAdmissionRegistry` converts only the exact final command object issued by its
+bound input session into a host-private task contract. A command object and task
+admission each transfer once by in-process object identity; matching JSON or a
+foreign session cannot mint task authority. It binds outcome kind, stated parameter provenance digests,
 scope, completion verifier, policy revision and approved effects. Dictation cannot
 admit a task and `UNKNOWN` effects fail closed. A future workflow-specific admission
-UI still needs to select these fields; no natural-language interpreter is implied.
+UI still needs to select these fields; no natural-language interpreter or proof of
+correct parameter extraction is implied. The fixture portal checks those admitted
+values, effects and policy against its start contract. It does not issue execution
+permits for each Playwright action.
 
 The Swift peer-identity primitive now reads `LOCAL_PEERTOKEN` from an active local
 socket, cross-checks effective UID/GID, validates the running code through

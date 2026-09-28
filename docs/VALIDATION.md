@@ -330,3 +330,13 @@ fixture-only in-process checks, not authenticated host permits or atomic
 cross-table commits. `npm run check` passed typechecking and **144/144** Node
 tests with local loopback access. The native AX check was not rerun; its source
 was unchanged.
+
+## Bound command to scripted portal admission, 27 September 2026
+
+`npm run check` passed TypeScript typechecking and **147/147** Node tests with
+local loopback fixture access. New tests reject cloned/foreign command objects,
+cloned or replayed admissions, mismatched task/outcome/parameter contracts and
+cloned scripted-start records. The portal fixture still uses in-process authority;
+the tests do not establish authenticated OS peer identity, per-action host permits,
+general browser control, existing Chrome or release readiness. The native AX and
+Swift checks were not rerun because their sources were unchanged.

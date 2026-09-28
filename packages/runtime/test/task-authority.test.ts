@@ -14,8 +14,9 @@ const wallBase = Date.parse('2026-09-25T17:00:02Z');
 function committedInput(mode: 'command' | 'dictation' = 'command', messageId = 'm1') {
   const endpoint = bindEndpoint(['command']);
   const session = new CommittedInputSession(endpoint, commandRevision);
-  return session.accept(endpoint, bytes({ ...structuredClone(schema.examples[0]), mode,
-    messageId, utteranceId: `utterance-${messageId}` })).input;
+  return { endpoint, session, input: session.accept(endpoint,
+    bytes({ ...structuredClone(schema.examples[0]), mode,
+      messageId, utteranceId: `utterance-${messageId}` })).input };
 }
 
 function admissionDraft(): TaskAdmissionDraft {
@@ -70,9 +71,10 @@ function approvalFixture() {
 }
 
 test('task admission binds a final command to outcome, provenance and policy', () => {
-  const registry = new TaskAdmissionRegistry(commandRevision);
+  const { session, input } = committedInput();
+  const registry = new TaskAdmissionRegistry(commandRevision, session);
   const draft = admissionDraft();
-  const admission = registry.admit(committedInput(), draft);
+  const admission = registry.admit(input, draft);
   assert.equal(admission.commandMessageId, 'm1');
   assert.equal(admission.outcomeKind, 'LOCATE');
   assert.deepEqual(admission.parameters, draft.parameters);
@@ -82,33 +84,61 @@ test('task admission binds a final command to outcome, provenance and policy', (
 });
 
 test('dictation, stale commands and replay cannot admit a task', () => {
-  assert.throws(() => new TaskAdmissionRegistry(commandRevision)
-    .admit(committedInput('dictation'), admissionDraft()), /dictation/);
-  const stale = committedInput();
-  stale.goalRevision = 2;
-  assert.throws(() => new TaskAdmissionRegistry(commandRevision).admit(stale, admissionDraft()), /revision/);
-  const registry = new TaskAdmissionRegistry(commandRevision);
-  registry.admit(committedInput(), admissionDraft());
-  assert.throws(() => registry.admit(committedInput(), { ...admissionDraft(), admissionId: 'other' }), /replay/);
-  assert.throws(() => registry.admit(committedInput('command', 'm-other'),
+  const dictation = committedInput('dictation');
+  assert.throws(() => new TaskAdmissionRegistry(commandRevision, dictation.session)
+    .admit(dictation.input, admissionDraft()), /dictation/);
+  const fixture = committedInput();
+  const stale = { ...fixture.input, goalRevision: 2 };
+  assert.throws(() => new TaskAdmissionRegistry(commandRevision, fixture.session)
+    .admit(stale, admissionDraft()), /revision/);
+  const registry = new TaskAdmissionRegistry(commandRevision, fixture.session);
+  registry.admit(fixture.input, admissionDraft());
+  assert.throws(() => registry.admit(fixture.input,
+    { ...admissionDraft(), admissionId: 'other' }), /replay/);
+  const second = fixture.session.accept(fixture.endpoint, bytes({
+    ...structuredClone(schema.examples[0]), messageId: 'm-other',
+    utteranceId: 'utterance-m-other',
+  })).input;
+  assert.throws(() => registry.admit(second,
     { ...admissionDraft(), admissionId: 'other' }), /already admitted/);
 });
 
 test('task admission rejects unsupported effects and unbound parameter provenance', () => {
-  const input = committedInput();
-  assert.throws(() => new TaskAdmissionRegistry(commandRevision).admit(input, {
+  const { session, input } = committedInput();
+  assert.throws(() => new TaskAdmissionRegistry(commandRevision, session).admit(input, {
     ...admissionDraft(), approvedEffects: ['UNKNOWN'],
   }), /effect/);
-  assert.throws(() => new TaskAdmissionRegistry(commandRevision).admit(input, {
+  assert.throws(() => new TaskAdmissionRegistry(commandRevision, session).admit(input, {
     ...admissionDraft(), parameters: [{ parameterRef: 'filename', sourceRef: '', valueDigest: 'd'.repeat(64) }],
   }), /parameter source/);
 });
 
 test('a task with no permitted effects can be admitted for confirmation only', () => {
-  const admission = new TaskAdmissionRegistry(commandRevision).admit(committedInput(), {
+  const { session, input } = committedInput();
+  const admission = new TaskAdmissionRegistry(commandRevision, session).admit(input, {
     ...admissionDraft(), outcomeKind: 'USER_CONFIRMATION', approvedEffects: [],
   });
   assert.deepEqual(admission.approvedEffects, []);
+});
+
+test('plain, cloned and foreign-session commands cannot mint a task', () => {
+  const fixture = committedInput();
+  const registry = new TaskAdmissionRegistry(commandRevision, fixture.session);
+  assert.throws(() => registry.admit({ ...fixture.input }, admissionDraft()), /not issued/);
+  const foreign = committedInput('command', 'foreign');
+  assert.throws(() => registry.admit(foreign.input, admissionDraft()), /not issued/);
+  assert.equal(registry.admit(fixture.input, admissionDraft()).commandMessageId, 'm1');
+  assert.throws(() => new TaskAdmissionRegistry(commandRevision, fixture.session)
+    .admit(fixture.input, { ...admissionDraft(), admissionId: 'second' }), /claimed/);
+});
+
+test('admitted task authority transfers only once by exact object identity', () => {
+  const { session, input } = committedInput();
+  const registry = new TaskAdmissionRegistry(commandRevision, session);
+  const admission = registry.admit(input, admissionDraft());
+  assert.throws(() => registry.claimForTask({ ...admission }), /not issued/);
+  registry.claimForTask(admission);
+  assert.throws(() => registry.claimForTask(admission), /claimed/);
 });
 
 test('approval from the exact UI endpoint is accepted and consumed once', () => {

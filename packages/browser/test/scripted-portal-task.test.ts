@@ -11,6 +11,62 @@ import { ManagedPortalSession } from '../src/managed-portal.ts';
 import type { PortalObservation } from '../src/managed-portal.ts';
 import { ScriptedPortalStore, ScriptedPortalTask } from '../src/scripted-portal-task.ts';
 import { AttemptJournal } from '../../runtime/src/attempt-journal.ts';
+import { TaskAdmissionRegistry } from '../../runtime/src/task-authority.ts';
+import type { TaskAdmission } from '../../runtime/src/task-authority.ts';
+import { CommittedInputSession } from '../../runtime/src/committed-input.ts';
+import { bindEndpoint } from '../../protocol/src/session.ts';
+import { schema } from '../../protocol/src/contract.ts';
+import { digest } from '../../protocol/src/json.ts';
+import type { ScriptedPortalContract, ScriptedPortalRecord } from '../src/scripted-portal-task.ts';
+
+const admissions = new WeakMap<object, TaskAdmission>();
+
+function mint(contract: ScriptedPortalContract) {
+  const revision = { taskId: contract.taskId, taskEpoch: 1, goalRevision: 1 };
+  const endpoint = bindEndpoint(['command']);
+  const inputSession = new CommittedInputSession(endpoint, revision);
+  const messageId = `command-${contract.taskId}`;
+  const input = inputSession.accept(endpoint, Buffer.from(JSON.stringify({
+    ...structuredClone(schema.examples[0]), ...revision, messageId,
+    utteranceId: `utterance-${contract.taskId}`, source: 'text',
+    text: `Fixture ${contract.outcomeKind.toLowerCase()} ${contract.invoiceId}; `
+      + `title ${contract.title}; account ${contract.account}; query ${contract.query}`,
+  }))).input;
+  const registry = new TaskAdmissionRegistry(revision, inputSession);
+  const parameterValues: [string, string, string][] = [
+    ['origin', 'fixture-config', contract.origin],
+    ['invoiceId', messageId, contract.invoiceId],
+    ['title', messageId, contract.title],
+    ['account', messageId, contract.account],
+    ['query', messageId, contract.query],
+    ...(contract.destinationPath
+      ? [['destinationPath', 'fixture-output', contract.destinationPath] as [string, string, string]] : []),
+  ];
+  const parameters = parameterValues.map(([parameterRef, sourceRef, value]) =>
+    ({ parameterRef, sourceRef, valueDigest: digest(value) }));
+  const admission = registry.admit(input, {
+    admissionId: `admission-${contract.taskId}`, goal: input.text,
+    outcomeKind: contract.outcomeKind, scopeRef: 'synthetic-portal-only',
+    completionVerifierRef: `portal-${contract.outcomeKind.toLowerCase()}-v1`,
+    policyRevision: 'portal-policy-1',
+    approvedEffects: contract.outcomeKind === 'DOWNLOAD'
+      ? ['READ', 'NAVIGATE', 'DOWNLOAD', 'LOCAL_EDIT'] : ['READ', 'NAVIGATE'],
+    parameters,
+  });
+  return { registry, admission };
+}
+
+function start(store: ScriptedPortalStore, contract: ScriptedPortalContract): ScriptedPortalRecord {
+  const { registry, admission } = mint(contract);
+  const record = store.start(registry, admission, contract);
+  admissions.set(record, admission);
+  return record;
+}
+
+function newTask(store: ScriptedPortalStore, journal: AttemptJournal,
+  session: ConstructorParameters<typeof ScriptedPortalTask>[2], record: ScriptedPortalRecord): ScriptedPortalTask {
+  return new ScriptedPortalTask(store, journal, session, admissions.get(record)!, record);
+}
 
 function privateStore() {
   const root = mkdtempSync(join(tmpdir(), 'systemone-scripted-task-'));
@@ -21,6 +77,38 @@ function privateStore() {
     journal: new AttemptJournal(database) };
 }
 
+test('portal start rejects forged or altered admission before any task is stored', () => {
+  const local = privateStore();
+  const contract: ScriptedPortalContract = {
+    taskId: 'task-admission-check', origin: 'http://127.0.0.1:12345',
+    outcomeKind: 'LOCATE', invoiceId: 'INV-105',
+    title: 'April Service Statement', account: 'Harbor Works', query: 'April',
+  };
+  try {
+    const { registry, admission } = mint(contract);
+    assert.throws(() => local.store.start(registry, { ...admission }, contract), /not issued/);
+    assert.throws(() => local.store.start(registry, admission,
+      { ...contract, invoiceId: 'INV-104' }), /parameter mismatch/);
+    assert.throws(() => local.store.start(registry, admission,
+      { ...contract, taskId: 'other-task' }), /admission mismatch/);
+    assert.throws(() => local.store.start(registry, admission,
+      { ...contract, outcomeKind: 'OPEN' }), /admission mismatch/);
+    assert.equal(local.store.get(contract.taskId), undefined);
+    const record = local.store.start(registry, admission, contract);
+    assert.equal(record.state, 'active');
+    assert.throws(() => local.store.claimStarted({ ...record }, admission), /not issued/);
+    assert.throws(() => local.store.claimStarted(record, { ...admission }), /not issued/);
+    local.store.claimStarted(record, admission);
+    assert.throws(() => local.store.claimStarted(record, admission), /claimed/);
+    local.store.stop(contract.taskId);
+    assert.throws(() => local.store.start(registry, admission, contract), /claimed/);
+  } finally {
+    local.journal.close();
+    local.store.close();
+    rmSync(local.root, { recursive: true, force: true });
+  }
+});
+
 test('one task searches, opens exact duplicate, downloads, then saves to scoped output', async () => {
   const portal = await startPortalFixture();
   const local = privateStore();
@@ -28,10 +116,10 @@ test('one task searches, opens exact duplicate, downloads, then saves to scoped 
   const destinationPath = join(local.output, 'INV-105.txt');
   try {
     session = await ManagedPortalSession.launch(portal.url);
-    local.store.start({ taskId: 'task-1', origin: portal.url, outcomeKind: 'DOWNLOAD',
+    const startedRecord = start(local.store, { taskId: 'task-1', origin: portal.url, outcomeKind: 'DOWNLOAD',
       invoiceId: 'INV-105', title: 'April Service Statement', account: 'Harbor Works',
       query: 'April Service Statement', destinationPath });
-    const task = new ScriptedPortalTask(local.store, local.journal, session, 'task-1');
+    const task = newTask(local.store, local.journal, session, startedRecord);
     assert.deepEqual([ (await task.advance()).stage, (await task.advance()).stage,
       (await task.advance()).stage, (await task.advance()).stage ],
     ['located', 'opened', 'downloaded_temporary', 'saved']);
@@ -60,7 +148,7 @@ test('restart pauses an active task and never auto-replays a prior step', async 
   const portal = await startPortalFixture();
   const local = privateStore();
   try {
-    local.store.start({ taskId: 'task-recover', origin: portal.url, outcomeKind: 'OPEN',
+    start(local.store, { taskId: 'task-recover', origin: portal.url, outcomeKind: 'OPEN',
       invoiceId: 'INV-105', title: 'April Service Statement', account: 'Harbor Works',
       query: 'April' });
     local.store.begin('task-recover', 'search');
@@ -72,7 +160,7 @@ test('restart pauses an active task and never auto-replays a prior step', async 
       assert.equal(paused[0]?.state, 'paused');
       assert.equal(paused[0]?.reason, 'action outcome unknown after restart');
       assert.equal(paused[0]?.inFlight, 'search');
-      assert.throws(() => recovered.start({ taskId: 'second', origin: portal.url,
+      assert.throws(() => start(recovered, { taskId: 'second', origin: portal.url,
         outcomeKind: 'LOCATE', invoiceId: 'INV-104', title: 'April Service Statement',
         account: 'Northstar Studio', query: 'April' }));
     } finally { recovered.close(); }
@@ -87,7 +175,7 @@ test('download output cannot escape its private fixture directory', async () => 
   const portal = await startPortalFixture();
   const local = privateStore();
   try {
-    assert.throws(() => local.store.start({ taskId: 'task-escape', origin: portal.url,
+    assert.throws(() => start(local.store, { taskId: 'task-escape', origin: portal.url,
       outcomeKind: 'DOWNLOAD', invoiceId: 'INV-105',
       title: 'April Service Statement', account: 'Harbor Works', query: 'April',
       destinationPath: join(local.root, 'INV-105.txt') }), /outside the private fixture/);
@@ -106,10 +194,10 @@ test('manual navigation after verified search pauses instead of fighting the use
   let session: ManagedPortalSession | undefined;
   try {
     session = await ManagedPortalSession.launch(portal.url);
-    local.store.start({ taskId: 'task-interference', origin: portal.url,
+    const startedRecord = start(local.store, { taskId: 'task-interference', origin: portal.url,
       outcomeKind: 'OPEN', invoiceId: 'INV-105', title: 'April Service Statement',
       account: 'Harbor Works', query: 'April' });
-    const task = new ScriptedPortalTask(local.store, local.journal, session, 'task-interference');
+    const task = newTask(local.store, local.journal, session, startedRecord);
     assert.equal((await task.advance()).stage, 'located');
     await session.search('May');
     const paused = await task.advance();
@@ -133,7 +221,7 @@ test('Stop during an unresolved browser action cannot become task completion', a
   const searchPending = new Promise<PortalObservation>(resolve => { releaseSearch = resolve; });
   const started = new Promise<void>(resolve => { searchStarted = resolve; });
   try {
-    local.store.start({ taskId: 'task-stop', origin: portal.url, outcomeKind: 'LOCATE',
+    const startedRecord = start(local.store, { taskId: 'task-stop', origin: portal.url, outcomeKind: 'LOCATE',
       invoiceId: 'INV-105', title: 'April Service Statement', account: 'Harbor Works',
       query: 'April' });
     const fake = {
@@ -146,7 +234,7 @@ test('Stop during an unresolved browser action cannot become task completion', a
       downloadInvoice: async () => { throw new Error('unexpected download'); },
       verifyGoal: async () => ({ status: 'matched', revision: 2 } as const),
     };
-    const task = new ScriptedPortalTask(local.store, local.journal, fake, 'task-stop');
+    const task = newTask(local.store, local.journal, fake, startedRecord);
     const pending = task.advance();
     await started;
     const stopped = await task.stop();
@@ -154,7 +242,7 @@ test('Stop during an unresolved browser action cannot become task completion', a
     assert.equal(stopped.workerFenced, false);
     assert.equal(stopped.journalFenced, true);
     assert.equal(stopped.unresolvedExecutionIds.length, 1);
-    assert.throws(() => local.store.start({ taskId: 'task-after-unknown',
+    assert.throws(() => start(local.store, { taskId: 'task-after-unknown',
       origin: portal.url, outcomeKind: 'LOCATE', invoiceId: 'INV-104',
       title: 'April Service Statement', account: 'Northstar Studio', query: 'April' }),
     /unresolved action/);
@@ -178,9 +266,9 @@ test('a stopped task with no in-flight action permits a fresh task', () => {
     invoiceId: 'INV-105', title: 'April Service Statement',
     account: 'Harbor Works', query: 'April' };
   try {
-    local.store.start({ ...contract, taskId: 'settled-task' });
+    start(local.store, { ...contract, taskId: 'settled-task' });
     assert.equal(local.store.stop('settled-task').inFlight, null);
-    assert.equal(local.store.start({ ...contract, taskId: 'next-task' }).state, 'active');
+    assert.equal(start(local.store, { ...contract, taskId: 'next-task' }).state, 'active');
   } finally {
     local.journal.close();
     local.store.close();
@@ -195,11 +283,11 @@ test('Stop closes the managed context during a delayed download control', async 
   const destinationPath = join(local.output, 'INV-105.txt');
   try {
     session = await ManagedPortalSession.launch(portal.url);
-    local.store.start({ taskId: 'task-worker-stop', origin: portal.url,
+    const startedRecord = start(local.store, { taskId: 'task-worker-stop', origin: portal.url,
       outcomeKind: 'DOWNLOAD', invoiceId: 'INV-105',
       title: 'April Service Statement', account: 'Harbor Works',
       query: 'April', destinationPath });
-    const task = new ScriptedPortalTask(local.store, local.journal, session, 'task-worker-stop');
+    const task = newTask(local.store, local.journal, session, startedRecord);
     assert.equal((await task.advance()).stage, 'located');
     assert.equal((await task.advance()).stage, 'opened');
     const pending = task.advance();
@@ -262,11 +350,11 @@ test('Stop during save verification prevents a later file write', async () => {
     },
   };
   try {
-    local.store.start({ taskId: 'task-save-stop', origin,
+    const startedRecord = start(local.store, { taskId: 'task-save-stop', origin,
       outcomeKind: 'DOWNLOAD', invoiceId: 'INV-105',
       title: 'April Service Statement', account: 'Harbor Works',
       query: 'April', destinationPath });
-    const task = new ScriptedPortalTask(local.store, local.journal, fake, 'task-save-stop');
+    const task = newTask(local.store, local.journal, fake, startedRecord);
     assert.equal((await task.advance()).stage, 'located');
     assert.equal((await task.advance()).stage, 'opened');
     assert.equal((await task.advance()).stage, 'downloaded_temporary');
@@ -302,10 +390,10 @@ test('restart preserves a journaled browser boundary and pauses the task', async
     downloadInvoice: async () => { throw new Error('unexpected download'); },
     verifyGoal: async () => ({ status: 'matched', revision: 2 } as const),
   };
-  local.store.start({ taskId: 'task-crash-boundary', origin,
+  const startedRecord = start(local.store, { taskId: 'task-crash-boundary', origin,
     outcomeKind: 'LOCATE', invoiceId: 'INV-105',
     title: 'April Service Statement', account: 'Harbor Works', query: 'April' });
-  const task = new ScriptedPortalTask(local.store, local.journal, fake, 'task-crash-boundary');
+  const task = newTask(local.store, local.journal, fake, startedRecord);
   const pending = task.advance();
   await started;
   const executionId = local.journal.attemptsForTask('task-crash-boundary')[0]!.executionId;
@@ -320,7 +408,7 @@ test('restart preserves a journaled browser boundary and pauses the task', async
     assert.deepEqual(recoveredJournal.recoverAfterRestart()
       .map(item => item.executionId), [executionId]);
     assert.throws(() => recoveredJournal.startTask('next-task', 1, 1), /unresolved/);
-    assert.throws(() => recoveredStore.start({ taskId: 'next-task', origin,
+    assert.throws(() => start(recoveredStore, { taskId: 'next-task', origin,
       outcomeKind: 'LOCATE', invoiceId: 'INV-104',
       title: 'April Service Statement', account: 'Northstar Studio', query: 'April' }),
     /unresolved action/);

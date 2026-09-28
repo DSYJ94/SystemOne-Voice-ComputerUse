@@ -6,6 +6,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { digest } from '../../protocol/src/json.ts';
 import { AttemptJournal } from '../../runtime/src/attempt-journal.ts';
 import type { PreparedAttempt } from '../../runtime/src/attempt-journal.ts';
+import { TaskAdmissionRegistry } from '../../runtime/src/task-authority.ts';
+import type { TaskAdmission, Effect } from '../../runtime/src/task-authority.ts';
 import type { PortalDownload, PortalGoal, PortalGoalResult, PortalObservation } from './managed-portal.ts';
 
 type GoalKind = PortalGoal['kind'];
@@ -51,6 +53,9 @@ interface PortalSession {
 export class ScriptedPortalStore {
   readonly #db: DatabaseSync;
   readonly #outputRoot: string;
+  readonly #issued = new WeakSet<object>();
+  readonly #claimed = new WeakSet<object>();
+  readonly #admissions = new WeakMap<object, TaskAdmission>();
 
   constructor(path: string, fixtureOutputRoot: string) {
     this.#outputRoot = realpathSync(fixtureOutputRoot);
@@ -70,19 +75,34 @@ export class ScriptedPortalStore {
 
   close(): void { this.#db.close(); }
 
-  start(contract: ScriptedPortalContract): ScriptedPortalRecord {
+  start(registry: TaskAdmissionRegistry, admission: TaskAdmission,
+    contract: ScriptedPortalContract): ScriptedPortalRecord {
     validateContract(contract);
     this.#assertOutputScope(contract);
+    assertAdmission(admission, contract);
     if (this.#db.prepare(`SELECT 1 FROM scripted_portal_tasks
       WHERE state IN ('active', 'paused') OR in_flight IS NOT NULL`).get()) {
       throw new Error('earlier scripted task is active or has an unresolved action');
     }
+    registry.claimForTask(admission);
     this.#db.prepare(`INSERT INTO scripted_portal_tasks VALUES
       (?, ?, ?, ?, ?, ?, ?, ?, 'active', 'admitted', NULL, NULL)`)
       .run(contract.taskId, contract.origin, contract.outcomeKind,
         contract.invoiceId, contract.title, contract.account, contract.query,
         contract.destinationPath ?? null);
-    return this.get(contract.taskId)!;
+    const record = this.get(contract.taskId)!;
+    this.#issued.add(record);
+    this.#admissions.set(record, admission);
+    return record;
+  }
+
+  claimStarted(record: ScriptedPortalRecord, admission: TaskAdmission): void {
+    if (!this.#issued.has(record) || this.#claimed.has(record)
+      || this.#admissions.get(record) !== admission
+      || this.get(record.taskId)?.state !== 'active') {
+      throw new Error('scripted task start was not issued here or was claimed');
+    }
+    this.#claimed.add(record);
   }
 
   get(taskId: string): ScriptedPortalRecord | undefined {
@@ -163,21 +183,25 @@ export class ScriptedPortalTask {
   readonly #journal: AttemptJournal;
   readonly #session: PortalSession;
   readonly #taskId: string;
+  readonly #admission: TaskAdmission;
   #receipt: PortalDownload | undefined;
 
   constructor(store: ScriptedPortalStore, journal: AttemptJournal,
-    session: PortalSession, taskId: string) {
+    session: PortalSession, admission: TaskAdmission, started: ScriptedPortalRecord) {
     this.#store = store;
     this.#journal = journal;
     this.#session = session;
-    this.#taskId = taskId;
-    const task = store.get(taskId);
+    this.#taskId = admission.taskId;
+    this.#admission = admission;
+    assertAdmission(admission, started);
+    const task = store.get(admission.taskId);
     if (!task || task.origin !== session.origin || task.state !== 'active') {
       throw new Error('scripted task origin or state mismatch');
     }
-    try { journal.startTask(taskId, 1, 1); }
+    store.claimStarted(started, admission);
+    try { journal.startTask(admission.taskId, admission.taskEpoch, admission.goalRevision); }
     catch (error) {
-      store.pause(taskId, 'journal admission failed');
+      store.pause(admission.taskId, 'journal admission failed');
       throw error;
     }
   }
@@ -357,12 +381,13 @@ export class ScriptedPortalTask {
       invoiceId: task.invoiceId, query: task.query,
       destinationPath: task.destinationPath ?? null, observation: observationRecord };
     return Object.freeze({ executionId: randomUUID(), permitRef: randomUUID(),
-      taskId: task.taskId, taskEpoch: 1, goalRevision: 1,
-      scopeRef: 'synthetic-portal-only',
+      taskId: task.taskId, taskEpoch: this.#admission.taskEpoch,
+      goalRevision: this.#admission.goalRevision,
+      scopeRef: this.#admission.scopeRef,
       observationId: `portal-${digest(observationRecord).slice(0, 32)}`,
       candidateId: `scripted-${action}`,
       candidateSetDigest: digest([actionRecord]),
-      actionDigest: digest(actionRecord), policyRevision: 'portal-policy-1',
+      actionDigest: digest(actionRecord), policyRevision: this.#admission.policyRevision,
       leaseGeneration: 1 });
   }
 
@@ -382,6 +407,38 @@ export class ScriptedPortalTask {
 
 function goalFor(task: ScriptedPortalRecord, kind: GoalKind): PortalGoal {
   return { kind, invoiceId: task.invoiceId, title: task.title, account: task.account };
+}
+
+/** Fixture contract binding only. It checks the host's stated parameter
+ * digests; it does not prove that values were correctly extracted from speech. */
+function assertAdmission(admission: TaskAdmission, contract: ScriptedPortalContract): void {
+  const effects: readonly Effect[] = contract.outcomeKind === 'DOWNLOAD'
+    ? ['READ', 'NAVIGATE', 'DOWNLOAD', 'LOCAL_EDIT'] : ['READ', 'NAVIGATE'];
+  const expected = new Map<string, [string, string]>([
+    ['origin', ['fixture-config', contract.origin]],
+    ['invoiceId', [admission.commandMessageId, contract.invoiceId]],
+    ['title', [admission.commandMessageId, contract.title]],
+    ['account', [admission.commandMessageId, contract.account]],
+    ['query', [admission.commandMessageId, contract.query]],
+  ]);
+  if (contract.destinationPath) {
+    expected.set('destinationPath', ['fixture-output', contract.destinationPath]);
+  }
+  if (admission.taskId !== contract.taskId || admission.outcomeKind !== contract.outcomeKind
+    || admission.scopeRef !== 'synthetic-portal-only'
+    || admission.policyRevision !== 'portal-policy-1'
+    || admission.completionVerifierRef !== `portal-${contract.outcomeKind.toLowerCase()}-v1`
+    || admission.approvedEffects.length !== effects.length
+    || effects.some((effect, index) => admission.approvedEffects[index] !== effect)
+    || admission.parameters.length !== expected.size) {
+    throw new Error('scripted portal admission mismatch');
+  }
+  for (const parameter of admission.parameters) {
+    const value = expected.get(parameter.parameterRef);
+    if (!value || parameter.sourceRef !== value[0] || parameter.valueDigest !== digest(value[1])) {
+      throw new Error('scripted portal parameter mismatch');
+    }
+  }
 }
 
 function validateContract(value: ScriptedPortalContract): void {

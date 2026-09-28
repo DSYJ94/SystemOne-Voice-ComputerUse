@@ -26,6 +26,8 @@ export class CommittedInputSession {
   readonly #revision: TaskRevision;
   readonly #utterances = new Set<string>();
   readonly #messages = new Set<string>();
+  readonly #issued = new WeakSet<object>();
+  readonly #claimed = new WeakSet<object>();
   #closed = false;
 
   constructor(endpoint: Endpoint, revision: TaskRevision) {
@@ -47,9 +49,20 @@ export class CommittedInputSession {
       throw new ContractError('committed input replay');
     }
     if (this.#utterances.size >= 1_000) throw new ContractError('input session budget exceeded');
-    this.#utterances.add(message.utteranceId);
-    this.#messages.add(message.messageId);
-    return { kind: message.mode === 'dictation' ? 'literal_dictation' : 'interpret_command', input: message };
+    const input = Object.freeze({ ...message });
+    this.#utterances.add(input.utteranceId);
+    this.#messages.add(input.messageId);
+    this.#issued.add(input);
+    return { kind: input.mode === 'dictation' ? 'literal_dictation' : 'interpret_command', input };
+  }
+
+  /** One-use in-process proof that this exact command passed the bound input
+   * endpoint. This is not OS peer authentication and is never serialized. */
+  claimForAdmission(input: CommittedInput): void {
+    if (this.#closed || !this.#issued.has(input) || this.#claimed.has(input)) {
+      throw new ContractError('command was not issued by this input session or was claimed');
+    }
+    this.#claimed.add(input);
   }
 
   close(): void { this.#closed = true; }
