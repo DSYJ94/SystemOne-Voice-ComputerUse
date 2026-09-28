@@ -9,7 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test packages/protocol/test/*.test.ts packages/runtime/test/*.test.ts packages/fixtures/test/*.test.ts packages/browser/test/*.test.ts extensions/chrome/test/*.test.mjs",
+    "test": "node --test packages/protocol/test/*.test.ts packages/runtime/test/*.test.ts packages/fixtures/test/*.test.ts packages/browser/test/*.test.ts packages/providers/test/*.test.ts extensions/chrome/test/*.test.mjs",
     "check": "npm run typecheck && npm test",
     "test:swift": "swift test --package-path packages/protocol/swift",
     "test:mac-peer": "scripts/check-peer-identity.sh",

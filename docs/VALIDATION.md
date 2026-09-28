@@ -615,3 +615,27 @@ build path. The app's nested and outer ad-hoc signatures verified strictly.
 No AppKit GUI launch from this bundle, clean-Mac install, Chrome native-host
 registration, Developer ID signing, notarization, model assets, updates or
 rollback was tested. The release gates remain open.
+
+## Fixture-only CLM reference probe, 28 September 2026
+
+The probe's request/answer shape was checked against CLM source commit
+`bb42c6c5bf914fd449bed2f6ca65be80602cb1f7`: `src/clm/server.py`,
+`src/clm/schema.py` and `src/clm/engine.py`. This was source inspection, not
+model inference. `npm run typecheck && node --test packages/providers/test/*.test.ts`
+passed 6/6 focused tests, including a loopback fake-service CLI run. That
+test produced three structurally valid responses but only two expected choices;
+the missing-target case chose an unrelated candidate and was correctly counted
+as wrong. The initial full `npm run check` passed 197/197 tests before the CLI
+integration test was added. The final full-suite result is recorded below.
+
+`node scripts/probe-clm.ts --allow-owned-service --endpoint
+http://127.0.0.1:1/v1/systemone --fixtures
+packages/providers/fixtures/clm-probe-synthetic.json --output
+/private/tmp/systemone-clm-unavailable-probe.json` exited 1 as expected. Its
+owner-only report recorded 0/3 valid and three `unavailable` outcomes, with
+model artifact identity and tokenizer truncation unverified. Port 1 had no
+service; this proves failure reporting, not CLM behavior. No model weights were
+downloaded and no inference endpoint was contacted successfully. B02/G1 remain
+unverified pending an attested private deployment and representative benchmark.
+Final `npm run check`: TypeScript passed and **198/198 tests passed**, zero
+skipped or failed.
