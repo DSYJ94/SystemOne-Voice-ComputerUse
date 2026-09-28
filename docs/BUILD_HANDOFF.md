@@ -55,10 +55,11 @@ established by the current fixture-only native or browser tests.
   [#33 native worker digest binding](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/33),
   [#34 native worker replay ledger](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/34),
   [#35 controller-signed native permit](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/35),
-  [#36 managed semantic navigation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/36).
+  [#36 managed semantic navigation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/36),
+  [#37 guarded Chrome host registration](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/37).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/managed-semantic-navigation`,
-  stacked on `codex/native-host-permit`.
+- The current implementation branch is `codex/chrome-host-registration`,
+  stacked on `codex/managed-semantic-navigation`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -140,6 +141,10 @@ artifacts can be staged without installation. No host is installed in Chrome,
 no real profile has been observed. A narrow journaled Chrome field-fill source
 exists for the loopback portal fixture, with synthetic tests; no real extension
 action has been qualified.
+An opt-in Chrome per-user manifest installer now checks the staged signed host,
+exact origin and configuration. Its install/verify/remove checks use only a
+temporary synthetic directory. Release bundling and a separate-account
+extension-to-host qualification still precede any owner-profile test.
 Host/helper release identity, TCC attribution after installation and
 update, voice, CLM inference, privacy review, crash recovery across real workers,
 packaging/notarization and clean-Mac installation are unverified. Treat effects
@@ -193,8 +198,9 @@ and external-source mode still lacks code authentication.
    installation and TCC attribution on an authorized Mac.
 4. Complete B13 candidate projection, scripted B15-B17 multi-hop/recovery and
    B18 transitions; then qualify CLM under B14. For B19, qualify the staged
-   host/listener/extension path and fixed loopback fill on a separate Chrome
-   profile; then extend the effect policy, Stop/reconnect and current-profile tests.
+   host/listener/extension path and fixed loopback fill in a separate macOS
+   test account; then extend the effect policy, Stop/reconnect and
+   current-profile tests.
    Do not substitute managed Chromium for B19.
 
 Release gates G1-G6 remain unverified; consult the review handoff and status

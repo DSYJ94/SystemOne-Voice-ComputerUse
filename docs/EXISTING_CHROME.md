@@ -86,15 +86,34 @@ establish a distributable signing identity.
 Release packaging must place the host at its final absolute path and run
 `node scripts/stage-chrome-native-host.mjs EXTENSION_ID HOST_PATH MANIFEST_PATH
 CONTROLLER_SIGNING_ID --team-id TEAM_ID` (or `--cdhash CDHASH`) before signing
-the bundle. The generated manifest must then be installed in Chrome's
-per-user native-host registration location. This is a packager instruction,
-not a current-profile test procedure; neither operation is automated yet.
+the bundle. `scripts/register-chrome-native-host.mjs` now validates the staged
+manifest, matching configuration, executable and `codesign --verify --strict`
+before installing its exact bytes in Chrome's per-user native-host directory.
+It refuses an existing different registration, and `remove` refuses to delete
+a changed registration. This is a deliberate installation command; no build or
+test calls it against the owner's home. On a separate non-sensitive test account
+after placing the signed host at its final path, the commands are:
+
+```sh
+node scripts/register-chrome-native-host.mjs install /absolute/staged/com.aurium.systemone.chrome.json
+node scripts/register-chrome-native-host.mjs verify /absolute/staged/com.aurium.systemone.chrome.json
+node scripts/register-chrome-native-host.mjs remove /absolute/staged/com.aurium.systemone.chrome.json
+```
+
+Chrome requires an absolute executable path in its macOS manifest and uses
+`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/` for the
+default user-level registration. A moved app needs a new manifest at its final
+path. This helper does not yet provide an update transaction or install the
+extension. The registration is shared by Chrome profiles in the same macOS
+account; a separate Chrome profile alone does not isolate this install. The
+helper does not establish which Chrome profile launched the host.
 
 Before an owner-run current-profile test, first qualify the installed
 exact-origin manifest, host/app signing pair, activeTab grant/revoke cycle,
 read-only observation and fixed loopback field action in a separate
-non-sensitive Chrome profile. The temporary MV3 test establishes isolated-world
-handle persistence only in Playwright Chromium; test it again in the installed
+non-sensitive macOS test account and Chrome profile. The temporary MV3 test
+establishes isolated-world handle persistence only in Playwright Chromium;
+test it again in the installed
 bridge, followed by Stop and reconnection.
 Broader actions require effect classification and site-specific policy; Chrome
 may reject synthetic input where trusted user gestures are required. Keep file
