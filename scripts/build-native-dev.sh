@@ -24,7 +24,7 @@ if [[ ! -x "$node_path" || ! -f "$controller_path" ]]; then
 fi
 
 mkdir -p "$contents/MacOS" "$repository_root/.build/native-dev/module-cache"
-swiftc -swift-version 6 -parse-as-library -framework AppKit \
+swiftc -swift-version 6 -parse-as-library -framework AppKit -framework Carbon \
   -framework Security -lbsm -lsqlite3 \
   -module-cache-path "$repository_root/.build/native-dev/module-cache" \
   "$repository_root/apps/native-dev/main.swift" \

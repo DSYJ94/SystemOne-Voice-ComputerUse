@@ -90,6 +90,12 @@ field fill. There is no general-purpose executor or release binary yet.
   fixture authority, not authenticated production dispatch.
   The fixed `INV-105` workflow is reachable from a compiled development-panel
   button and passes a controller child-process test; owner UI verification remains open.
+- The development panel now compiles with Control–Option–Space to open and
+  Control–Option–Escape to request Stop from another app. It shows which app
+  was frontmost before it takes focus, but the user must still select a target
+  explicitly. Registration failures keep the menu/Dock fallback. This
+  keyboard/focus path still needs a manual Mac check; see the
+  [shortcut test guide](docs/NATIVE_SHORTCUT_TEST.md).
 - A read-only native Accessibility observation package with bounded traversal,
   private observation-scoped handles and synthetic stale-target checks. The
   development AppKit panel can now inspect one explicitly named running app
