@@ -62,12 +62,15 @@ field fill. There is no general-purpose executor or release binary yet.
 - A restricted native `AXValue` driver now prepares one observed nonsecure text
   field, compares its prior value privately, and uses a one-use Stop fence and
   durable-boundary callback before setting it. Synthetic interference and Stop
-  checks pass. The driver is **not callable from the app UI** or task controller;
-  native actions remain unqualified. See [native action status](docs/NATIVE_ACTION.md).
+  checks pass. The development panel now routes one explicit field fill through
+  the persistent controller, journal and private AppKit worker pipe. This path
+  has passed synthetic process tests, but a live AX run and release peer/permit
+  authentication remain unverified. See [native action status](docs/NATIVE_ACTION.md).
 - A separate native host task class binds a final text command, complete
   candidate set, supplied-value digest and one journaled attempt before calling
   an abstract AX worker. Synthetic Stop, late-result and unknown-effect tests
-  pass. It is not yet connected to the AppKit worker or cross-surface owner.
+  pass. The development controller now owns both native and managed task slots;
+  it blocks either surface after an unresolved native effect.
 - A fixture-only managed-browser Stop path cancels the task record and closes
   the isolated Chromium context. A delayed-control test confirms no download
   request after Stop. Stop reports an incomplete worker fence when a local save

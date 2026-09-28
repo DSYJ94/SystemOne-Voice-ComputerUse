@@ -40,8 +40,9 @@ class FakeWorker implements NativeFieldWorker {
   commitThrows = false;
   verifyResult = true;
 
-  async observe(target: string): Promise<NativeFieldObservation> {
-    assert.equal(target, bundleId);
+  async observe(input: { taskId: string; bundleId: string }): Promise<NativeFieldObservation> {
+    assert.equal(input.bundleId, bundleId);
+    assert.match(input.taskId, /^[a-f0-9-]{36}$/);
     this.observeCalls++;
     return this.observation;
   }

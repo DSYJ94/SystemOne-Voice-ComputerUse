@@ -4,6 +4,7 @@ import Foundation
 
 @MainActor
 final class SystemOneDev: NSObject, NSApplicationDelegate {
+    private enum ActiveSurface { case managed, native }
     private var statusItem: NSStatusItem?
     private var panel: NSPanel?
     private var urlField: NSTextField?
@@ -11,7 +12,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     private var valueField: NSTextField?
     private var statusField: NSTextField?
     private var nativeBundleField: NSTextField?
+    private var nativeLabelField: NSTextField?
+    private var nativeValueField: NSTextField?
     private var nativeOutput: NSTextView?
+    private let nativeWorker = DevNativeFieldWorker()
     private var inspectionEpoch = 0
     private var inspectionPending = false
     private var controller: Process?
@@ -19,6 +23,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     private var controllerOutput: Pipe?
     private var outputBuffer = Data()
     private var activeRequestID: String?
+    private var activeSurface: ActiveSurface?
     private var stopRequestID: String?
     private var quitPending = false
 
@@ -48,6 +53,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if activeSurface == .native, let activeRequestID {
+            nativeWorker.requestLocalStop(activeRequestID)
+        }
         controllerOutput?.fileHandleForReading.readabilityHandler = nil
         controllerInput?.fileHandleForWriting.closeFile()
     }
@@ -60,7 +68,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     }
 
     private func makePanel() {
-        let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 620),
+        let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 710),
                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "SystemOne Dev"
         window.isFloatingPanel = true
@@ -102,7 +110,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         actions.orientation = .horizontal
         actions.spacing = 8
 
-        let nativeHeading = NSTextField(labelWithString: "Native app — read-only inspection")
+        let nativeHeading = NSTextField(labelWithString: "Native app — inspect or fill one field")
         nativeHeading.font = .boldSystemFont(ofSize: 16)
         let nativeExplanation = NSTextField(wrappingLabelWithString:
             "Enter one running app's exact bundle ID. Accessibility labels and supported actions stay in this local panel; field values are not read.")
@@ -111,11 +119,21 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         bundle.placeholderString = "App bundle ID, e.g. com.aurium.systemone.fixture"
         bundle.setAccessibilityLabel("Native app bundle ID")
         nativeBundleField = bundle
+        let nativeLabel = NSTextField()
+        nativeLabel.placeholderString = "Exact native field label"
+        nativeLabel.setAccessibilityLabel("Native field label")
+        nativeLabelField = nativeLabel
+        let nativeValue = NSTextField()
+        nativeValue.placeholderString = "Text to place in the native field"
+        nativeValue.setAccessibilityLabel("Native field value")
+        nativeValueField = nativeValue
         let access = NSButton(title: "Request Accessibility", target: self,
                               action: #selector(requestAccessibility))
         let inspect = NSButton(title: "Inspect app", target: self,
                                action: #selector(inspectNativeApp))
-        let nativeActions = NSStackView(views: [access, inspect])
+        let nativeFill = NSButton(title: "Fill native field", target: self,
+                                  action: #selector(startNativeFill))
+        let nativeActions = NSStackView(views: [access, inspect, nativeFill])
         nativeActions.orientation = .horizontal
         nativeActions.spacing = 8
         let output = NSTextView()
@@ -132,7 +150,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         scroll.heightAnchor.constraint(equalToConstant: 120).isActive = true
         let stack = NSStackView(views: [heading, explanation, url, label, value,
                                         status, actions, nativeHeading,
-                                        nativeExplanation, bundle, nativeActions, scroll])
+                                        nativeExplanation, bundle, nativeLabel,
+                                        nativeValue, nativeActions, scroll])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 9
@@ -149,6 +168,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             explanation.widthAnchor.constraint(equalTo: stack.widthAnchor),
             nativeExplanation.widthAnchor.constraint(equalTo: stack.widthAnchor),
             bundle.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            nativeLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            nativeValue.widthAnchor.constraint(equalTo: stack.widthAnchor),
             scroll.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
         panel = window
@@ -206,7 +227,20 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             let line = Data(outputBuffer[..<newline])
             outputBuffer.removeSubrange(...newline)
             guard line.count <= 16_384,
-                  let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+                  let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any]
+            else {
+                statusField?.stringValue = "Controller returned invalid data. Stop and relaunch."
+                continue
+            }
+            if object["type"] as? String == "native_worker_request" {
+                nativeWorker.handle(line) { [weak self] reply in
+                    Task { @MainActor [weak self] in
+                        self?.sendRaw(reply)
+                    }
+                }
+                continue
+            }
+            guard
                   object["type"] as? String == "status",
                   let requestID = object["requestId"] as? String,
                   let phase = object["phase"] as? String else {
@@ -226,12 +260,20 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         switch phase {
         case "starting": statusField?.stringValue = "Opening a fresh managed Chromium profile…"
         case "observing": statusField?.stringValue = "Checking the exact visible field…"
+        case "observing_native":
+            statusField?.stringValue = "Checking the exact native app and field…"
         case "dispatching": statusField?.stringValue = "Filling the field; Stop may not undo this edit."
         case "verified_dom_fill":
             statusField?.stringValue = "Verified: this page's field holds the supplied text. Inspect it, then press Stop to close this browser."
+        case "verified_native_fill":
+            statusField?.stringValue = "Verified: the native field holds the supplied text."
+        case "already_matched":
+            statusField?.stringValue = "Verified: the native field already held that text; no setter was sent."
         case "unsupported": statusField?.stringValue = "Field absent, ambiguous or outside observed coverage. No fill sent."
         case "uncertain":
-            statusField?.stringValue = "Outcome or browser fence uncertain. Inspect the page before retrying."
+            statusField?.stringValue = activeSurface == .native
+                ? "Native outcome uncertain. Inspect the field before retrying."
+                : "Outcome or browser fence uncertain. Inspect the page before retrying."
             if requestID == stopRequestID {
                 stopRequestID = nil
                 if quitPending { quitPending = false; NSApp.reply(toApplicationShouldTerminate: false) }
@@ -241,17 +283,25 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         case "stopped": statusField?.stringValue = "Stopped. An already-sent edit may have taken effect."
         case "busy": statusField?.stringValue = "A task is already active."
         case "error": statusField?.stringValue = "The request was rejected or failed. No success is claimed."
-        case "ready": if requestID == activeRequestID { activeRequestID = nil }
+        case "ready":
+            if requestID == activeRequestID {
+                activeRequestID = nil
+                activeSurface = nil
+            }
         default: statusField?.stringValue = "Unrecognized controller status."
         }
         if phase == "stopped" && requestID == stopRequestID {
             activeRequestID = nil
+            activeSurface = nil
             stopRequestID = nil
             if quitPending { quitPending = false; NSApp.reply(toApplicationShouldTerminate: true) }
         }
     }
 
     private func controllerExited(_ code: Int32) {
+        if activeSurface == .native, let activeRequestID {
+            nativeWorker.requestLocalStop(activeRequestID)
+        }
         controller = nil
         controllerInput = nil
         controllerOutput?.fileHandleForReading.readabilityHandler = nil
@@ -308,7 +358,53 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             return
         }
         activeRequestID = taskID
+        activeSurface = .managed
         statusField?.stringValue = "Request sent to the local controller…"
+    }
+
+    @objc private func startNativeFill() {
+        guard let input = controllerInput, controller?.isRunning == true,
+              activeRequestID == nil, stopRequestID == nil,
+              !inspectionPending else {
+            statusField?.stringValue = "Controller unavailable or a task is active."
+            return
+        }
+        guard AXIsProcessTrustedWithOptions(nil) else {
+            nativeOutput?.string = "Accessibility is not granted to this SystemOne Dev build."
+            return
+        }
+        let bundleID = nativeBundleField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let field = nativeLabelField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let value = nativeValueField?.stringValue ?? ""
+        guard bundleID.range(of: "^[A-Za-z0-9.-]{3,160}$",
+                             options: .regularExpression) != nil,
+              !field.isEmpty, field.count <= 160,
+              value.utf8.count <= 1_024 else {
+            nativeOutput?.string = "Enter an exact app bundle ID and field label, with at most 1,024 value bytes."
+            return
+        }
+        let taskID = UUID().uuidString.lowercased()
+        let command: [String: Any] = [
+            "type": "command", "protocolVersion": "2.0", "messageId": UUID().uuidString.lowercased(),
+            "taskId": taskID, "taskEpoch": 1, "goalRevision": 1,
+            "source": "text", "mode": "command", "utteranceId": UUID().uuidString.lowercased(),
+            "utteranceRevision": 1,
+            "text": "Fill \(field) in \(bundleID) with supplied text", "isFinal": true,
+            "createdAt": ISO8601DateFormatter().string(from: Date()),
+            "originSurface": ["adapter": "native", "surfaceId": "systemone-panel",
+                "appBundleId": "com.aurium.systemone.dev", "windowId": "command-panel",
+                "contentRevision": taskID],
+        ]
+        let request: [String: Any] = ["type": "start_native_fill",
+            "requestId": taskID, "bundleId": bundleID,
+            "fieldLabel": field, "value": value, "command": command]
+        guard send(request, through: input) else {
+            nativeOutput?.string = "Could not send native request to the controller."
+            return
+        }
+        activeRequestID = taskID
+        activeSurface = .native
+        statusField?.stringValue = "Native request sent to the local controller…"
     }
 
     @objc private func stop() {
@@ -323,12 +419,15 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             return
         }
         guard stopRequestID == nil else { return }
+        if activeSurface == .native { nativeWorker.requestLocalStop(target) }
         let stopID = UUID().uuidString.lowercased()
         stopRequestID = stopID
         let request: [String: Any] = ["type": "stop",
             "requestId": stopID, "targetRequestId": target]
         if send(request, through: input) {
-            statusField?.stringValue = "Stop requested; waiting for the browser fence…"
+            statusField?.stringValue = activeSurface == .native
+                ? "Stop requested; waiting for the native worker fence…"
+                : "Stop requested; waiting for the browser fence…"
         } else {
             stopRequestID = nil
             statusField?.stringValue = "Stop delivery failed. Task outcome is uncertain."
@@ -343,6 +442,12 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             try pipe.fileHandleForWriting.write(contentsOf: data + Data([10]))
             return true
         } catch { return false }
+    }
+
+    private func sendRaw(_ data: Data) {
+        guard data.count <= 16_384, let pipe = controllerInput else { return }
+        do { try pipe.fileHandleForWriting.write(contentsOf: data + Data([10])) }
+        catch { statusField?.stringValue = "Native worker reply failed; task outcome uncertain." }
     }
 
     @objc private func requestAccessibility() {

@@ -1,9 +1,10 @@
 # Native value-action source status
 
-`NativeAX/ValueAction.swift` is an unexposed B11 driver for one semantic
+`NativeAX/ValueAction.swift` is a restricted B11 driver for one semantic
 Accessibility `AXValue` replacement. It is compiled into the development app
-but has no UI command or controller route. No native app action is available
-through SystemOne Dev yet.
+and is now routed from one explicit development-panel command through the
+persistent controller and a private AppKit worker pipe. This is one explicit
+field edit, not general native app control.
 
 Preparation requires one retained observation-scoped node ID, exact target
 PID/bundle/path/launch identity, an enabled nonsecure text field with a
@@ -22,11 +23,12 @@ waits for any setter already entered to return. An AX call that ignores its
 messaging timeout can therefore delay acknowledgement. Stop never undoes a
 value already set. A late result after Stop must not complete the task.
 
-The current tests use a synthetic backend, including interference, replay,
-Stop before and during setter, and error after effect. They prove this source
-API's behavior only. Before exposing an action in the app, connect the single
-host task admission, candidate digest, one-use permit, journal transaction,
-worker identity, UI Stop barrier, independent re-observation and recovery.
+The driver tests use a synthetic backend, including interference, replay,
+Stop before and during setter, and error after effect. A separate process test
+exercises the controller and private pipe with a synthetic AppKit worker. These
+checks prove source behavior, not a live AX effect or release security.
+Before release, authenticate worker identity and permits, make their consumption
+durable, and qualify recovery and independent re-observation on real apps.
 Do not infer permission from a model proposal or from a successful read-only
 inspection. App-specific semantics, secure controls, focus changes and other
 native operations remain separate qualification work.
@@ -41,9 +43,12 @@ boundary-crossed tasks remain blocked for recovery even if a late verified
 receipt settles their history. An unconfirmed fence or unknown effect blocks
 new native starts. Seven synthetic worker tests exercise those transitions.
 
-This host class is **not yet connected** to the AppKit process or real AX
-driver. Its `NativeFieldWorker` interface is an in-process test contract, not
-proof of a signed worker, authenticated peer, durable worker-side permit or
-cross-surface one-writer authority. No recovery-clearance API exists yet, so a
-stopped boundary-crossed task intentionally stays blocked. The next integration
-must supply those boundaries before native actions are enabled in the UI.
+The development controller connects this host class to the AppKit AX worker
+through inherited private pipes. One controller owns both native and managed
+task slots and blocks either surface after native recovery becomes necessary.
+This pipe is not an authenticated release boundary. The AppKit worker checks
+one-use preparation, task, execution and permit references, but it does not
+cryptographically verify the host's candidate/action digests or signing
+identity. No recovery-clearance API exists yet, so a stopped boundary-crossed
+task intentionally stays blocked. Follow the [development test](NATIVE_COMPUTER_USE_TEST.md)
+for the optional live synthetic fixture check.

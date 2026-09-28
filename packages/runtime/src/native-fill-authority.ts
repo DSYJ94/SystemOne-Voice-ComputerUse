@@ -30,10 +30,13 @@ export interface NativeFieldObservation {
 
 export interface NativeFieldWorker {
   /** Effect-free, bounded AX observation. Values must not cross this boundary. */
-  observe(bundleId: string, signal: AbortSignal): Promise<NativeFieldObservation>;
+  observe(input: { readonly taskId: string; readonly bundleId: string;
+    readonly signal: AbortSignal }): Promise<NativeFieldObservation>;
   /** Effect-free revalidation. The worker retains the value and one handle. */
   prepare(input: { readonly taskId: string; readonly observationId: string;
     readonly candidateId: string; readonly value: string;
+    readonly executionId: string; readonly permitRef: string;
+    readonly actionDigest: string; readonly candidateSetDigest: string;
     readonly signal: AbortSignal }): Promise<
       { readonly kind: 'ready'; readonly preparationRef: string }
       | { readonly kind: 'matched_at_preflight' }
@@ -112,13 +115,17 @@ export class NativeFillAuthority {
     this.#worker = worker;
   }
 
+  get needsRecovery(): boolean {
+    return this.#workerFenceFailed || this.#requiresRecovery
+      || this.#journal.unresolvedAttempts().length > 0;
+  }
+
   start(request: NativeFillRequest): Promise<NativeFillResult> {
     if (!validRequest(request) || this.#seen.has(request.requestId)
       || this.#seen.size >= 1_000) return Promise.resolve('error');
     this.#seen.add(request.requestId);
     if (this.#active) return Promise.resolve('error');
-    if (this.#workerFenceFailed || this.#requiresRecovery
-      || this.#journal.unresolvedAttempts().length) {
+    if (this.needsRecovery) {
       return Promise.resolve('uncertain');
     }
     const active: Active = { requestId: request.requestId,
@@ -192,8 +199,10 @@ export class NativeFillAuthority {
       const route = input.accept(endpoint, Buffer.from(JSON.stringify(command)));
       if (route.kind !== 'interpret_command') return 'error';
       active.workerTouched = true;
-      const observation = await this.#worker.observe(request.bundleId,
-        active.abort.signal);
+      const observation = await this.#worker.observe({
+        taskId: request.requestId, bundleId: request.bundleId,
+        signal: active.abort.signal,
+      });
       if (active.stopped) return 'stopped';
       if (!validObservation(observation, request.bundleId)) return 'error';
       const matching = observation.controls.filter(control =>
@@ -237,6 +246,9 @@ export class NativeFillAuthority {
         taskId: request.requestId,
         observationId: observation.observationId,
         candidateId: candidate.id, value: request.value,
+        executionId: permit.executionId, permitRef: permit.permitRef,
+        actionDigest: permit.actionDigest,
+        candidateSetDigest: permit.candidateSetDigest,
         signal: active.abort.signal,
       });
       if (active.stopped) return 'stopped';
