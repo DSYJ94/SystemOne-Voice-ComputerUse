@@ -143,7 +143,7 @@ exists for the loopback portal fixture, with synthetic tests; no real extension
 action has been qualified.
 An opt-in Chrome per-user manifest installer now checks the staged signed host,
 exact origin and configuration. Its install/verify/remove checks use only a
-temporary synthetic directory. Release bundling and a separate-profile
+temporary synthetic directory. Release bundling and a separate-account
 extension-to-host qualification still precede any owner-profile test.
 Host/helper release identity, TCC attribution after installation and
 update, voice, CLM inference, privacy review, crash recovery across real workers,
@@ -198,8 +198,9 @@ and external-source mode still lacks code authentication.
    installation and TCC attribution on an authorized Mac.
 4. Complete B13 candidate projection, scripted B15-B17 multi-hop/recovery and
    B18 transitions; then qualify CLM under B14. For B19, qualify the staged
-   host/listener/extension path and fixed loopback fill on a separate Chrome
-   profile; then extend the effect policy, Stop/reconnect and current-profile tests.
+   host/listener/extension path and fixed loopback fill in a separate macOS
+   test account; then extend the effect policy, Stop/reconnect and
+   current-profile tests.
    Do not substitute managed Chromium for B19.
 
 Release gates G1-G6 remain unverified; consult the review handoff and status

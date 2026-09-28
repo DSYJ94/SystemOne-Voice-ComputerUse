@@ -104,13 +104,16 @@ Chrome requires an absolute executable path in its macOS manifest and uses
 `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/` for the
 default user-level registration. A moved app needs a new manifest at its final
 path. This helper does not yet provide an update transaction or install the
-extension. It does not establish which Chrome profile launched the host.
+extension. The registration is shared by Chrome profiles in the same macOS
+account; a separate Chrome profile alone does not isolate this install. The
+helper does not establish which Chrome profile launched the host.
 
 Before an owner-run current-profile test, first qualify the installed
 exact-origin manifest, host/app signing pair, activeTab grant/revoke cycle,
 read-only observation and fixed loopback field action in a separate
-non-sensitive Chrome profile. The temporary MV3 test establishes isolated-world
-handle persistence only in Playwright Chromium; test it again in the installed
+non-sensitive macOS test account and Chrome profile. The temporary MV3 test
+establishes isolated-world handle persistence only in Playwright Chromium;
+test it again in the installed
 bridge, followed by Stop and reconnection.
 Broader actions require effect classification and site-specific policy; Chrome
 may reject synthetic input where trusted user gestures are required. Keep file
