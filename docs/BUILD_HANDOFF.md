@@ -64,7 +64,8 @@ established by the current fixture-only native or browser tests.
   [#42 Chrome Stop after dispatch](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/42),
   [#43 production controller Chrome transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/43),
   [#44 shared action candidates](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/44),
-  [#45 structured input byte provenance](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/45).
+  [#45 structured input byte provenance](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/45),
+  [#46 fixed portal workflow in controller](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/46).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current implementation branch is `codex/portal-controller-workflow`,
   stacked on `codex/input-byte-provenance`.
