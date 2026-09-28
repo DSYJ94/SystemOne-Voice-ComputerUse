@@ -57,10 +57,11 @@ established by the current fixture-only native or browser tests.
   [#35 controller-signed native permit](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/35),
   [#36 managed semantic navigation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/36),
   [#37 guarded Chrome host registration](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/37),
-  [#38 isolated Chrome native transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/38).
+  [#38 isolated Chrome native transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/38),
+  [#39 Chrome host/listener integration](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/39).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/chrome-isolated-transport`,
-  stacked on `codex/chrome-host-registration`.
+- The current implementation branch is `codex/chrome-listener-integration`,
+  stacked on `codex/chrome-isolated-transport`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -147,11 +148,11 @@ exact origin and configuration. Its install/verify/remove checks use only a
 temporary synthetic directory. Release bundling and a separate-account
 extension-to-host qualification still precede any owner-profile test.
 A temporary Playwright Chromium profile now connects a test-modified copy of
-the production extension to the signed Swift host and signed synthetic
-controller using real native messaging. The production service-worker source
-observes a semantic fixture field and revokes the grant on reload; a changed
-controller hash disconnects. Real toolbar invocation, AppKit listener
-integration and installed Google Chrome remain open.
+the production extension to the signed Swift host and a signed test executable
+built from the production `DevChromeListener` source. Both peer identities are
+checked, with changed hashes rejected. The production service-worker source
+observes a semantic fixture field and revokes the grant on reload. Real toolbar
+invocation, complete AppKit integration and installed Google Chrome remain open.
 Host/helper release identity, TCC attribution after installation and
 update, voice, CLM inference, privacy review, crash recovery across real workers,
 packaging/notarization and clean-Mac installation are unverified. Treat effects

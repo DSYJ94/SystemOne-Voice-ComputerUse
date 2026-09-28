@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync,
   writeFileSync } from 'node:fs';
-import { createServer } from 'node:net';
+import { createInterface } from 'node:readline';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { once } from 'node:events';
@@ -26,14 +26,15 @@ const staged = join(root, 'staged');
 const socketPath = join(root, 'controller.sock');
 const registration = join(profile, 'NativeMessagingHosts');
 let context;
-let server;
+let listenerProcess;
 let fixture;
 let extensionId;
 let liveSession;
 let sessionError;
-const connections = new Set();
+const sessions = new Map();
 const received = [];
 const observations = [];
+let closedConnections = 0;
 
 function command(binary, args, options = {}) {
   return execFileSync(binary, args, { encoding: 'utf8', ...options });
@@ -50,53 +51,79 @@ function codeDetails(binary) {
   return { identifier, cdHash };
 }
 
-function frame(value) {
-  const body = Buffer.from(JSON.stringify(value));
-  const header = Buffer.alloc(4);
-  header.writeUInt32LE(body.length);
-  return Buffer.concat([header, body]);
+function sendListener(connectionId, payload) {
+  listenerProcess.stdin.write(`${JSON.stringify({ type: 'send', connectionId,
+    base64: Buffer.from(JSON.stringify(payload)).toString('base64') })}\n`);
 }
 
-function startController() {
-  server = createServer(socket => {
-    connections.add(socket);
-    let connectionSession;
-    socket.on('close', () => {
-      connections.delete(socket);
-      connectionSession?.close();
-      if (liveSession === connectionSession) liveSession = undefined;
-    });
-    let pending = Buffer.alloc(0);
-    socket.on('data', chunk => {
-      pending = Buffer.concat([pending, chunk]);
-      if (pending.length < 4) return;
-      const size = pending.readUInt32LE(0);
-      if (size < 1 || size > 65_536 || pending.length > size + 4) {
-        socket.destroy(new Error('invalid synthetic controller frame'));
-        return;
-      }
-      if (pending.length !== size + 4) return;
-      const message = JSON.parse(pending.subarray(4).toString('utf8'));
-      received.push(message);
-      if (message.type === 'probe') {
-        socket.write(frame({ type: 'probe_ack', nonce: message.nonce }));
-      } else {
-        try {
-          connectionSession ??= new ChromeReadSession(extensionId,
-            reply => socket.write(frame(reply)),
-            (binding, snapshot) => observations.push({ binding, snapshot }));
-          liveSession = connectionSession;
-          connectionSession.receive(message);
-        } catch (error) {
-          sessionError = error;
-          socket.destroy();
-        }
-      }
-      pending = Buffer.alloc(0);
+function onListenerEvent(event) {
+  if (event.type === 'closed') {
+    closedConnections++;
+    const session = sessions.get(event.connectionId);
+    session?.close();
+    sessions.delete(event.connectionId);
+    if (liveSession === session) liveSession = undefined;
+    return;
+  }
+  if (event.type !== 'message') return;
+  try {
+    const message = JSON.parse(Buffer.from(event.base64, 'base64').toString('utf8'));
+    received.push(message);
+    if (message.type === 'probe') {
+      sendListener(event.connectionId, { type: 'probe_ack', nonce: message.nonce });
+      return;
+    }
+    let session = sessions.get(event.connectionId);
+    if (!session) {
+      session = new ChromeReadSession(extensionId,
+        reply => sendListener(event.connectionId, reply),
+        (binding, snapshot) => observations.push({ binding, snapshot }));
+      sessions.set(event.connectionId, session);
+    }
+    liveSession = session;
+    session.receive(message);
+  } catch (error) {
+    sessionError = error;
+    listenerProcess.stdin.write(`${JSON.stringify({ type: 'close',
+      connectionId: event.connectionId })}\n`);
+  }
+}
+
+async function startListener(hostHash) {
+  const binary = join(root, 'DevChromeBrowserListenerCheck');
+  command('swiftc', ['-swift-version', '6', '-parse-as-library',
+    '-framework', 'Security', '-lbsm',
+    join(repository, 'packages/protocol/swift/Sources/PeerIdentity/PeerIdentity.swift'),
+    join(repository, 'apps/native-dev/DevChromeListener.swift'),
+    join(repository, 'apps/native-dev/DevChromeBrowserListenerCheck.swift'),
+    '-o', binary]);
+  command('/usr/bin/codesign', ['--force', '--sign', '-', '--identifier',
+    'com.aurium.systemone.listenercheck', binary]);
+  command('/usr/bin/codesign', ['--verify', '--strict', binary]);
+  const identity = codeDetails(binary);
+  listenerProcess = spawn(binary, [socketPath, hostHash],
+    { stdio: ['pipe', 'pipe', 'pipe'] });
+  const lines = createInterface({ input: listenerProcess.stdout });
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Swift listener did not start')), 5_000);
+    listenerProcess.once('error', reject);
+    listenerProcess.once('exit', code => reject(new Error(
+      `Swift listener exited before ready: ${code}`)));
+    lines.on('line', line => {
+      const event = JSON.parse(line);
+      if (event.type === 'ready') { clearTimeout(timer); resolve(); }
+      else onListenerEvent(event);
     });
   });
-  server.listen(socketPath);
-  return once(server, 'listening');
+  return identity;
+}
+
+async function stopListener() {
+  if (!listenerProcess || listenerProcess.exitCode !== null) return;
+  const done = once(listenerProcess, 'exit');
+  listenerProcess.stdin.end();
+  const timer = setTimeout(() => listenerProcess.kill('SIGKILL'), 5_000);
+  try { await done; } finally { clearTimeout(timer); }
 }
 
 function extensionFiles() {
@@ -166,13 +193,12 @@ try {
   command('/usr/bin/codesign', ['--force', '--sign', '-', '--identifier',
     'com.aurium.systemone.chromenativehost', host]);
   command('/usr/bin/codesign', ['--verify', '--strict', host]);
-  const controller = codeDetails(process.execPath);
-  await startController();
-
   let worker = await browserWorker();
   extensionId = await worker.evaluate(() => chrome.runtime.id);
   await context.close();
   context = null;
+  const hostHash = codeDetails(host).cdHash;
+  const controller = await startListener(hostHash);
   const stagedManifest = join(staged, 'com.aurium.systemone.chrome.json');
   await stageChromeNativeHost({ extensionId, hostPath: host,
     manifestPath: stagedManifest,
@@ -192,6 +218,7 @@ try {
   const reply = await worker.evaluate(() => probeHost('signed-roundtrip'));
   assert.deepEqual(reply, { type: 'probe_ack', nonce: 'signed-roundtrip' });
   assert.deepEqual(received, [{ type: 'probe', nonce: 'signed-roundtrip' }]);
+  await until(() => closedConnections >= 1, 'probe port close');
 
   const page = await context.newPage();
   await page.goto(`${fixture.url}/`);
@@ -223,14 +250,25 @@ try {
   assert.ok(rejected.error && !rejected.timeout,
     `wrong controller identity unexpectedly accepted: ${JSON.stringify(rejected)}`);
   assert.equal(received.filter(message => message.type === 'probe').length, 1);
-  process.stdout.write('PASS: temporary Chromium -> signed Swift host -> signed controller; production extension semantic read and navigation revocation; changed controller CDHash rejected.\n');
+  await context.close();
+  context = null;
+
+  await stopListener();
+  const wrongHostListener = await startListener('f'.repeat(40));
+  writeFileSync(configPath, `${JSON.stringify({ ...config,
+    controllerSigningIdentifier: wrongHostListener.identifier,
+    controllerCDHashes: [wrongHostListener.cdHash],
+    testControllerSocketPath: socketPath })}\n`);
+  worker = await browserWorker();
+  const wrongHost = await worker.evaluate(() => probeHost('wrong-host'));
+  assert.ok(wrongHost.error && !wrongHost.timeout,
+    `wrong host identity unexpectedly accepted: ${JSON.stringify(wrongHost)}`);
+  assert.equal(received.filter(message => message.type === 'probe').length, 1);
+  process.stdout.write('PASS: temporary Chromium -> signed Swift host -> authenticated Swift listener -> synthetic controller; semantic read and navigation revocation; changed listener and host CDHashes rejected.\n');
 } finally {
   await context?.close();
   await fixture?.close();
-  for (const connection of connections) connection.destroy();
-  if (server) await new Promise((resolve, reject) => server.close(error => {
-    if (error) reject(error);
-    else resolve();
-  }));
+  for (const session of sessions.values()) session.close();
+  await stopListener();
   rmSync(root, { recursive: true, force: true });
 }
