@@ -766,3 +766,19 @@ bundled smoke starts the controller but does not run its new navigation action;
 that action was tested through the source controller and managed Chromium.
 No real site, account, existing Chrome profile, CLM model or live native AX
 action was used.
+
+## Existing-Chrome native-host registration, 28 September 2026
+
+Chrome's [native messaging documentation](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging)
+was checked for the absolute macOS host path, exact `allowed_origins` and
+default per-user registration directory. The registration helper was exercised
+only with a temporary synthetic Chrome directory. Two focused macOS tests passed:
+an ad-hoc-signed disposable host installed, verified and removed exactly; a
+different registration, changed origin, symlinked host and tampered signature
+were rejected. No owner Chrome configuration or profile was changed.
+
+`npm run check` passed **206/206 tests**, zero skipped, including those two
+tests and the TypeScript typecheck. An installed extension-to-host exchange,
+separate-profile qualification, current-profile qualification, Developer ID
+signing, app-bundle placement, update/rollback and clean-Mac delivery remain
+untested.
