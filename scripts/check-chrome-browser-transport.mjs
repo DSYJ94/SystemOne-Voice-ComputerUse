@@ -36,6 +36,8 @@ let extensionId;
 let liveSession;
 let liveAuthority;
 let sessionError;
+let holdNextActionResult = false;
+let heldActionResult;
 const sessions = new Map();
 const received = [];
 const observations = [];
@@ -77,6 +79,13 @@ function onListenerEvent(event) {
   try {
     const message = JSON.parse(Buffer.from(event.base64, 'base64').toString('utf8'));
     received.push(message);
+    if (message.type === 'action_result' && holdNextActionResult) {
+      // Hold only the controller delivery. The extension has already run its
+      // real DOM action; this makes the receipt late relative to host Stop.
+      heldActionResult = message;
+      holdNextActionResult = false;
+      return;
+    }
     if (message.type === 'probe') {
       sendListener(event.connectionId, { type: 'probe_ack', nonce: message.nonce });
       return;
@@ -315,6 +324,40 @@ try {
   await page.reload();
   await until(() => liveSession?.activeGrantCount === 0,
     'navigation grant revocation');
+  const refreshedTargets = await browserSession.send('Target.getTargets',
+    { filter: [{ type: 'tab', exclude: false }] });
+  const refreshedTarget = refreshedTargets.targetInfos.find(item =>
+    item.type === 'tab' && item.url === page.url());
+  assert.ok(refreshedTarget, 'reloaded fixture tab target missing');
+  const observedBeforeRegrant = observations.length;
+  await browserSession.send('Extensions.triggerAction',
+    { id: extensionId, targetId: refreshedTarget.targetId });
+  await until(() => observations.length > observedBeforeRegrant,
+    'new grant after reload');
+  const stopAuthority = liveAuthority;
+  const lateRequest = fillRequest(observations.at(-1).binding.grantId,
+    page.url(), 'INV-105');
+  holdNextActionResult = true;
+  const lateFill = stopAuthority.start(lateRequest);
+  await until(() => heldActionResult !== undefined, 'held action receipt');
+  assert.equal(await page.locator('#query').inputValue(), 'INV-105',
+    'the edit must have happened before Stop is tested');
+  assert.equal(journal.attemptsForTask(lateRequest.requestId)[0]?.phase,
+    'at_dispatch_boundary');
+  assert.equal(await stopAuthority.stop(), true);
+  await until(() => liveSession?.activeGrantCount === 0,
+    'Stop grant revocation');
+  assert.equal(await page.locator('#query').inputValue(), 'INV-105',
+    'Stop cannot undo an already-dispatched edit');
+  liveSession.receive(heldActionResult);
+  assert.equal(await lateFill, 'stopped');
+  assert.equal(journal.getTaskState(lateRequest.requestId), 'cancelled');
+  assert.equal(journal.unresolvedAttempts().length, 1);
+  assert.equal(stopAuthority.needsRecovery, true);
+  const refusedRequest = fillRequest(lateRequest.grantId, page.url(), 'INV-106');
+  assert.equal(await stopAuthority.start(refusedRequest), 'uncertain');
+  assert.equal(journal.attemptsForTask(refusedRequest.requestId).length, 0);
+  assert.equal(sessionError, undefined);
   await context.close();
   context = null;
 
@@ -340,7 +383,7 @@ try {
   assert.ok(wrongHost.error && !wrongHost.timeout,
     `wrong host identity unexpectedly accepted: ${JSON.stringify(wrongHost)}`);
   assert.equal(received.filter(message => message.type === 'probe').length, 1);
-  process.stdout.write('PASS: ungranted handler cannot read; Chromium action grants activeTab for signed host/listener semantic read and journaled fixture field fill; ambiguous field and replay reject; reload revokes; changed listener and host CDHashes reject.\n');
+  process.stdout.write('PASS: signed Chromium grant, journaled fixture fill, ambiguity/replay rejection, reload revocation, Stop with a late receipt preserved as unknown after an actual edit, and changed host/listener CDHash rejection.\n');
 } finally {
   await context?.close();
   await fixture?.close();

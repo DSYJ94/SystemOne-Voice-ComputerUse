@@ -54,7 +54,9 @@ field fill. There is no general-purpose executor or release binary yet.
   trigger exercises `activeTab` without a persistent host grant. The same
   disposable-browser check now fills one synthetic field through the signed
   peers, rejects an ambiguous field before dispatch, and verifies the durable
-  journal and current DOM value. No host is installed in the owner's Chrome,
+  journal and current DOM value. A second real edit with a delayed receipt
+  confirms Stop revokes the grant while retaining an unresolved outcome after
+  the effect. No host is installed in the owner's Chrome,
   no current profile has been exercised, and fill remains unqualified in an
   installed Google Chrome extension. See [existing Chrome](docs/EXISTING_CHROME.md).
 - An ignored, movable development app bundles a checksum-verified official
