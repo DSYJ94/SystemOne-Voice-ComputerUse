@@ -4,6 +4,8 @@ import { bindEndpoint } from '../../protocol/src/session.ts';
 import { AttemptJournal } from './attempt-journal.ts';
 import { CommittedInputSession } from './committed-input.ts';
 import { TaskAdmissionRegistry } from './task-authority.ts';
+import { buildActionCandidates, fromNativeObservation,
+  selectBoundCandidate } from './action-candidates.ts';
 import type { JSONValue } from '../../protocol/src/json.ts';
 import type { PreparedAttempt } from './attempt-journal.ts';
 
@@ -210,7 +212,16 @@ export class NativeFillAuthority {
       const matching = observation.controls.filter(control =>
         control.label === request.fieldLabel && control.enabled
         && !control.secure && control.canSetValue);
-      if (!observation.complete || matching.length !== 1) return 'unsupported';
+      const offered = buildActionCandidates({
+        source: fromNativeObservation(observation),
+        text: { textRef: 'fill-value', source: 'final_command',
+          allowedTargetRefs: matching.map(control => control.id) },
+        policyRevision: 'native-ax-policy-v1',
+      });
+      if (!selectBoundCandidate(offered, 'set_value',
+        matching.map(control => control.id)) || matching.length !== 1) {
+        return 'unsupported';
+      }
       const candidate = matching[0]!;
       const registry = new TaskAdmissionRegistry(revision, input);
       const admission = registry.admit(route.input, {

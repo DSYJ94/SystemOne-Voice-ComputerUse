@@ -30,7 +30,7 @@ function mint(session: ManagedObservationSession, value: string, taskId: string)
     admissionId: `admission-${taskId}`, goal: command.text,
     outcomeKind: 'FILL', scopeRef: session.scopeRef,
     completionVerifierRef: 'managed-field-v1', policyRevision: 'managed-policy-v1',
-    approvedEffects: ['READ', 'LOCAL_EDIT'],
+    approvedEffects: ['READ', 'LOCAL_EDIT', 'EXTERNAL_WRITE'],
     parameters: [{ parameterRef: 'fill-value', sourceRef: command.messageId,
       valueDigest: digest(value) }],
   });
@@ -58,6 +58,11 @@ test('an admitted managed-browser fill uses one permit and records observed fiel
     });
     const observed = await session.observe();
     const { registry, admission } = mint(session, 'fixture-123', 'managed-fill-one');
+    assert.throws(() => new ManagedFillTask(local.journal, registry,
+      { ...admission, approvedEffects: ['READ', 'LOCAL_EDIT'] },
+      session!, observed, target(observed), 'fixture-123', 'fill-value'),
+    /outside admitted task/);
+    assert.equal(local.journal.getTaskState(admission.taskId), undefined);
     assert.throws(() => new ManagedFillTask(local.journal, registry,
       { ...admission }, session!, observed, target(observed), 'fixture-123',
       'fill-value'), /not issued/);

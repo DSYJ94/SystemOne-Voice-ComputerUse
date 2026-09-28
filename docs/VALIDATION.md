@@ -883,3 +883,21 @@ profile and test-only action trigger. Physical toolbar use, installed Google
 Chrome/current-profile behavior and release identity remain unverified.
 `npm run check` passed **206/206 tests**, zero skipped, with TypeScript
 typecheck; `git diff --check` passed.
+
+## Shared candidate foundation, 28 September 2026
+
+`npm run check` passed **210/210 tests**, zero skipped, including four new
+candidate tests and TypeScript typecheck. The tests cover native secure,
+disabled and unlabeled fields; exact same-origin managed links; ambiguous and
+incomplete Chrome observations; candidate overflow; private target/parameter
+refs excluded from provider views; disclosure review of candidate text; and
+offline provider egress refusal. The current native, managed and Chrome action
+paths use the builder as a legality check before existing admissions and
+permits. `npm run test:chrome-browser-transport` passed again through the
+production controller child and signed Swift peers in disposable Chromium.
+`npm run build:native-dev` compiled and ad-hoc signed the development AppKit
+bundle after its managed-fill disclosure text was updated; it was not launched.
+
+The tests do not prove candidate recall for full multi-hop tasks, tokenizer
+budget, model accuracy, live native action after this change, installed Google
+Chrome or release policy. B13 and B14 remain open.

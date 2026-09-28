@@ -43,6 +43,11 @@ copy. It reopens the child's journal to confirm one completed DOM fill and one
 cancelled, unresolved edit after Stop and a delayed receipt. The full AppKit
 bundle, physical toolbar click and installed Google Chrome remain unverified.
 
+B13 now has a bounded [shared candidate foundation](ACTION_CANDIDATES.md) used
+by the supported native field, managed field/link and Chrome field paths. It
+does not yet cover all requested operations or prove candidate recall. Managed
+field fill now classifies page-script network writes as a possible effect.
+
 These slices are staged across draft PRs; they do not mark the entire contracts-and-fixtures stage
 or any of B01/B03/B05/B26 complete. The private GitHub remote is configured.
 

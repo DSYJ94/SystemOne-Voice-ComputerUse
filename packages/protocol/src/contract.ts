@@ -35,6 +35,11 @@ export function validateProviderView(value: JSONValue): void {
   if (!validate || !validate(value)) throw new ContractError('invalid provider view');
 }
 
+export function validateCandidate(value: JSONValue): void {
+  const validate = ajv.getSchema(`${schema.$id}#/$defs/Candidate`);
+  if (!validate || !validate(value)) throw new ContractError('invalid action candidate');
+}
+
 export function decodeMessage(bytes: Uint8Array): Message {
   const value = parseJSON(bytes);
   if (!validator(value)) throw new ContractError('message does not satisfy protocol 2.0');
