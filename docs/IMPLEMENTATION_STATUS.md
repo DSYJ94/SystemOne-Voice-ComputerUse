@@ -47,6 +47,10 @@ B13 now has a bounded [shared candidate foundation](ACTION_CANDIDATES.md) used
 by the supported native field, managed field/link and Chrome field paths. It
 does not yet cover all requested operations or prove candidate recall. Managed
 field fill now classifies page-script network writes as a possible effect.
+The panel's structured fill and navigation commands also bind their exact
+user-entered values to UTF-8 byte spans in the committed private command.
+Admission checks the span and digest before dispatch. This does not yet parse
+arbitrary utterances or qualify approved selections, so B13 remains open.
 
 These slices are staged across draft PRs; they do not mark the entire contracts-and-fixtures stage
 or any of B01/B03/B05/B26 complete. The private GitHub remote is configured.

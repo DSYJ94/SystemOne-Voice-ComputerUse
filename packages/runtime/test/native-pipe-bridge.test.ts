@@ -22,7 +22,7 @@ function finalCommand(taskId: string): Record<string, unknown> {
   return { type: 'command', protocolVersion: '2.0', messageId: randomUUID(),
     taskId, taskEpoch: 1, goalRevision: 1, source: 'text', mode: 'command',
     utteranceId: randomUUID(), utteranceRevision: 1,
-    text: 'Fill Fixture Name in com.aurium.systemone.fixture with supplied text',
+    text: 'Fill Fixture Name in com.aurium.systemone.fixture with text: fixture-123',
     isFinal: true, createdAt: new Date().toISOString(),
     originSurface: { adapter: 'native', surfaceId: 'systemone-panel',
       appBundleId: 'com.aurium.systemone.dev', windowId: 'command-panel',

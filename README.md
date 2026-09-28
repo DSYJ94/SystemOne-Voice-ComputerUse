@@ -21,6 +21,9 @@ field fill. There is no general-purpose executor or release binary yet.
   managed and existing-Chrome drivers. It keeps target/parameter refs private
   in the provider projection and requires a disclosure check for every
   candidate description. This does not enable CLM decisions or broader actions.
+- Structured panel fills and navigation bind the exact user-entered value to
+  UTF-8 byte offsets in the final private command; task admission rechecks the
+  bytes and digest. General utterance parsing and selected-value bindings remain.
 - A Swift digest library checked against the same Unicode and integrity fixtures.
 - Final-input routing with literal dictation separation, trusted-endpoint allowlists,
   and bounded request/reply correlation with monotonic deadlines and replay rejection.

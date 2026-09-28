@@ -901,3 +901,18 @@ bundle after its managed-fill disclosure text was updated; it was not launched.
 The tests do not prove candidate recall for full multi-hop tasks, tokenizer
 budget, model accuracy, live native action after this change, installed Google
 Chrome or release policy. B13 and B14 remain open.
+
+## Structured command value provenance, 28 September 2026
+
+`npm run check` passed **212/212 tests**, zero skipped, including UTF-8
+multibyte-span, changed-value and stale-revision admission checks. Structured
+panel field fills (native, managed Chromium and existing-Chrome fixture) and
+managed navigation now bind literal values to immutable final-command byte
+ranges before driver dispatch. `npm run test:chrome-browser-transport` passed
+through the production controller child, signed Swift listener/host and a
+disposable Chromium profile. `npm run build:native-dev` compiled and ad-hoc
+signed the changed AppKit command serialization but did not launch the app.
+These checks do not prove general natural-language extraction, selected-value
+provenance, a physical Chrome toolbar grant, current-profile compatibility or
+Developer ID release identity. The value is now present in the private command
+record; it must pass disclosure review before any provider egress.

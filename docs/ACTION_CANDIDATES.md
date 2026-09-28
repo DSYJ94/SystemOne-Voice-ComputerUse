@@ -33,7 +33,16 @@ because input/change handlers can send data even when the requested operation
 only edits a DOM field. The development panel should continue using disposable
 text; a current DOM value does not prove server persistence.
 
-Remaining B13 work includes host-bound utterance byte-span extraction,
+The development panel now commits literal field values and exact navigation
+destinations inside its final private command. The host derives a UTF-8 byte
+range and digest for each value, and task admission verifies that range against
+the immutable utterance revision. A different request value, stale source
+revision or split multibyte character cannot reach observation or dispatch in
+the current field-fill paths. This is a structured panel command, not a
+general free-form text parser. The command and its value remain private task
+input; provider projection cannot reuse them without disclosure review.
+
+Remaining B13 work includes bounded free-form utterance span extraction,
 approved selected-value bindings, exact risk approval presentation, more
 operations and surface coverage, candidate-recall fixtures across complete
 workflows, and a provider projection budget measured against the exact CLM
