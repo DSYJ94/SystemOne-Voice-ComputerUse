@@ -12,8 +12,10 @@ field fill. There is no general-purpose executor or release binary yet.
 - Protocol 2.0 schema and the corrected independent Python conformance oracle.
 - TypeScript strict JSON ingress, schema validation, bounded private-RPC framing,
   and the restricted canonical digest format.
-- A pre-I/O provider policy boundary with spy-transport tests. No network transport
-  is implemented; host disclosure review is still required before approving input.
+- A pre-I/O provider policy boundary with spy-transport tests. A separate
+  [fixture-only CLM probe](docs/CLM_REFERENCE_PROBE.md) can explicitly call an
+  owned reference service; no model transport is connected to task execution.
+  Host disclosure review is still required before approving real task input.
 - A Swift digest library checked against the same Unicode and integrity fixtures.
 - Final-input routing with literal dictation separation, trusted-endpoint allowlists,
   and bounded request/reply correlation with monotonic deadlines and replay rejection.

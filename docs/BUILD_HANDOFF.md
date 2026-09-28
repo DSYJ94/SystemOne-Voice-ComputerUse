@@ -50,8 +50,8 @@ established by the current fixture-only native or browser tests.
   [#28 guarded existing-Chrome loopback fill](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/28),
   [#29 movable bundled development runtime](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/29).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/bundled-dev-runtime`,
-  stacked on `codex/chrome-guarded-field-fill`.
+- The current implementation branch is `codex/clm-reference-probe`,
+  stacked on `codex/bundled-dev-runtime`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -137,6 +137,10 @@ Chromium worker from internal Node, npm and browser assets after relocation.
 This is a B27 packaging foundation; it is not Developer ID signed, notarized,
 or a clean-Mac test, and the Chrome native host is still external. See
 [bundled runtime](BUNDLED_DEV_RUNTIME.md).
+A fixture-only [CLM reference probe](CLM_REFERENCE_PROBE.md) now serializes
+full candidate descriptions to the pinned CLM choice API and validates its
+response shape. It has not contacted a model service or qualified any weights;
+B02 and G1 remain open.
 
 ## Next implementation order
 
