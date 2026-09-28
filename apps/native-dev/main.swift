@@ -206,10 +206,22 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     }
 
     private func startController() {
-        guard let node = Bundle.main.object(forInfoDictionaryKey: "SystemOneNodeExecutable") as? String,
-              let script = Bundle.main.object(forInfoDictionaryKey: "SystemOneControllerScript") as? String,
+        let bundled = Bundle.main.object(forInfoDictionaryKey: "SystemOneBundledRuntime") as? Bool == true
+        let node = bundled
+            ? Bundle.main.bundleURL.appendingPathComponent("Contents/Frameworks/node").path
+            : Bundle.main.object(forInfoDictionaryKey: "SystemOneNodeExecutable") as? String
+        let script = bundled
+            ? Bundle.main.resourceURL?.appendingPathComponent(
+                "runtime/packages/runtime/src/native-managed-controller.ts").path
+            : Bundle.main.object(forInfoDictionaryKey: "SystemOneControllerScript") as? String
+        let browsers = Bundle.main.resourceURL?.appendingPathComponent("browsers").path
+        let hasBundledBrowsers = browsers.map {
+            FileManager.default.fileExists(atPath: $0)
+        } ?? false
+        guard let node, let script,
               FileManager.default.isExecutableFile(atPath: node),
-              FileManager.default.fileExists(atPath: script) else {
+              FileManager.default.fileExists(atPath: script),
+              !bundled || hasBundledBrowsers else {
             statusField?.stringValue = "Development controller configuration is missing. Rebuild the app."
             return
         }
@@ -225,6 +237,11 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             let output = Pipe()
             process.executableURL = URL(fileURLWithPath: node)
             process.arguments = [script, support.appendingPathComponent("attempts.sqlite").path]
+            if bundled, let browsers {
+                var environment = ProcessInfo.processInfo.environment
+                environment["PLAYWRIGHT_BROWSERS_PATH"] = browsers
+                process.environment = environment
+            }
             process.standardInput = input
             process.standardOutput = output
             process.standardError = FileHandle.nullDevice
