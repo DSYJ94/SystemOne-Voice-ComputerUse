@@ -45,7 +45,8 @@ established by the current fixture-only native or browser tests.
   [#23 native read-only inspection](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/23),
   [#24 guarded native value driver](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/24),
   [#25 journaled native task authority](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/25),
-  [#26 development native controller bridge](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/26).
+  [#26 development native controller bridge](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/26),
+  [#27 existing-Chrome controller read path](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/27).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current implementation branch is `codex/chrome-controller-read-session`,
   stacked on `codex/native-ax-controller-bridge`.
