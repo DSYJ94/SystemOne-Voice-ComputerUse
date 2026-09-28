@@ -151,6 +151,7 @@ async function fillField(message, port) {
         || result[0].documentId !== grant.documentId
         || !['matched', 'already_matched', 'not_dispatched', 'unknown']
           .includes(result[0].result)) return 'unknown';
+      if (active.stopped) return 'unknown';
       const status = result[0].result;
       if (status === 'not_dispatched' || status === 'unknown') return status;
       await exactFrame(grant);
@@ -161,7 +162,9 @@ async function fillField(message, port) {
       if (verified.length !== 1 || verified[0].frameId !== 0
         || verified[0].documentId !== grant.documentId
         || verified[0].result !== true) return 'unknown';
+      if (active.stopped) return 'unknown';
       await exactFrame(grant);
+      if (active.stopped) return 'unknown';
       return status;
     } catch { return active.injectionStarted ? 'unknown' : 'not_dispatched'; }
   })();
@@ -177,20 +180,26 @@ async function stopAction(message, port) {
   if (Object.keys(message).sort().join(',') !== 'grantId,requestId,targetRequestId,type'
     || !ID.test(message.requestId) || !ID.test(message.targetRequestId)
     || !ID.test(message.grantId)) return;
-  const active = activeActions.get(message.targetRequestId);
-  if (active && active.grantId !== message.grantId) return;
-  if (active) active.stopped = true;
+  const inFlight = [...activeActions.entries()]
+    .filter(([, action]) => action.grantId === message.grantId);
+  const targetMatches = inFlight.length === 0
+    || (inFlight.length === 1 && inFlight[0][0] === message.targetRequestId);
+  for (const [, action] of inFlight) action.stopped = true;
   revokeGrant(message.grantId, 'host_stop');
-  let workerFenced = true;
-  if (active) {
-    workerFenced = await Promise.race([
-      active.done.then(() => true, () => false),
-      new Promise(resolve => setTimeout(() => resolve(false), 2_500)),
-    ]);
+  let workerFenced = inFlight.length === 0;
+  if (inFlight.length) {
+    let timer;
+    try {
+      workerFenced = await Promise.race([
+        Promise.all(inFlight.map(([, action]) => action.done)).then(() => true,
+          () => false),
+        new Promise(resolve => { timer = setTimeout(() => resolve(false), 2_500); }),
+      ]);
+    } finally { clearTimeout(timer); }
   }
   if (nativePort === port) port.postMessage({ type: 'stop_ack',
     requestId: message.requestId, targetRequestId: message.targetRequestId,
-    grantId: message.grantId, workerFenced });
+    grantId: message.grantId, workerFenced: workerFenced && targetMatches });
 }
 
 function ensurePort(profileId) {

@@ -179,6 +179,8 @@ test('extension accepts one exact fill permit and verifies the same document', a
   const fragment = event();
   const sent = [];
   const calls = [];
+  let holdFill = false;
+  let releaseFill;
   const extensionId = 'a'.repeat(32);
   const tab = { id: 19, windowId: 3, url: 'http://127.0.0.1:49081/',
     incognito: false };
@@ -204,6 +206,9 @@ test('extension accepts one exact fill permit and verifies the same document', a
             title: 'Invoice Portal Fixture', url: tab.url, complete: true,
             elements: [{ id: `${options.args[0]}:0`, role: 'input',
               label: 'Find invoice', disabled: false, editable: true }] } }];
+      }
+      if (options.func.name === 'fillSemantic' && holdFill) {
+        await new Promise(resolve => { releaseFill = resolve; });
       }
       return [{ frameId: 0, documentId: 'document-1',
         result: options.func.name === 'fillSemantic' ? 'matched' : true }];
@@ -235,5 +240,16 @@ test('extension accepts one exact fill permit and verifies the same document', a
     port.onMessage.emit(action);
     await until(() => sent.some(message => message.type === 'unsupported_operation'));
     assert.equal(calls.filter(name => name === 'fillSemantic').length, 1);
+    holdFill = true;
+    port.onMessage.emit({ ...action, requestId: 'action-2', permitRef: 'permit-2' });
+    await until(() => typeof releaseFill === 'function');
+    port.onMessage.emit({ type: 'stop_action', requestId: 'stop-1',
+      targetRequestId: 'wrong-action', grantId: binding.grantId });
+    releaseFill();
+    await until(() => sent.some(message => message.type === 'stop_ack'));
+    assert.equal(sent.find(message => message.type === 'stop_ack').workerFenced,
+      false);
+    assert.equal(sent.find(message => message.type === 'action_result'
+      && message.requestId === 'action-2')?.status, 'unknown');
   } finally { delete globalThis.chrome; }
 });

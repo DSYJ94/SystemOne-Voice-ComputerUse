@@ -584,6 +584,8 @@ calls retained a field handle, filled and verified its DOM value, rejected a
 new duplicate field, and rejected the old handle after reload. The temporary
 profile and extension directory were removed after the test. The final
 `npm run check` passed TypeScript checking and **192/192** tests.
+The extension Stop mock also rejects a mismatched action target and reports
+an in-flight post-Stop result as unknown.
 
 This is stronger than page-world `evaluate`, but still omits the production
 extension's native-messaging transport and any installed Chrome profile.
