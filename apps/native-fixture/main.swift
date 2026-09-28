@@ -92,6 +92,7 @@ final class FixtureApp: NSObject, NSApplicationDelegate {
         fileButton?.isHidden = true
         openFileButton?.isHidden = true
         fileStatus?.stringValue = "No folder selected."
+        window?.title = "SystemOne Fixture"
     }
 
     @objc private func showDocuments() { showFolder("Documents") }
@@ -103,6 +104,7 @@ final class FixtureApp: NSObject, NSApplicationDelegate {
         fileButton?.isHidden = false
         openFileButton?.isHidden = true
         fileStatus?.stringValue = "\(name) folder visible; Budget.xlsx is not selected."
+        window?.title = "SystemOne Fixture — \(name)"
     }
 
     @objc private func selectFile() {
@@ -110,11 +112,13 @@ final class FixtureApp: NSObject, NSApplicationDelegate {
         selectedFile = true
         openFileButton?.isHidden = false
         fileStatus?.stringValue = "Selected \(currentFolder)/Budget.xlsx; file remains closed."
+        window?.title = "SystemOne Fixture — \(currentFolder) — Budget.xlsx selected"
     }
 
     @objc private func openSelectedFile() {
         guard let currentFolder, selectedFile else { return }
         fileStatus?.stringValue = "Opened \(currentFolder)/Budget.xlsx."
+        window?.title = "SystemOne Fixture — \(currentFolder) — Budget.xlsx opened"
     }
 }
 

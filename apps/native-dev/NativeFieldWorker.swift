@@ -15,8 +15,10 @@ final class DevNativeFieldWorker: @unchecked Sendable {
         let observation: AXObservation
         let projectedControls: [[String: Any]]
         let fence: NativeValueFence
+        let mode: String
         var preparedOnce = false
         var prepared: PreparedNativeValue<SystemAXBackend>?
+        var preparedPress: PreparedNativePress<SystemAXBackend>?
         var preparationRef: String?
         var executionID: String?
         var permitRef: String?
@@ -25,11 +27,12 @@ final class DevNativeFieldWorker: @unchecked Sendable {
         var preparedCandidateID: String?
         var verifyCandidateID: String?
         var verifyValue: String?
+        var expectedWindowTitle: String?
 
         init(taskID: String, target: AXTarget, backend: SystemAXBackend,
              registry: NativeAXObservationRegistry<SystemAXBackend>,
              observation: AXObservation, projectedControls: [[String: Any]],
-             fence: NativeValueFence) {
+             fence: NativeValueFence, mode: String) {
             self.taskID = taskID
             self.target = target
             self.backend = backend
@@ -37,6 +40,7 @@ final class DevNativeFieldWorker: @unchecked Sendable {
             self.observation = observation
             self.projectedControls = projectedControls
             self.fence = fence
+            self.mode = mode
         }
     }
 
@@ -69,7 +73,9 @@ final class DevNativeFieldWorker: @unchecked Sendable {
               let operation = message["operation"] as? String,
               let taskID = message["taskId"] as? String,
               Self.validID(requestID), Self.validID(taskID),
-              ["observe", "prepare", "commit", "verify", "stop"].contains(operation) else {
+              ["observe", "prepare", "commit", "verify", "observe_press",
+               "prepare_press", "commit_press", "verify_press", "stop"]
+                .contains(operation) else {
             return // Malformed private request times out at the host.
         }
         if operation == "stop" {
@@ -109,18 +115,25 @@ final class DevNativeFieldWorker: @unchecked Sendable {
         if isStopped(taskID) { return Self.failure(for: operation) }
         switch operation {
         case "observe": return observe(message, taskID: taskID)
+        case "observe_press": return observe(message, taskID: taskID, press: true)
         case "prepare": return prepare(message, taskID: taskID)
+        case "prepare_press": return preparePress(message, taskID: taskID)
         case "commit": return commit(message, taskID: taskID)
+        case "commit_press": return commitPress(message, taskID: taskID)
         case "verify": return verify(message, taskID: taskID)
+        case "verify_press": return verifyPress(message, taskID: taskID)
         default: return Self.failure(for: operation)
         }
     }
 
-    private func observe(_ message: [String: Any], taskID: String) -> Any {
+    private func observe(_ message: [String: Any], taskID: String,
+                         press: Bool = false) -> Any {
         guard AXIsProcessTrustedWithOptions(nil),
               let bundleID = message["bundleId"] as? String,
               bundleID.range(of: "^[A-Za-z0-9.-]{3,160}$",
-                             options: .regularExpression) != nil else { return [:] }
+                             options: .regularExpression) != nil,
+              bundleID != Bundle.main.bundleIdentifier,
+              (!press || bundleID == "com.aurium.systemone.fixture") else { return [:] }
         let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
             .filter { !$0.isTerminated && $0.bundleURL != nil && $0.launchDate != nil }
         guard running.count == 1, let app = running.first,
@@ -135,12 +148,22 @@ final class DevNativeFieldWorker: @unchecked Sendable {
         do {
             let backend = SystemAXBackend()
             let registry = try NativeAXObservationRegistry(backend: backend,
-                maxNodes: 80, maxDepth: 5, budget: .seconds(2))
+                maxNodes: press ? 160 : 80,
+                maxDepth: press ? 8 : 5,
+                budget: press ? .seconds(3) : .seconds(2))
             let observation = try registry.observe(target)
             if isStopped(taskID) { return [:] }
             let fence = NativeValueFence()
             let controls: [[String: Any]] = observation.nodes.compactMap { node in
                 let detail = node.description
+                if press {
+                    guard [kAXButtonRole as String, kAXMenuItemRole as String]
+                        .contains(detail.role) else { return nil }
+                    return ["id": node.id, "role": detail.role,
+                        "label": detail.secure ? "" : String(detail.label.prefix(160)),
+                        "enabled": detail.enabled, "secure": detail.secure,
+                        "canPress": detail.capabilities.contains("press")]
+                }
                 guard [kAXTextFieldRole as String, kAXTextAreaRole as String]
                     .contains(detail.role) else { return nil }
                 return ["id": node.id, "role": detail.role,
@@ -150,16 +173,19 @@ final class DevNativeFieldWorker: @unchecked Sendable {
             }
             state = State(taskID: taskID, target: target, backend: backend,
                 registry: registry, observation: observation,
-                projectedControls: controls, fence: fence)
+                projectedControls: controls, fence: fence,
+                mode: press ? "press" : "fill")
             setFence(taskID, fence)
-            return ["observationId": observation.id,
+            var result: [String: Any] = ["observationId": observation.id,
                 "scopeRef": observation.scopeRef, "bundleId": bundleID,
                 "complete": observation.complete, "controls": controls]
+            if press { result["windowTitles"] = try backend.windowTitles(for: target) }
+            return result
         } catch { return [:] }
     }
 
     private func prepare(_ message: [String: Any], taskID: String) -> Any {
-        guard let state, state.taskID == taskID,
+        guard let state, state.taskID == taskID, state.mode == "fill",
               !state.preparedOnce,
               let observationID = message["observationId"] as? String,
               observationID == state.observation.id,
@@ -212,6 +238,54 @@ final class DevNativeFieldWorker: @unchecked Sendable {
         } catch { return ["kind": "unsupported"] }
     }
 
+    private func preparePress(_ message: [String: Any], taskID: String) -> Any {
+        guard let state, state.taskID == taskID, state.mode == "press",
+              state.target.bundleID == "com.aurium.systemone.fixture",
+              !state.preparedOnce,
+              let observationID = message["observationId"] as? String,
+              observationID == state.observation.id,
+              let candidateID = message["candidateId"] as? String,
+              let node = state.observation.nodes.first(where: { $0.id == candidateID }),
+              let expectedTitle = message["expectedWindowTitle"] as? String,
+              expectedTitle == "SystemOne Fixture — Documents",
+              node.description.role == (kAXButtonRole as String),
+              node.description.label == "Documents",
+              let executionID = message["executionId"] as? String,
+              let permitRef = message["permitRef"] as? String,
+              let actionDigest = message["actionDigest"] as? String,
+              let candidateSetDigest = message["candidateSetDigest"] as? String,
+              let policyRevision = message["policyRevision"] as? String,
+              Self.validID(executionID), Self.validID(permitRef),
+              Self.validDigest(actionDigest), Self.validDigest(candidateSetDigest),
+              NativeWorkerPermitDigest.pressMatches(
+                  controls: state.projectedControls, taskID: taskID,
+                  scopeRef: state.observation.scopeRef,
+                  observationID: observationID, candidateID: candidateID,
+                  role: node.description.role, label: node.description.label,
+                  expectedWindowTitle: expectedTitle,
+                  policyRevision: policyRevision,
+                  candidateSetDigest: candidateSetDigest,
+                  actionDigest: actionDigest) else {
+            return ["kind": "unsupported"]
+        }
+        state.preparedOnce = true
+        do {
+            state.preparedPress = try prepareNativePress(backend: state.backend,
+                registry: state.registry, target: state.target,
+                observation: state.observation, nodeID: candidateID,
+                expectedRole: node.description.role,
+                expectedLabel: node.description.label, fence: state.fence)
+            state.preparationRef = UUID().uuidString
+            state.executionID = executionID
+            state.permitRef = permitRef
+            state.actionDigest = actionDigest
+            state.candidateSetDigest = candidateSetDigest
+            state.preparedCandidateID = candidateID
+            state.expectedWindowTitle = expectedTitle
+            return ["kind": "ready", "preparationRef": state.preparationRef!]
+        } catch { return ["kind": "unsupported"] }
+    }
+
     private func commit(_ message: [String: Any], taskID: String) -> Any {
         guard Set(message.keys) == ["type", "requestId", "operation", "taskId",
               "executionId", "permitRef", "preparationRef", "permit",
@@ -257,6 +331,65 @@ final class DevNativeFieldWorker: @unchecked Sendable {
         case .notDispatched: return "not_dispatched"
         case .unknown: return "unknown"
         }
+    }
+
+    private func commitPress(_ message: [String: Any], taskID: String) -> Any {
+        guard Set(message.keys) == ["type", "requestId", "operation", "taskId",
+              "executionId", "permitRef", "preparationRef", "permit",
+              "expiresAtMs", "signature"],
+              let state, state.taskID == taskID, state.mode == "press",
+              let prepared = state.preparedPress,
+              let preparationRef = message["preparationRef"] as? String,
+              let executionID = message["executionId"] as? String,
+              let permitRef = message["permitRef"] as? String,
+              let actionDigest = state.actionDigest,
+              let candidateSetDigest = state.candidateSetDigest,
+              let candidateID = state.preparedCandidateID,
+              let hostPublicKey,
+              preparationRef == state.preparationRef,
+              executionID == state.executionID,
+              permitRef == state.permitRef else { return "unknown" }
+        state.preparedPress = nil
+        guard NativeHostPermit.verify(publicKey: hostPublicKey,
+            message: message, taskID: taskID,
+            preparationRef: preparationRef, executionID: executionID,
+            permitRef: permitRef, scopeRef: state.observation.scopeRef,
+            observationID: state.observation.id, candidateID: candidateID,
+            candidateSetDigest: candidateSetDigest,
+            actionDigest: actionDigest,
+            policyRevision: NativeWorkerPermitDigest.pressPolicyRevision) else {
+            return "unknown"
+        }
+        if permitLedger == nil {
+            let support = FileManager.default.urls(for: .applicationSupportDirectory,
+                in: .userDomainMask)[0]
+                .appendingPathComponent("SystemOne-Dev", isDirectory: true)
+            permitLedger = try? NativeWorkerPermitLedger(path: support
+                .appendingPathComponent("native-worker-permits.sqlite"))
+        }
+        guard permitLedger?.consume(executionID: executionID,
+            permitRef: permitRef, taskID: taskID,
+            actionDigest: actionDigest) == true else { return "unknown" }
+        switch prepared.send(recordBoundary: {}) {
+        case .returnedUnverified: return "returned_unverified"
+        case .notDispatched: return "not_dispatched"
+        case .unknown: return "unknown"
+        }
+    }
+
+    private func verifyPress(_ message: [String: Any], taskID: String) -> Any {
+        guard let state, state.taskID == taskID, state.mode == "press",
+              let expectedTitle = message["expectedWindowTitle"] as? String,
+              expectedTitle == "SystemOne Fixture — Documents",
+              (state.expectedWindowTitle == nil
+                || expectedTitle == state.expectedWindowTitle),
+              state.target.bundleID == "com.aurium.systemone.fixture" else {
+            return false
+        }
+        do {
+            let titles = try state.backend.windowTitles(for: state.target)
+            return titles == [expectedTitle] && !isStopped(taskID)
+        } catch { return false }
     }
 
     private func verify(_ message: [String: Any], taskID: String) -> Any {
@@ -309,10 +442,10 @@ final class DevNativeFieldWorker: @unchecked Sendable {
 
     private static func failure(for operation: String) -> Any {
         switch operation {
-        case "observe": return [:]
-        case "prepare": return ["kind": "unsupported"]
-        case "commit": return "not_dispatched"
-        case "verify", "stop": return false
+        case "observe", "observe_press": return [:]
+        case "prepare", "prepare_press": return ["kind": "unsupported"]
+        case "commit", "commit_press": return "not_dispatched"
+        case "verify", "verify_press", "stop": return false
         default: return [:]
         }
     }

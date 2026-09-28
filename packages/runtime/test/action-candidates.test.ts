@@ -90,6 +90,37 @@ test('managed navigation requires an exact bound same-origin link', () => {
     policyRevision: 'managed-navigation-v1' }), /unapproved destination URL/);
 });
 
+test('native invoke candidate binds one reviewed control and folder verifier', () => {
+  const source = { surface: 'native' as const, observationId: 'folder-obs',
+    complete: true, controls: [
+      { targetRef: 'documents-node', role: 'AXButton', label: 'Documents',
+        context: 'Fixture', visible: true, enabled: true, editable: false,
+        invokable: true, destinationUrl: null },
+      { targetRef: 'downloads-node', role: 'AXButton', label: 'Downloads',
+        context: 'Fixture', visible: true, enabled: true, editable: false,
+        invokable: true, destinationUrl: null },
+    ] };
+  const set = buildActionCandidates({ source,
+    invocations: [{ targetRef: 'documents-node',
+      expectedRef: 'documents-window',
+      expectedDescription: 'Documents folder identity' }],
+    policyRevision: 'native-ax-press-fixture-v1' });
+  const invoked = set.candidates.filter(candidate => candidate.operation === 'invoke');
+  assert.equal(invoked.length, 1);
+  assert.equal(invoked[0]?.targetRef, 'documents-node');
+  assert.deepEqual(invoked[0]?.parameters, {});
+  assert.deepEqual(invoked[0]?.verifier,
+    { kind: 'folder_identity', expectedRef: 'documents-window' });
+  assert.equal(set.resolve(invoked[0]!.candidateId as string, 'folder-obs',
+    set.candidateSetDigest)?.parameterRef, 'documents-window');
+  assert.throws(() => buildActionCandidates({ source,
+    invocations: [{ targetRef: 'documents-node', expectedRef: 'documents-window',
+      expectedDescription: 'Documents' },
+    { targetRef: 'documents-node', expectedRef: 'downloads-window',
+      expectedDescription: 'Downloads' }],
+    policyRevision: 'native-ax-press-fixture-v1' }), /invalid native invocation/);
+});
+
 test('incomplete or ambiguous Chrome observations abstain from executable actions', () => {
   const source = fromChromeObservation({ observationId: 'chrome-obs',
     title: 'Invoice Portal Fixture', url: 'http://127.0.0.1:49081/',

@@ -973,3 +973,29 @@ An initial Swift compile failed because this SDK does not expose `kAXLinkRole`;
 the new driver was limited to buttons and menu items. A later test compile
 failed because a synthetic test type was private at top level; its visibility
 was corrected. Only the final passing runs count as validation.
+
+## Fixture native press through the persistent controller, 28 September 2026
+
+`npm run check` passed **222/222** TypeScript/Node tests, zero skipped, with
+typecheck. Five focused native-press authority tests cover exact command and
+candidate binding, duplicate/incomplete observations, no-effect verification,
+failed post-press verification and late Stop after the journal boundary. A
+controller **child-process** test used the production pipe handler and a fake
+AppKit worker: it checked the signed commit claim, positive window-title
+verification, journal completion, and a late press receipt after Stop that
+could not complete the cancelled task. `npm run test:native-host-permit` passed
+Swift/TypeScript positive and changed-policy checks, and `npm run
+test:native-permit-digest` passed field and press digest parity with an altered
+expected-title rejection. `npm run build:native-dev` and `npm run
+build:native-mock` compiled and ad-hoc signed the changed app and Fixture.
+`npm run test:native-ax` passed its synthetic registry, value-action and
+semantic-press checks. `git diff --check` passed.
+
+The apps were **not launched**; a real AXPress, current Accessibility grant,
+window-title verification in AppKit, global shortcut behavior, and live Stop
+remain unverified. The task only navigates to the synthetic Documents folder.
+It does not locate/select/open Budget.xlsx, control Finder, or qualify a
+Developer ID release. One attempted command used the nonexistent npm script
+`test:native-worker-digest`; the documented script is
+`test:native-permit-digest`, which was then run and passed. The mistaken command
+is not counted as a test failure or pass.

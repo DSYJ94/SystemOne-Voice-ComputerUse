@@ -27,7 +27,12 @@ private func systemOneHotkeyHandler(_ event: EventHandlerCallRef?,
 
 @MainActor
 final class SystemOneDev: NSObject, NSApplicationDelegate {
-    private enum ActiveSurface { case managed, managedNavigation, portal, native, chrome }
+    private enum ActiveSurface {
+        case managed, managedNavigation, portal, native, nativeNavigation, chrome
+    }
+    private var nativeActionActive: Bool {
+        activeSurface == .native || activeSurface == .nativeNavigation
+    }
     private var statusItem: NSStatusItem?
     private var panel: NSPanel?
     private var urlField: NSTextField?
@@ -122,7 +127,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         unregisterGlobalHotkeys()
-        if activeSurface == .native, let activeRequestID {
+        if nativeActionActive, let activeRequestID {
             nativeWorker.requestLocalStop(activeRequestID)
         }
         chromeListener?.stop()
@@ -214,6 +219,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
                                action: #selector(inspectNativeApp))
         let nativeFill = NSButton(title: "Fill native field", target: self,
                                   action: #selector(startNativeFill))
+        let fixtureDocuments = NSButton(title: "Show Fixture Documents",
+            target: self, action: #selector(startFixtureDocuments))
+        fixtureDocuments.setAccessibilityLabel("Navigate synthetic Fixture to Documents")
         let nativeActions = NSStackView(views: [access, inspect, nativeFill])
         nativeActions.orientation = .horizontal
         nativeActions.spacing = 8
@@ -248,7 +256,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         let stack = NSStackView(views: [shortcuts, focus, heading, explanation,
                                         url, label, value, status, actions, portal, nativeHeading,
                                         nativeExplanation, bundle, nativeLabel,
-                                        nativeValue, nativeActions, scroll,
+                                        nativeValue, nativeActions, fixtureDocuments, scroll,
                                         chromeHeading, chromeExplanation,
                                         chromeLabel, chromeValue, chromeFill])
         stack.orientation = .vertical
@@ -370,7 +378,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
                                                requirement: requirement)
             return process.isRunning
         } catch {
-            if activeSurface == .native, let activeRequestID {
+            if nativeActionActive, let activeRequestID {
                 nativeWorker.requestLocalStop(activeRequestID)
             }
             nativeWorker.invalidateHostPublicKey()
@@ -542,6 +550,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             : "Checking the exact visible field…"
         case "observing_native":
             statusField?.stringValue = "Checking the exact native app and field…"
+        case "observing_native_navigation":
+            statusField?.stringValue = "Checking the synthetic Fixture's Documents control and current window…"
         case "observing_chrome":
             statusField?.stringValue = "Rechecking the exact existing Chrome tab and field…"
         case "dispatching": statusField?.stringValue = activeSurface == .managedNavigation
@@ -563,14 +573,20 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             statusField?.stringValue = "Fixture workflow paused. Inspect the private task record before retrying."
         case "verified_native_fill":
             statusField?.stringValue = "Verified: the native field holds the supplied text."
+        case "verified_native_navigation":
+            statusField?.stringValue = "Verified: the Fixture window shows Documents. Budget.xlsx has not been selected or opened."
         case "verified_chrome_dom_fill":
             statusField?.stringValue = "Verified: the existing Chrome field currently holds the supplied text. No server save is claimed."
         case "already_matched":
-            statusField?.stringValue = "Verified: the field already held that text; no setter was sent."
-        case "unsupported": statusField?.stringValue = "Field absent, ambiguous or outside observed coverage. No fill sent."
+            statusField?.stringValue = activeSurface == .nativeNavigation
+                ? "Verified: the Fixture was already showing Documents; no press was sent."
+                : "Verified: the field already held that text; no setter was sent."
+        case "unsupported": statusField?.stringValue = activeSurface == .nativeNavigation
+            ? "Documents control absent, ambiguous or outside observed coverage. No press sent."
+            : "Field absent, ambiguous or outside observed coverage. No fill sent."
         case "uncertain":
-            statusField?.stringValue = activeSurface == .native
-                ? "Native outcome uncertain. Inspect the field before retrying."
+            statusField?.stringValue = nativeActionActive
+                ? "Native outcome uncertain. Inspect the Fixture before retrying."
                 : "Outcome or browser fence uncertain. Inspect the page before retrying."
             if requestID == stopRequestID {
                 stopRequestID = nil
@@ -601,7 +617,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         nativeWorker.invalidateHostPublicKey()
         chromeListener?.stop()
         chromeListener = nil
-        if activeSurface == .native, let activeRequestID {
+        if nativeActionActive, let activeRequestID {
             nativeWorker.requestLocalStop(activeRequestID)
         }
         controller = nil
@@ -843,6 +859,45 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         statusField?.stringValue = "Native request sent to the local controller…"
     }
 
+    @objc private func startFixtureDocuments() {
+        guard let input = controllerInput, controller?.isRunning == true,
+              activeRequestID == nil, stopRequestID == nil,
+              !inspectionPending else {
+            statusField?.stringValue = "Controller unavailable or a task is active."
+            return
+        }
+        guard AXIsProcessTrustedWithOptions(nil) else {
+            statusField?.stringValue = "Accessibility is not granted to this SystemOne Dev build."
+            return
+        }
+        let taskID = UUID().uuidString.lowercased()
+        let command: [String: Any] = [
+            "type": "command", "protocolVersion": "2.0",
+            "messageId": UUID().uuidString.lowercased(),
+            "taskId": taskID, "taskEpoch": 1, "goalRevision": 1,
+            "source": "text", "mode": "command",
+            "utteranceId": UUID().uuidString.lowercased(),
+            "utteranceRevision": 1,
+            "text": "Navigate synthetic fixture to Documents", "isFinal": true,
+            "createdAt": ISO8601DateFormatter().string(from: Date()),
+            "originSurface": ["adapter": "native", "surfaceId": "systemone-panel",
+                "appBundleId": "com.aurium.systemone.dev",
+                "windowId": "command-panel", "contentRevision": taskID],
+        ]
+        let request: [String: Any] = ["type": "start_native_press",
+            "requestId": taskID, "bundleId": "com.aurium.systemone.fixture",
+            "folderName": "Documents",
+            "expectedWindowTitle": "SystemOne Fixture — Documents",
+            "command": command]
+        guard send(request, through: input) else {
+            statusField?.stringValue = "Could not send fixture navigation request."
+            return
+        }
+        activeRequestID = taskID
+        activeSurface = .nativeNavigation
+        statusField?.stringValue = "Fixture navigation sent to the local controller…"
+    }
+
     @objc private func startChromeFill() {
         guard let input = controllerInput, controller?.isRunning == true,
               activeRequestID == nil, stopRequestID == nil,
@@ -895,13 +950,13 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             return
         }
         guard stopRequestID == nil else { return }
-        if activeSurface == .native { nativeWorker.requestLocalStop(target) }
+        if nativeActionActive { nativeWorker.requestLocalStop(target) }
         let stopID = UUID().uuidString.lowercased()
         stopRequestID = stopID
         let request: [String: Any] = ["type": "stop",
             "requestId": stopID, "targetRequestId": target]
         if send(request, through: input) {
-            statusField?.stringValue = activeSurface == .native
+            statusField?.stringValue = nativeActionActive
                 ? "Stop requested; waiting for the native worker fence…"
                 : "Stop requested; waiting for the browser fence…"
         } else {

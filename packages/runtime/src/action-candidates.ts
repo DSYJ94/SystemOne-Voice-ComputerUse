@@ -18,6 +18,7 @@ export interface ActionControl {
   readonly visible: boolean;
   readonly enabled: boolean;
   readonly editable: boolean;
+  readonly invokable?: boolean;
   readonly destinationUrl: string | null;
 }
 
@@ -42,16 +43,23 @@ export interface BoundDestination {
   readonly exactUrl: string;
 }
 
+export interface BoundInvocation {
+  readonly targetRef: string;
+  readonly expectedRef: string;
+  readonly expectedDescription: string;
+}
+
 export interface CandidateBuildInput {
   readonly source: ActionSource;
   readonly text?: BoundText;
   readonly destinations?: readonly BoundDestination[];
+  readonly invocations?: readonly BoundInvocation[];
   readonly policyRevision: string;
 }
 
 export interface ResolvedCandidate {
   readonly candidateId: string;
-  readonly operation: 'set_value' | 'navigate';
+  readonly operation: 'set_value' | 'navigate' | 'invoke';
   readonly targetRef: string;
   readonly parameterRef: string;
 }
@@ -124,6 +132,8 @@ function checkedSource(source: ActionSource): void {
       || typeof control.visible !== 'boolean'
       || typeof control.enabled !== 'boolean'
       || typeof control.editable !== 'boolean'
+      || (control.invokable !== undefined
+        && typeof control.invokable !== 'boolean')
       || (control.destinationUrl !== null
         && (source.surface !== 'managed' || typeof control.destinationUrl !== 'string'))) {
       throw new ContractError('invalid action control');
@@ -192,6 +202,20 @@ export function buildActionCandidates(input: CandidateBuildInput): BuiltCandidat
   }
   const textTargets = new Set(input.text?.allowedTargetRefs ?? []);
   const destinations = destinationMap(input.destinations ?? [], source);
+  const invocations = new Map<string, BoundInvocation>();
+  if ((input.invocations?.length ?? 0) > MAX_CONTROLS) {
+    throw new ContractError('too many native invocation bindings');
+  }
+  for (const binding of input.invocations ?? []) {
+    if (source.surface !== 'native' || !ID.test(binding.targetRef)
+      || !ID.test(binding.expectedRef)
+      || invocations.has(binding.targetRef)
+      || !normalizedText(binding.expectedDescription, 160,
+        'invocation expected description')) {
+      throw new ContractError('invalid native invocation binding');
+    }
+    invocations.set(binding.targetRef, binding);
+  }
   const candidates: Record<string, JSONValue>[] = [];
   const resolutions = new Map<string, ResolvedCandidate>();
   const labelCounts = new Map<string, number>();
@@ -228,6 +252,27 @@ export function buildActionCandidates(input: CandidateBuildInput): BuiltCandidat
         resolutions.set(candidateId, Object.freeze({ candidateId,
           operation: 'set_value', targetRef: control.targetRef,
           parameterRef: input.text.textRef }));
+      }
+      const invocation = invocations.get(control.targetRef);
+      if (source.surface === 'native' && control.invokable && invocation
+        && ['AXButton', 'AXMenuItem'].includes(control.role)) {
+        const candidateId = `c${candidates.length}`;
+        const description = `Invoke the visible ${control.role} “${label}”${context
+          ? ` in ${context}` : ''}, then independently verify ${invocation.expectedDescription}.`;
+        const candidate: Record<string, JSONValue> = frozenCandidate({ candidateId,
+          description, operation: 'invoke', targetRef: control.targetRef,
+          parameters: {}, preconditions: ['target_exists', 'target_visible',
+            'target_enabled', 'fresh_observation'],
+          verifier: { kind: 'folder_identity',
+            expectedRef: invocation.expectedRef },
+          effects: ['NAVIGATE'], delivery: 'semantic',
+          riskPolicyRef: input.policyRevision,
+          replayPolicy: 'only_if_not_applied' });
+        validateCandidate(candidate);
+        candidates.push(candidate);
+        resolutions.set(candidateId, Object.freeze({ candidateId,
+          operation: 'invoke', targetRef: control.targetRef,
+          parameterRef: invocation.expectedRef }));
       }
       if (source.surface === 'managed' && !control.editable
         && ['a', 'link'].includes(control.role.toLowerCase())

@@ -22,6 +22,7 @@ enum NativeHostPermit {
                        permitRef: String, scopeRef: String,
                        observationID: String, candidateID: String,
                        candidateSetDigest: String, actionDigest: String,
+                       policyRevision: String = NativeWorkerPermitDigest.policyRevision,
                        nowMs: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)) -> Bool {
         guard let permit = message["permit"] as? [String: Any],
               Set(permit.keys) == fields,
@@ -41,7 +42,7 @@ enum NativeHostPermit {
               permit["candidateId"] as? String == candidateID,
               permit["candidateSetDigest"] as? String == candidateSetDigest,
               permit["actionDigest"] as? String == actionDigest,
-              permit["policyRevision"] as? String == NativeWorkerPermitDigest.policyRevision,
+              permit["policyRevision"] as? String == policyRevision,
               integerOne(permit["taskEpoch"]),
               integerOne(permit["goalRevision"]),
               integerOne(permit["leaseGeneration"]) else { return false }

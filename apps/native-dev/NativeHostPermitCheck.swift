@@ -3,7 +3,7 @@ import Foundation
 @main
 struct NativeHostPermitCheck {
     static func main() {
-        guard CommandLine.arguments.count == 4,
+        guard (4...5).contains(CommandLine.arguments.count),
               let key = NativeHostPermit.publicKey(CommandLine.arguments[1]),
               let data = CommandLine.arguments[2].data(using: .utf8),
               let message = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
@@ -13,7 +13,10 @@ struct NativeHostPermitCheck {
             executionID: "execution-1", permitRef: "permit-1",
             scopeRef: "native:scope-1", observationID: "obs-1",
             candidateID: "node-1", candidateSetDigest: String(repeating: "a", count: 64),
-            actionDigest: String(repeating: "b", count: 64), nowMs: nowMs)
+            actionDigest: String(repeating: "b", count: 64),
+            policyRevision: CommandLine.arguments.count == 5
+                ? CommandLine.arguments[4] : NativeWorkerPermitDigest.policyRevision,
+            nowMs: nowMs)
         print(accepted ? "accepted" : "rejected")
     }
 }

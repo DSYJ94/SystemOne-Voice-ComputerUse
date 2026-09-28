@@ -14,6 +14,7 @@ import { bindCommandValue } from './command-value-span.ts';
 import { AttemptJournal } from './attempt-journal.ts';
 import { TaskAdmissionRegistry } from './task-authority.ts';
 import { NativeFillAuthority } from './native-fill-authority.ts';
+import { NativePressAuthority } from './native-press-authority.ts';
 import { NativeFieldPipeWorker } from './native-field-pipe-worker.ts';
 import { ChromeReadSession } from './chrome-read-session.ts';
 import { ChromeFillAuthority } from './chrome-fill-authority.ts';
@@ -58,6 +59,15 @@ interface StartNativeFill {
   readonly command: Record<string, JSONValue>;
 }
 
+interface StartNativePress {
+  readonly type: 'start_native_press';
+  readonly requestId: string;
+  readonly bundleId: string;
+  readonly folderName: string;
+  readonly expectedWindowTitle: string;
+  readonly command: Record<string, JSONValue>;
+}
+
 interface StartChromeFill {
   readonly type: 'start_chrome_fill';
   readonly requestId: string;
@@ -75,12 +85,13 @@ interface StartPortalWorkflow {
   readonly command: Record<string, JSONValue>;
 }
 
-type NativeRequest = StartFill | StartNavigate | StartNativeFill
+type NativeRequest = StartFill | StartNavigate | StartNativeFill | StartNativePress
   | StartChromeFill | StartPortalWorkflow | Stop;
 type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
   | 'verified_dom_fill' | 'unsupported' | 'uncertain' | 'stopping'
   | 'stopped' | 'busy' | 'error' | 'blocked_recovery'
   | 'observing_native' | 'verified_native_fill' | 'already_matched'
+  | 'observing_native_navigation' | 'verified_native_navigation'
   | 'observing_chrome' | 'verified_chrome_dom_fill' | 'verified_navigation'
   | 'portal_located' | 'portal_opened' | 'portal_downloaded'
   | 'verified_portal_download' | 'portal_paused';
@@ -128,6 +139,19 @@ function requestFromLine(line: Uint8Array): NativeRequest {
     return { type: 'start_native_fill', requestId: value.requestId as string,
       bundleId: value.bundleId, fieldLabel: value.fieldLabel,
       value: value.value, command: value.command };
+  }
+  if (value.type === 'start_native_press') {
+    if (Object.keys(value).sort().join(',')
+        !== 'bundleId,command,expectedWindowTitle,folderName,requestId,type'
+      || value.bundleId !== 'com.aurium.systemone.fixture'
+      || value.folderName !== 'Documents'
+      || value.expectedWindowTitle !== 'SystemOne Fixture — Documents'
+      || value.command === undefined || !isRecord(value.command)) {
+      throw new ContractError('invalid native press request');
+    }
+    return { type: 'start_native_press', requestId: value.requestId as string,
+      bundleId: value.bundleId, folderName: value.folderName,
+      expectedWindowTitle: value.expectedWindowTitle, command: value.command };
   }
   if (value.type === 'start_chrome_fill') {
     if (Object.keys(value).sort().join(',')
@@ -207,12 +231,14 @@ export class NativeManagedController {
   readonly #headless: boolean;
   readonly #nativeWorker: NativeFieldPipeWorker | undefined;
   readonly #nativeAuthority: NativeFillAuthority | undefined;
+  readonly #pressAuthority: NativePressAuthority | undefined;
   readonly #chromeOutput: ((value: Record<string, JSONValue>) => void) | undefined;
   readonly #chromeSessions = new Map<string, ChromeReadSession>();
   readonly #chromeAuthorities = new Map<string, ChromeFillAuthority>();
   readonly #seen = new Set<string>();
   #active: ActiveTask | undefined;
   #nativeActive: { readonly requestId: string;
+    readonly authority: NativeFillAuthority | NativePressAuthority;
     readonly done: Promise<void> } | undefined;
   #chromeActive: { readonly requestId: string;
     readonly authority: ChromeFillAuthority; readonly done: Promise<void> } | undefined;
@@ -230,6 +256,8 @@ export class NativeManagedController {
     this.#chromeOutput = chromeOutput;
     this.#nativeAuthority = nativeWorker
       ? new NativeFillAuthority(journal, nativeWorker) : undefined;
+    this.#pressAuthority = nativeWorker
+      ? new NativePressAuthority(journal, nativeWorker) : undefined;
     journal.recoverAfterRestart();
     portalStore?.recoverAfterRestart();
   }
@@ -266,6 +294,7 @@ export class NativeManagedController {
       this.#send(request.requestId, 'busy'); return;
     }
     if (this.#workerFenceFailed || this.#nativeAuthority?.needsRecovery
+      || this.#pressAuthority?.needsRecovery
       || [...this.#chromeAuthorities.values()].some(x => x.needsRecovery)
       || this.#journal.unresolvedAttempts().length
       || this.#portalStore?.hasBlockingTask()) {
@@ -276,7 +305,7 @@ export class NativeManagedController {
       const authority = this.#nativeAuthority;
       if (!authority) { this.#send(request.requestId, 'error'); return; }
       this.#send(request.requestId, 'observing_native');
-      const active = { requestId: request.requestId,
+      const active = { requestId: request.requestId, authority,
         done: Promise.resolve() };
       this.#nativeActive = active;
       active.done = authority.start(request).then(result => {
@@ -295,6 +324,31 @@ export class NativeManagedController {
             authority.needsRecovery ? 'blocked_recovery' : 'ready');
         }
       });
+      return;
+    }
+    if (request.type === 'start_native_press') {
+      const authority = this.#pressAuthority;
+      if (!authority) { this.#send(request.requestId, 'error'); return; }
+      this.#send(request.requestId, 'observing_native_navigation');
+      const active = { requestId: request.requestId, authority,
+        done: Promise.resolve() };
+      this.#nativeActive = active;
+      active.done = authority.start(request).then(result => {
+        const phase: Phase = result === 'verified_navigation'
+          ? 'verified_native_navigation'
+          : result === 'already_matched' ? 'already_matched'
+            : result === 'unsupported' ? 'unsupported'
+              : result === 'uncertain' ? 'uncertain'
+                : result === 'stopped' ? 'stopped' : 'error';
+        if (result !== 'stopped') this.#send(request.requestId, phase);
+      }).catch(() => { this.#send(request.requestId, 'uncertain'); })
+        .finally(() => {
+          if (this.#nativeActive === active) {
+            this.#nativeActive = undefined;
+            this.#send(request.requestId,
+              authority.needsRecovery ? 'blocked_recovery' : 'ready');
+          }
+        });
       return;
     }
     if (request.type === 'start_chrome_fill') {
@@ -349,7 +403,7 @@ export class NativeManagedController {
     this.#chromeSessions.clear();
     this.#chromeAuthorities.clear();
     if (this.#nativeActive) {
-      await this.#nativeAuthority?.stop().catch(() => {});
+      await this.#nativeActive.authority.stop().catch(() => {});
       await this.#nativeActive.done.catch(() => {});
     }
     this.#nativeWorker?.close();
@@ -710,13 +764,13 @@ export class NativeManagedController {
     const nativeActive = this.#nativeActive;
     if (nativeActive?.requestId === request.targetRequestId) {
       this.#send(request.requestId, 'stopping');
-      const result = await this.#nativeAuthority!.stop().catch(() => ({
+      const result = await nativeActive.authority.stop().catch(() => ({
         workerFenced: false, unresolvedExecutionIds: [] as readonly string[],
       }));
       // Worker Stop fences the setter independently of its pending commit
       // receipt. Leave the task slot occupied until that receipt settles.
       this.#send(request.requestId,
-        result.workerFenced && !this.#nativeAuthority!.needsRecovery
+        result.workerFenced && !nativeActive.authority.needsRecovery
           ? 'stopped' : 'uncertain');
       return;
     }
@@ -724,6 +778,7 @@ export class NativeManagedController {
     if (!active || active.requestId !== request.targetRequestId) {
       this.#send(request.requestId, active || this.#nativeActive || this.#chromeActive ? 'error'
         : this.#workerFenceFailed || this.#nativeAuthority?.needsRecovery
+          || this.#pressAuthority?.needsRecovery
           || this.#journal.unresolvedAttempts().length
           ? 'uncertain' : 'stopped');
       return;

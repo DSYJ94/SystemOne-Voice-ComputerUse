@@ -3,9 +3,11 @@ import { ContractError } from '../../protocol/src/json.ts';
 import type { JSONValue } from '../../protocol/src/json.ts';
 import type { PreparedAttempt } from './attempt-journal.ts';
 import type { NativeFieldObservation, NativeFieldWorker } from './native-fill-authority.ts';
+import type { NativePressObservation, NativePressWorker } from './native-press-authority.ts';
 import { NativeHostPermitSigner } from './native-host-permit.ts';
 
-type Operation = 'observe' | 'prepare' | 'commit' | 'verify' | 'stop';
+type Operation = 'observe' | 'prepare' | 'commit' | 'verify'
+  | 'observe_press' | 'prepare_press' | 'commit_press' | 'verify_press' | 'stop';
 const ID = /^[A-Za-z0-9_.:-]{1,160}$/;
 
 interface Pending {
@@ -23,7 +25,7 @@ function record(value: JSONValue): value is Record<string, JSONValue> {
 /** Typed private-pipe adapter. It does not authenticate an OS process; the
  * development app owns this inherited pipe and release packaging must pin the
  * signed child, peer identity and worker-side permit checks. */
-export class NativeFieldPipeWorker implements NativeFieldWorker {
+export class NativeFieldPipeWorker implements NativeFieldWorker, NativePressWorker {
   readonly #write: (value: Record<string, JSONValue>) => void;
   readonly #pending = new Map<string, Pending>();
   readonly #signer = new NativeHostPermitSigner();
@@ -69,6 +71,73 @@ export class NativeFieldPipeWorker implements NativeFieldWorker {
     if (!record(result)) throw new ContractError('invalid native observation');
     // The host authority validates exact candidate fields and limits before use.
     return result as unknown as NativeFieldObservation;
+  }
+
+  async observePress(input: { readonly taskId: string;
+    readonly bundleId: string; readonly signal: AbortSignal }): Promise<NativePressObservation> {
+    const result = await this.#request('observe_press', { taskId: input.taskId,
+      bundleId: input.bundleId }, 5_000, input.signal);
+    if (!record(result)) throw new ContractError('invalid native press observation');
+    return result as unknown as NativePressObservation;
+  }
+
+  async preparePress(input: { readonly taskId: string;
+    readonly observationId: string; readonly candidateId: string;
+    readonly expectedWindowTitle: string; readonly executionId: string;
+    readonly permitRef: string; readonly actionDigest: string;
+    readonly candidateSetDigest: string; readonly policyRevision: string;
+    readonly signal: AbortSignal }): Promise<
+      { readonly kind: 'ready'; readonly preparationRef: string }
+      | { readonly kind: 'unsupported' }> {
+    const result = await this.#request('prepare_press', {
+      taskId: input.taskId, observationId: input.observationId,
+      candidateId: input.candidateId,
+      expectedWindowTitle: input.expectedWindowTitle,
+      executionId: input.executionId, permitRef: input.permitRef,
+      actionDigest: input.actionDigest,
+      candidateSetDigest: input.candidateSetDigest,
+      policyRevision: input.policyRevision,
+    }, 5_000, input.signal);
+    if (!record(result) || typeof result.kind !== 'string'
+      || !['ready', 'unsupported'].includes(result.kind)
+      || (result.kind === 'ready'
+        ? typeof result.preparationRef !== 'string' || !ID.test(result.preparationRef)
+          || Object.keys(result).sort().join(',') !== 'kind,preparationRef'
+        : Object.keys(result).join(',') !== 'kind')) {
+      throw new ContractError('invalid native press preparation reply');
+    }
+    return result as { kind: 'ready'; preparationRef: string }
+      | { kind: 'unsupported' };
+  }
+
+  async commitPress(input: { readonly taskId: string;
+    readonly executionId: string; readonly permitRef: string;
+    readonly preparationRef: string; readonly permit: PreparedAttempt }): Promise<
+      'returned_unverified' | 'not_dispatched' | 'unknown'> {
+    if (input.permit.taskId !== input.taskId
+      || input.permit.executionId !== input.executionId
+      || input.permit.permitRef !== input.permitRef) {
+      throw new ContractError('native press permit identity changed');
+    }
+    const claim = this.#signer.sign(input.permit, input.preparationRef);
+    const result = await this.#request('commit_press', {
+      taskId: input.taskId, executionId: input.executionId,
+      permitRef: input.permitRef, ...claim,
+    }, 10_000);
+    if (result !== 'returned_unverified' && result !== 'not_dispatched'
+      && result !== 'unknown') {
+      throw new ContractError('invalid native press commit reply');
+    }
+    return result;
+  }
+
+  async verifyPress(input: { readonly taskId: string;
+    readonly expectedWindowTitle: string }): Promise<boolean> {
+    const result = await this.#request('verify_press', { ...input }, 5_000);
+    if (typeof result !== 'boolean') {
+      throw new ContractError('invalid native press verification reply');
+    }
+    return result;
   }
 
   async prepare(input: { readonly taskId: string; readonly observationId: string;

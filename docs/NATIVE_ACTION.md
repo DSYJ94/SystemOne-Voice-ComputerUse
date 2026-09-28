@@ -1,22 +1,32 @@
 # Native action source status
 
-The native package also has a **disconnected** semantic `AXPress` source for
+The native package also has a semantic `AXPress` source for
 observed buttons and menu items. `prepareNativePress` retains the exact node,
 role, label and target identity; its one-use fence requires a durable boundary
 callback before dispatch. A returned `AXPress` is `returnedUnverified`, never
 task completion. Errors after entry are unknown, and a changed control at the
 boundary sends no action. A synthetic backend proves Stop, stale-control,
 boundary-failure, replay and uncertain-effect behavior, then separately
-re-observes a Documents-like surface. The development AppKit bundle compiles
-this source, but the controller does **not** yet admit or dispatch `AXPress`.
-The next integration must bind operation-specific policy and a signed permit,
-journal each press, and independently verify exact folder/file identity before
-claiming LOCATE or OPEN.
+re-observes a Documents-like surface. The development controller now admits
+**one fixed synthetic Documents navigation** through this source. It binds a
+final text command, an exact observed button, a native press policy, a
+controller-signed one-use permit and a worker-owned replay ledger. The host
+journals before dispatch and separately checks the Fixture's exact window
+title. A returned `AXPress` alone never completes the task; failed
+re-observation remains unknown and blocks another task. The controller child
+and fake worker pass positive and late-Stop tests. The AppKit path has compiled
+but **has not been exercised live**. This proves no general Finder action or
+file LOCATE/OPEN semantics. The next integration must retain a single task
+across folder navigation and exact file selection, then verify path identity
+and selection without opening.
 
 The synthetic Fixture now exposes Documents and Downloads controls, a file with
 the same name under either folder, and separate select/open states. This makes
 path and locate-versus-open checks possible without touching personal files.
 The updated Fixture was compiled but not launched for this slice.
+Its window title now changes with the folder, selected file and opened file so
+the host can distinguish the states using a fresh Accessibility observation.
+See the [manual fixture navigation check](NATIVE_NAVIGATION_TEST.md).
 
 `NativeAX/ValueAction.swift` is a restricted B11 driver for one semantic
 Accessibility `AXValue` replacement. It is compiled into the development app
