@@ -46,10 +46,11 @@ established by the current fixture-only native or browser tests.
   [#24 guarded native value driver](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/24),
   [#25 journaled native task authority](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/25),
   [#26 development native controller bridge](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/26),
-  [#27 existing-Chrome controller read path](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/27).
+  [#27 existing-Chrome controller read path](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/27),
+  [#28 guarded existing-Chrome loopback fill](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/28).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/chrome-controller-read-session`,
-  stacked on `codex/native-ax-controller-bridge`.
+- The current implementation branch is `codex/chrome-guarded-field-fill`,
+  stacked on `codex/chrome-controller-read-session`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -122,7 +123,9 @@ extension source now has explicit one-tab read-only grants. A Swift
 native-messaging host, opt-in AppKit listener and Node controller read session
 pass signed synthetic framing and strict binding tests. Exact-origin development
 artifacts can be staged without installation. No host is installed in Chrome,
-no real profile has been observed, and no Chrome action works.
+no real profile has been observed. A narrow journaled Chrome field-fill source
+exists for the loopback portal fixture, with synthetic tests; no real extension
+action has been qualified.
 Host/helper release identity, TCC attribution after installation and
 update, voice, CLM inference, privacy review, crash recovery across real workers,
 packaging/notarization and clean-Mac installation are unverified. Treat effects
@@ -144,8 +147,8 @@ undo an already-dispatched effect.
    installation and TCC attribution on an authorized Mac.
 4. Complete B13 candidate projection, scripted B15-B17 multi-hop/recovery and
    B18 transitions; then qualify CLM under B14. For B19, qualify the staged
-   host/listener/extension read path on a separate Chrome profile, then add
-   host-authorized fixed actions, Stop/reconnect and current-profile tests.
+   host/listener/extension path and fixed loopback fill on a separate Chrome
+   profile; then extend the effect policy, Stop/reconnect and current-profile tests.
    Do not substitute managed Chromium for B19.
 
 Release gates G1-G6 remain unverified; consult the review handoff and status

@@ -71,7 +71,8 @@ test('user click, host handshake, exact document read and navigation revocation'
       injected++;
       assert.deepEqual(options.target, { tabId: 7, documentIds: ['document-1'] });
       return [{ frameId: 0, documentId,
-        result: { title: 'Synthetic page', url: tab.url, elements: [] } }];
+        result: { observationId: options.args[0], title: 'Synthetic page',
+          url: tab.url, complete: true, elements: [] } }];
     } },
   };
   try {
@@ -144,8 +145,10 @@ test('extension and controller read contracts exchange one exact tab snapshot', 
       injected++;
       assert.deepEqual(options.target, { tabId: 18, documentIds: ['document-1'] });
       return [{ frameId: 0, documentId,
-        result: { title: 'Synthetic account', url: tab.url,
-          elements: [{ role: 'button', label: 'Open', disabled: false }] } }];
+        result: { observationId: options.args[0], title: 'Synthetic account',
+          url: tab.url, complete: true,
+          elements: [{ id: `${options.args[0]}:0`, role: 'button',
+            label: 'Open', disabled: false, editable: false }] } }];
     } },
   };
   try {
@@ -155,7 +158,8 @@ test('extension and controller read contracts exchange one exact tab snapshot', 
     assert.equal(injected, 1);
     assert.equal(reports[0].binding.documentId, documentId);
     assert.deepEqual(reports[0].snapshot.elements,
-      [{ role: 'button', label: 'Open', disabled: false }]);
+      [{ id: `${reports[0].snapshot.observationId}:0`, role: 'button',
+        label: 'Open', disabled: false, editable: false }]);
     documentId = 'document-2';
     committed.emit({ tabId: 18, frameId: 0, documentId });
     assert.equal(session.activeGrantCount, 0);
@@ -163,4 +167,89 @@ test('extension and controller read contracts exchange one exact tab snapshot', 
     session.close();
     delete globalThis.chrome;
   }
+});
+
+test('extension accepts one exact fill permit and verifies the same document', async () => {
+  const clicked = event();
+  const committed = event();
+  const changed = event();
+  const removed = event();
+  const detached = event();
+  const history = event();
+  const fragment = event();
+  const sent = [];
+  const calls = [];
+  let holdFill = false;
+  let releaseFill;
+  const extensionId = 'a'.repeat(32);
+  const tab = { id: 19, windowId: 3, url: 'http://127.0.0.1:49081/',
+    incognito: false };
+  const port = { onMessage: event(), onDisconnect: event(),
+    postMessage(message) { sent.push(message); } };
+  globalThis.crypto ??= webcrypto;
+  globalThis.chrome = {
+    action: { onClicked: clicked, setBadgeText: async () => {},
+      setBadgeBackgroundColor: async () => {} },
+    storage: { local: { get: async () => ({}), set: async () => {} } },
+    runtime: { id: extensionId, connectNative: () => port },
+    tabs: { get: async () => tab, onUpdated: changed,
+      onRemoved: removed, onDetached: detached },
+    webNavigation: { getFrame: async () => ({ frameId: 0,
+      documentId: 'document-1', url: tab.url }), onCommitted: committed,
+      onHistoryStateUpdated: history, onReferenceFragmentUpdated: fragment },
+    scripting: { async executeScript(options) {
+      calls.push(options.func.name);
+      assert.deepEqual(options.target, { tabId: 19, documentIds: ['document-1'] });
+      if (options.func.name === 'collectSemantic') {
+        return [{ frameId: 0, documentId: 'document-1',
+          result: { observationId: options.args[0],
+            title: 'Invoice Portal Fixture', url: tab.url, complete: true,
+            elements: [{ id: `${options.args[0]}:0`, role: 'input',
+              label: 'Find invoice', disabled: false, editable: true }] } }];
+      }
+      if (options.func.name === 'fillSemantic' && holdFill) {
+        await new Promise(resolve => { releaseFill = resolve; });
+      }
+      return [{ frameId: 0, documentId: 'document-1',
+        result: options.func.name === 'fillSemantic' ? 'matched' : true }];
+    } },
+  };
+  try {
+    await import(`../service-worker.mjs?fill=${Date.now()}`);
+    clicked.emit(tab);
+    await until(() => sent.some(message => message.type === 'hello'));
+    const hello = sent.find(message => message.type === 'hello');
+    port.onMessage.emit({ type: 'hello_ack', grantId: hello.binding.grantId,
+      challenge: hello.challenge, binding: hello.binding });
+    const binding = { ...hello.binding, connected: true };
+    port.onMessage.emit({ type: 'observe', requestId: 'read-1',
+      grantId: binding.grantId, binding });
+    await until(() => sent.some(message => message.type === 'observation'));
+    const observation = sent.find(message => message.type === 'observation');
+    const candidate = observation.snapshot.elements[0];
+    const action = { type: 'action', operation: 'fill', requestId: 'action-1',
+      taskId: 'task-1', permitRef: 'permit-1', grantId: binding.grantId,
+      binding, observationId: observation.snapshot.observationId,
+      candidateId: candidate.id, role: candidate.role, label: candidate.label,
+      url: binding.url, value: 'INV-104' };
+    port.onMessage.emit(action);
+    await until(() => sent.some(message => message.type === 'action_result'));
+    assert.equal(sent.find(message => message.type === 'action_result').status,
+      'matched');
+    assert.deepEqual(calls, ['collectSemantic', 'fillSemantic', 'verifySemantic']);
+    port.onMessage.emit(action);
+    await until(() => sent.some(message => message.type === 'unsupported_operation'));
+    assert.equal(calls.filter(name => name === 'fillSemantic').length, 1);
+    holdFill = true;
+    port.onMessage.emit({ ...action, requestId: 'action-2', permitRef: 'permit-2' });
+    await until(() => typeof releaseFill === 'function');
+    port.onMessage.emit({ type: 'stop_action', requestId: 'stop-1',
+      targetRequestId: 'wrong-action', grantId: binding.grantId });
+    releaseFill();
+    await until(() => sent.some(message => message.type === 'stop_ack'));
+    assert.equal(sent.find(message => message.type === 'stop_ack').workerFenced,
+      false);
+    assert.equal(sent.find(message => message.type === 'action_result'
+      && message.requestId === 'action-2')?.status, 'unknown');
+  } finally { delete globalThis.chrome; }
 });

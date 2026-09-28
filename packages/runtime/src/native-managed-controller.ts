@@ -12,6 +12,7 @@ import { TaskAdmissionRegistry } from './task-authority.ts';
 import { NativeFillAuthority } from './native-fill-authority.ts';
 import { NativeFieldPipeWorker } from './native-field-pipe-worker.ts';
 import { ChromeReadSession } from './chrome-read-session.ts';
+import { ChromeFillAuthority } from './chrome-fill-authority.ts';
 import type { JSONValue } from '../../protocol/src/json.ts';
 
 const MAX_LINE_BYTES = 65_536;
@@ -42,11 +43,22 @@ interface StartNativeFill {
   readonly command: Record<string, JSONValue>;
 }
 
-type NativeRequest = StartFill | StartNativeFill | Stop;
+interface StartChromeFill {
+  readonly type: 'start_chrome_fill';
+  readonly requestId: string;
+  readonly connectionId: string;
+  readonly grantId: string;
+  readonly fieldLabel: string;
+  readonly value: string;
+  readonly command: Record<string, JSONValue>;
+}
+
+type NativeRequest = StartFill | StartNativeFill | StartChromeFill | Stop;
 type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
   | 'verified_dom_fill' | 'unsupported' | 'uncertain' | 'stopping'
   | 'stopped' | 'busy' | 'error' | 'blocked_recovery'
-  | 'observing_native' | 'verified_native_fill' | 'already_matched';
+  | 'observing_native' | 'verified_native_fill' | 'already_matched'
+  | 'observing_chrome' | 'verified_chrome_dom_fill';
 
 function isRecord(value: JSONValue): value is Record<string, JSONValue> {
   return value !== null && !Array.isArray(value) && typeof value === 'object';
@@ -82,6 +94,22 @@ function requestFromLine(line: Uint8Array): NativeRequest {
     return { type: 'start_native_fill', requestId: value.requestId as string,
       bundleId: value.bundleId, fieldLabel: value.fieldLabel,
       value: value.value, command: value.command };
+  }
+  if (value.type === 'start_chrome_fill') {
+    if (Object.keys(value).sort().join(',')
+        !== 'command,connectionId,fieldLabel,grantId,requestId,type,value'
+      || typeof value.connectionId !== 'string' || !ID.test(value.connectionId)
+      || typeof value.grantId !== 'string' || !ID.test(value.grantId)
+      || typeof value.fieldLabel !== 'string' || value.fieldLabel.length < 1
+      || value.fieldLabel.length > 160 || !value.fieldLabel.isWellFormed()
+      || typeof value.value !== 'string' || !value.value.isWellFormed()
+      || Buffer.byteLength(value.value, 'utf8') > MAX_VALUE_BYTES
+      || value.command === undefined || !isRecord(value.command)) {
+      throw new ContractError('invalid Chrome field request');
+    }
+    return { type: 'start_chrome_fill', requestId: value.requestId as string,
+      connectionId: value.connectionId, grantId: value.grantId,
+      fieldLabel: value.fieldLabel, value: value.value, command: value.command };
   }
   if (value.type !== 'start_fill'
     || Object.keys(value).sort().join(',') !== 'command,fieldLabel,requestId,type,url,value'
@@ -131,10 +159,13 @@ export class NativeManagedController {
   readonly #nativeAuthority: NativeFillAuthority | undefined;
   readonly #chromeOutput: ((value: Record<string, JSONValue>) => void) | undefined;
   readonly #chromeSessions = new Map<string, ChromeReadSession>();
+  readonly #chromeAuthorities = new Map<string, ChromeFillAuthority>();
   readonly #seen = new Set<string>();
   #active: ActiveTask | undefined;
   #nativeActive: { readonly requestId: string;
     readonly done: Promise<void> } | undefined;
+  #chromeActive: { readonly requestId: string;
+    readonly authority: ChromeFillAuthority; readonly done: Promise<void> } | undefined;
   #workerFenceFailed = false;
 
   constructor(journal: AttemptJournal, send: (requestId: string, phase: Phase) => void,
@@ -173,10 +204,11 @@ export class NativeManagedController {
       void this.#stop(request);
       return;
     }
-    if (this.#active || this.#nativeActive) {
+    if (this.#active || this.#nativeActive || this.#chromeActive) {
       this.#send(request.requestId, 'busy'); return;
     }
     if (this.#workerFenceFailed || this.#nativeAuthority?.needsRecovery
+      || [...this.#chromeAuthorities.values()].some(x => x.needsRecovery)
       || this.#journal.unresolvedAttempts().length) {
       this.#send(request.requestId, 'blocked_recovery');
       return;
@@ -206,6 +238,30 @@ export class NativeManagedController {
       });
       return;
     }
+    if (request.type === 'start_chrome_fill') {
+      const authority = this.#chromeAuthorities.get(request.connectionId);
+      if (!authority) { this.#send(request.requestId, 'error'); return; }
+      this.#send(request.requestId, 'observing_chrome');
+      const active = { requestId: request.requestId, authority,
+        done: Promise.resolve() };
+      this.#chromeActive = active;
+      active.done = authority.start(request).then(result => {
+        const phase: Phase = result === 'verified' ? 'verified_chrome_dom_fill'
+          : result === 'already_matched' ? 'already_matched'
+            : result === 'unsupported' ? 'unsupported'
+              : result === 'uncertain' ? 'uncertain'
+                : result === 'stopped' ? 'stopped' : 'error';
+        if (result !== 'stopped') this.#send(request.requestId, phase);
+      }).catch(() => { this.#send(request.requestId, 'uncertain'); })
+        .finally(() => {
+          if (this.#chromeActive === active) {
+            this.#chromeActive = undefined;
+            this.#send(request.requestId,
+              authority.needsRecovery ? 'blocked_recovery' : 'ready');
+          }
+        });
+      return;
+    }
     const active: ActiveTask = { requestId: request.requestId,
       cancelled: false, keepOpen: false, launchFenceUnconfirmed: false,
       browserFenced: false, done: Promise.resolve() };
@@ -222,8 +278,13 @@ export class NativeManagedController {
   }
 
   async close(): Promise<void> {
+    if (this.#chromeActive) {
+      await this.#chromeActive.authority.stop().catch(() => {});
+      await this.#chromeActive.done.catch(() => {});
+    }
     for (const session of this.#chromeSessions.values()) session.close();
     this.#chromeSessions.clear();
+    this.#chromeAuthorities.clear();
     if (this.#nativeActive) {
       await this.#nativeAuthority?.stop().catch(() => {});
       await this.#nativeActive.done.catch(() => {});
@@ -266,6 +327,8 @@ export class NativeManagedController {
             origin: binding.origin, url: binding.url,
             title: snapshot.title, elements: snapshot.elements.map(item => ({ ...item })) }));
         this.#chromeSessions.set(connectionId, session);
+        this.#chromeAuthorities.set(connectionId,
+          new ChromeFillAuthority(this.#journal, session));
         return;
       }
       const session = this.#chromeSessions.get(connectionId);
@@ -276,6 +339,7 @@ export class NativeManagedController {
         }
         session.close();
         this.#chromeSessions.delete(connectionId);
+        this.#chromeAuthorities.delete(connectionId);
         return;
       }
       if (message.type !== 'chrome_port_message'
@@ -294,6 +358,7 @@ export class NativeManagedController {
     } catch {
       this.#chromeSessions.get(connectionId)?.close();
       this.#chromeSessions.delete(connectionId);
+      this.#chromeAuthorities.delete(connectionId);
       output({ type: 'chrome_port_close', connectionId });
     }
   }
@@ -370,6 +435,15 @@ export class NativeManagedController {
   }
 
   async #stop(request: Stop): Promise<void> {
+    const chromeActive = this.#chromeActive;
+    if (chromeActive?.requestId === request.targetRequestId) {
+      this.#send(request.requestId, 'stopping');
+      const fenced = await chromeActive.authority.stop().catch(() => false);
+      await chromeActive.done.catch(() => {});
+      this.#send(request.requestId,
+        fenced && !chromeActive.authority.needsRecovery ? 'stopped' : 'uncertain');
+      return;
+    }
     const nativeActive = this.#nativeActive;
     if (nativeActive?.requestId === request.targetRequestId) {
       this.#send(request.requestId, 'stopping');
@@ -384,7 +458,7 @@ export class NativeManagedController {
     }
     const active = this.#active;
     if (!active || active.requestId !== request.targetRequestId) {
-      this.#send(request.requestId, active || this.#nativeActive ? 'error'
+      this.#send(request.requestId, active || this.#nativeActive || this.#chromeActive ? 'error'
         : this.#workerFenceFailed || this.#nativeAuthority?.needsRecovery
           || this.#journal.unresolvedAttempts().length
           ? 'uncertain' : 'stopped');

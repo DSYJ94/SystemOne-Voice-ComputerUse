@@ -23,8 +23,22 @@ returns at most 80 visible semantic labels, with no input values or password
 fields. These labels and the title can still be private task data, so the
 native host must apply the same disclosure policy before any model request.
 
-All action requests currently return `unsupported_operation`. The extension
-cannot yet drive the user's Chrome pages. `packages/chrome-native-host/` now
+The source now accepts one fixed `fill` action, but the host admits it only
+for a synthetic portal-shaped loopback page and the exact `Find invoice` label.
+The panel supplies the final typed command and value. The host requests a fresh,
+complete observation, selects one editable candidate, records a value digest
+and one-use permit, and persists a dispatch boundary before messaging the
+extension. The extension rechecks the document, retained node, label and
+duplicate fields before setting a nonsecure input; it checks the current DOM
+value afterward. A matched DOM value does **not** prove form submission,
+server persistence or trusted user input. Input events can trigger page scripts
+and outbound writes, so the host records `EXTERNAL_WRITE` as a possible effect;
+the development panel calls for disposable synthetic text. Stop fences future actions but cannot
+undo an already-dispatched edit. Unknown delivery blocks another task until
+explicit recovery. A loopback URL and page title do not authenticate the
+fixture process; this remains a development-only scope.
+
+`packages/chrome-native-host/` now
 builds a Swift native-messaging executable. It reads a configuration staged next
 to the executable before bundle signing, checks Chrome's exact caller-origin
 argument, connects to the fixed per-user SystemOne controller socket, verifies
@@ -35,9 +49,9 @@ Chrome manifest and release controller trust pins; it **does not register** that
 manifest with Chrome. The development AppKit build now has an opt-in local
 listener. It authenticates the connected host's audit-token/code-signing
 identity against a pinned CDHash or Apple-anchored Team ID before forwarding
-frames on its private controller pipe. The Node read session checks exact
+frames on its private controller pipe. The Node session checks exact
 extension/profile-session/tab/frame/document/URL claims, requests one bounded
-read-only observation and displays labels locally. Malformed, replayed,
+observation and displays labels locally. Malformed, replayed,
 expired or changed replies close the session. An unpacked extension without
 the installed host will show `OFF`.
 
@@ -46,7 +60,8 @@ proof that Chrome launched the process or which profile owns a message: a local
 process can invoke a signed host with that argument. The controller must
 continue validating every protocol message and future task permit, and treat
 tab/document bindings as scoped claims that require fresh checks.
-Neither the host nor the extension currently authorizes an effect.
+Only the host's development fill authority admits the narrow effect above.
+Release policy and profile qualification remain open.
 
 `npm run test:chrome-host` builds and ad-hoc signs a temporary host and
 synthetic controller, then checks framed round-trip, wrong caller origin,
@@ -56,9 +71,15 @@ development host, app and exact-origin manifest under ignored `.build/`, but
 does not register the manifest or touch a Chrome profile. Its host configuration
 is outside a signed release bundle and is not a production trust anchor.
 `zsh scripts/check-chrome-dev-listener.sh` checks a signed temporary host and
-listener exchange. These checks do not open Chrome, verify extension-to-host
-integration in a browser, exercise action Stop, or establish a distributable
-signing identity.
+listener exchange. Synthetic tests now cover the controller/extension fill
+contract, host journal boundary and Stop after dispatch. A temporary MV3 test
+extension using the production semantic functions confirms that separate
+`chrome.scripting.executeScript` calls in Playwright Chromium retain the
+observation-scoped handle, reject a duplicate field and reject the old handle
+after reload. This checks an actual isolated extension world but does not
+exercise the production extension's native-host messages. These checks do not
+open the owner's Chrome, verify a real installed extension-to-host action, or
+establish a distributable signing identity.
 
 Release packaging must place the host at its final absolute path and run
 `node scripts/stage-chrome-native-host.mjs EXTENSION_ID HOST_PATH MANIFEST_PATH
@@ -68,13 +89,15 @@ per-user native-host registration location. This is a packager instruction,
 not a current-profile test procedure; neither operation is automated yet.
 
 Before an owner-run current-profile test, first qualify the installed
-exact-origin manifest, host/app signing pair, activeTab grant/revoke cycle and
-read-only end-to-end observation on a non-sensitive Chrome profile. Then add
-fixed semantic actions through host permits, fresh document checks,
-Stop/reconnect handling, unsupported trusted-input behavior and real Chrome
-profile cases. Keep file transfer disabled until its outbound and destination
-enforcement is qualified. An existing-profile check requires explicit owner
-participation.
+exact-origin manifest, host/app signing pair, activeTab grant/revoke cycle,
+read-only observation and fixed loopback field action in a separate
+non-sensitive Chrome profile. The temporary MV3 test establishes isolated-world
+handle persistence only in Playwright Chromium; test it again in the installed
+bridge, followed by Stop and reconnection.
+Broader actions require effect classification and site-specific policy; Chrome
+may reject synthetic input where trusted user gestures are required. Keep file
+transfer disabled until outbound and destination enforcement is qualified. An
+existing-profile check requires explicit owner participation.
 
 Primary references checked for this slice:
 

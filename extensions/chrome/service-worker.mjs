@@ -1,4 +1,5 @@
 import { ChromeTabGrants, checkedOrigin } from './grants.mjs';
+import { collectSemantic, fillSemantic, verifySemantic } from './semantic-controls.mjs';
 
 const HOST = 'com.aurium.systemone.chrome';
 const workerSessionId = crypto.randomUUID();
@@ -6,6 +7,15 @@ let profilePromise;
 let nativePort;
 let grants;
 const pending = new Map();
+const activeActions = new Map();
+const seenPermits = new Set();
+const ID = /^[A-Za-z0-9_.:-]{1,160}$/;
+
+function cancelActionsForGrant(grantId) {
+  for (const action of activeActions.values()) {
+    if (action.grantId === grantId) action.stopped = true;
+  }
+}
 
 async function profileInstallId() {
   if (!profilePromise) profilePromise = (async () => {
@@ -29,6 +39,7 @@ function badge(tabId, text, color = '#535a65') {
 function revokeTab(tabId, reason) {
   if (!grants) return;
   for (const grant of grants.revokeTab(tabId)) {
+    cancelActionsForGrant(grant.grantId);
     pending.delete(grant.grantId);
     try { nativePort?.postMessage({ type: 'revoked', grantId: grant.grantId, reason }); }
     catch { /* A broken port already fences this session. */ }
@@ -39,6 +50,7 @@ function revokeTab(tabId, reason) {
 function revokeGrant(grantId, reason) {
   const grant = grants?.revokeGrant(grantId);
   if (!grant) return;
+  cancelActionsForGrant(grantId);
   pending.delete(grantId);
   badge(grant.tabId, 'OFF');
   try { nativePort?.postMessage({ type: 'revoked', grantId, reason }); }
@@ -49,7 +61,9 @@ function disconnect(port) {
   if (nativePort !== port) return;
   const revoked = grants?.revokeAll() ?? [];
   for (const grant of revoked) badge(grant.tabId, 'OFF');
+  for (const action of activeActions.values()) action.stopped = true;
   pending.clear();
+  seenPermits.clear();
   nativePort = undefined;
   grants = undefined;
 }
@@ -69,35 +83,13 @@ async function exactFrame(grant) {
   return frame;
 }
 
-function collectSemantic() {
-  const elements = [];
-  const nodes = document.querySelectorAll('button,a,input,select,textarea,[role]');
-  for (let index = 0; index < Math.min(nodes.length, 2_000) && elements.length < 80; index++) {
-    const node = nodes[index];
-    if (node.isContentEditable || node.closest('[contenteditable="true"]')) continue;
-    const style = getComputedStyle(node);
-    if (style.display === 'none' || style.visibility === 'hidden'
-      || node.getClientRects().length === 0) continue;
-    const tag = node.tagName.toLowerCase();
-    const inputType = tag === 'input' ? String(node.type ?? '').toLowerCase() : '';
-    if (inputType === 'password' || inputType === 'hidden') continue;
-    const label = (node.getAttribute('aria-label') || node.getAttribute('title')
-      || node.getAttribute('placeholder')
-      || (['input', 'textarea', 'select'].includes(tag) ? '' : node.innerText) || '')
-      .replace(/\s+/g, ' ').trim().slice(0, 160);
-    if (!label) continue;
-    elements.push({ role: (node.getAttribute('role') || tag).slice(0, 40),
-      label, disabled: Boolean(node.disabled || node.getAttribute('aria-disabled') === 'true') });
-  }
-  return { title: document.title.slice(0, 160), url: location.href.slice(0, 2_048), elements };
-}
-
 async function observe(message, port) {
   const grant = grants.requireConnected(message.grantId, message.binding);
   await exactFrame(grant);
+  const observationId = crypto.randomUUID();
   const results = await chrome.scripting.executeScript({
     target: { tabId: grant.tabId, documentIds: [grant.documentId] },
-    func: collectSemantic,
+    func: collectSemantic, args: [observationId],
   });
   if (results.length !== 1 || results[0].frameId !== 0
     || results[0].documentId !== grant.documentId) {
@@ -107,6 +99,107 @@ async function observe(message, port) {
   if (nativePort !== port) throw new Error('Chrome native host disconnected');
   port.postMessage({ type: 'observation', requestId: message.requestId,
     binding: grant, snapshot: results[0].result });
+}
+
+async function fillField(message, port) {
+  if (Object.keys(message).sort().join(',') !==
+      'binding,candidateId,grantId,label,observationId,operation,permitRef,requestId,role,taskId,type,url,value'
+    || message.operation !== 'fill' || !ID.test(message.requestId)
+    || !ID.test(message.taskId) || !ID.test(message.permitRef)
+    || !ID.test(message.observationId) || !ID.test(message.candidateId)
+    || typeof message.label !== 'string' || !message.label
+    || message.label.length > 160 || typeof message.role !== 'string'
+    || !message.role || message.role.length > 40
+    || typeof message.value !== 'string'
+    || new TextEncoder().encode(message.value).length > 1_024
+    || typeof message.url !== 'string' || message.url.length > 4_096
+    || activeActions.has(message.requestId) || seenPermits.has(message.permitRef)
+    || seenPermits.size >= 1_000) {
+    port.postMessage({ type: 'unsupported_operation', requestId: message.requestId ?? null });
+    return;
+  }
+  let grant;
+  try {
+    grant = grants.requireConnected(message.grantId, message.binding);
+    if (grant.url !== message.url || [...activeActions.values()]
+      .some(action => action.grantId === grant.grantId)) {
+      throw new Error('Chrome action target changed or busy');
+    }
+  } catch {
+    port.postMessage({ type: 'unsupported_operation', requestId: message.requestId });
+    return;
+  }
+  seenPermits.add(message.permitRef);
+  const active = { grantId: grant.grantId, stopped: false,
+    injectionStarted: false, done: Promise.resolve('not_dispatched') };
+  activeActions.set(message.requestId, active);
+  active.done = (async () => {
+    try {
+      await exactFrame(grant);
+      if (active.stopped || nativePort !== port) return 'not_dispatched';
+      const input = { observationId: message.observationId,
+        candidateId: message.candidateId, label: message.label,
+        role: message.role, url: message.url, value: message.value };
+      // The host journaled its dispatch boundary before this message. There
+      // is no await between the final Stop check and the injection call.
+      active.injectionStarted = true;
+      const result = await chrome.scripting.executeScript({
+        target: { tabId: grant.tabId, documentIds: [grant.documentId] },
+        func: fillSemantic, args: [input],
+      });
+      if (result.length !== 1 || result[0].frameId !== 0
+        || result[0].documentId !== grant.documentId
+        || !['matched', 'already_matched', 'not_dispatched', 'unknown']
+          .includes(result[0].result)) return 'unknown';
+      if (active.stopped) return 'unknown';
+      const status = result[0].result;
+      if (status === 'not_dispatched' || status === 'unknown') return status;
+      await exactFrame(grant);
+      const verified = await chrome.scripting.executeScript({
+        target: { tabId: grant.tabId, documentIds: [grant.documentId] },
+        func: verifySemantic, args: [input],
+      });
+      if (verified.length !== 1 || verified[0].frameId !== 0
+        || verified[0].documentId !== grant.documentId
+        || verified[0].result !== true) return 'unknown';
+      if (active.stopped) return 'unknown';
+      await exactFrame(grant);
+      if (active.stopped) return 'unknown';
+      return status;
+    } catch { return active.injectionStarted ? 'unknown' : 'not_dispatched'; }
+  })();
+  try {
+    const status = await active.done;
+    if (nativePort === port) port.postMessage({ type: 'action_result',
+      requestId: message.requestId, permitRef: message.permitRef,
+      binding: grant, status });
+  } finally { activeActions.delete(message.requestId); }
+}
+
+async function stopAction(message, port) {
+  if (Object.keys(message).sort().join(',') !== 'grantId,requestId,targetRequestId,type'
+    || !ID.test(message.requestId) || !ID.test(message.targetRequestId)
+    || !ID.test(message.grantId)) return;
+  const inFlight = [...activeActions.entries()]
+    .filter(([, action]) => action.grantId === message.grantId);
+  const targetMatches = inFlight.length === 0
+    || (inFlight.length === 1 && inFlight[0][0] === message.targetRequestId);
+  for (const [, action] of inFlight) action.stopped = true;
+  revokeGrant(message.grantId, 'host_stop');
+  let workerFenced = inFlight.length === 0;
+  if (inFlight.length) {
+    let timer;
+    try {
+      workerFenced = await Promise.race([
+        Promise.all(inFlight.map(([, action]) => action.done)).then(() => true,
+          () => false),
+        new Promise(resolve => { timer = setTimeout(() => resolve(false), 2_500); }),
+      ]);
+    } finally { clearTimeout(timer); }
+  }
+  if (nativePort === port) port.postMessage({ type: 'stop_ack',
+    requestId: message.requestId, targetRequestId: message.targetRequestId,
+    grantId: message.grantId, workerFenced: workerFenced && targetMatches });
 }
 
 function ensurePort(profileId) {
@@ -137,7 +230,16 @@ function ensurePort(profileId) {
       return;
     }
     if (message.type === 'action') {
-      port.postMessage({ type: 'unsupported_operation', requestId: message.requestId ?? null });
+      void fillField(message, port).catch(() => {
+        try { port.postMessage({ type: 'action_result',
+          requestId: message.requestId ?? null, permitRef: message.permitRef ?? null,
+          binding: message.binding ?? null, status: 'unknown' }); }
+        catch { disconnect(port); }
+      });
+      return;
+    }
+    if (message.type === 'stop_action') {
+      void stopAction(message, port).catch(() => disconnect(port));
     }
   });
   return port;
