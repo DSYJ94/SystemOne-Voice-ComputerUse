@@ -67,7 +67,8 @@ established by the current fixture-only native or browser tests.
   [#45 structured input byte provenance](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/45),
   [#46 fixed portal workflow in controller](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/46),
   [#47 development global shortcuts](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/47),
-  [#48 native semantic press source](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/48).
+  [#48 native semantic press source](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/48),
+  [#49 fixed native Documents controller action](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/49).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current implementation branch is `codex/native-press-controller`,
   stacked on `codex/native-semantic-press`.
