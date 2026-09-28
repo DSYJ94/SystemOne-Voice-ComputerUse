@@ -79,9 +79,25 @@ extension using the production semantic functions confirms that separate
 `chrome.scripting.executeScript` calls in Playwright Chromium retain the
 observation-scoped handle, reject a duplicate field and reject the old handle
 after reload. This checks an actual isolated extension world but does not
-exercise the production extension's native-host messages. These checks do not
-open the owner's Chrome, verify a real installed extension-to-host action, or
-establish a distributable signing identity.
+exercise the production extension's native-host messages. Those earlier checks
+did not open the owner's Chrome or establish a distributable signing identity.
+
+`npm run test:chrome-browser-transport` now loads a temporary copy of the
+production MV3 extension in Playwright Chromium with a temporary user-data
+directory. The copy adds a loopback host grant and test-only handler invocation
+so no toolbar gesture or owner profile is required. It stages and registers an
+ad-hoc-signed Swift host only under that directory, then verifies
+an actual `chrome.runtime.connectNative` frame reaches a code-signed synthetic
+controller and returns to the extension. The production service-worker source
+then completes a `hello`/`observe` exchange, reports the fixture's semantic
+`Find invoice` field without its synthetic input value, and revokes the grant
+after a reload. Replacing the
+controller CDHash in the host's debug configuration causes a browser-visible
+disconnect with no second probe delivered. The check does not exercise a real
+toolbar click or `activeTab` grant, run the AppKit listener, perform a fill, or
+test Google Chrome/current-profile behavior. Chromium's test lookup under its
+temporary user-data directory was observed locally; it must not be assumed to
+describe Google Chrome's installed lookup on other machines.
 
 Release packaging must place the host at its final absolute path and run
 `node scripts/stage-chrome-native-host.mjs EXTENSION_ID HOST_PATH MANIFEST_PATH

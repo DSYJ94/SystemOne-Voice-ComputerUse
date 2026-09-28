@@ -14,6 +14,7 @@
     "test:swift": "swift test --package-path packages/protocol/swift",
     "test:mac-peer": "scripts/check-peer-identity.sh",
     "test:chrome-host": "zsh scripts/check-chrome-native-host.sh",
+    "test:chrome-browser-transport": "node scripts/check-chrome-browser-transport.mjs",
     "test:native-ax": "zsh scripts/check-native-ax.sh",
     "test:native-permit-digest": "node scripts/check-native-permit-digest.mjs",
     "test:native-worker-ledger": "node scripts/check-native-worker-ledger.mjs",

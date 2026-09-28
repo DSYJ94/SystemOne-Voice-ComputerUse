@@ -782,3 +782,23 @@ tests and the TypeScript typecheck. An installed extension-to-host exchange,
 separate-profile qualification, current-profile qualification, Developer ID
 signing, app-bundle placement, update/rollback and clean-Mac delivery remain
 untested.
+
+## Isolated Chromium native-messaging transport, 28 September 2026
+
+`npm run test:chrome-browser-transport` passed on macOS 26.6.2 arm64 with
+Playwright 1.63.0 Chromium. A temporary copy of the production MV3 extension
+loaded in a temporary user-data directory and connected through native
+messaging to the ad-hoc-signed Swift host. The host authenticated this Node
+test process by signing identifier and CDHash, relayed a nonce frame and its
+reply, then carried the production service worker's `hello`/`observe` exchange
+and semantic `Find invoice` observation from the loopback portal. A synthetic
+private field value was absent from the reported snapshot. Reload
+revoked the document grant. A changed controller CDHash disconnected without
+delivering a second probe. The manifest was registered only inside the
+temporary Chromium profile; the test removed that directory and did not change
+the owner's Chrome setup.
+
+This is real browser-to-host transport and production service-worker read-path
+evidence, but the copy had test-only loopback host permission and a test handler
+invocation. The actual toolbar click and `activeTab` grant, fill workflow,
+AppKit listener, Google Chrome and current profile remain untested end to end.
