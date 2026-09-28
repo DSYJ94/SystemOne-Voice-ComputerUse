@@ -84,21 +84,31 @@ did not open the owner's Chrome or establish a distributable signing identity.
 
 `npm run test:chrome-browser-transport` now loads a temporary copy of the
 production MV3 extension in Playwright Chromium with a temporary user-data
-directory. The copy adds a loopback host grant and test-only handler invocation
-so no toolbar gesture or owner profile is required. It stages and registers an
+directory. The copy has no persistent host permission. It stages and registers an
 ad-hoc-signed Swift host only under that directory. A second ad-hoc-signed test
 executable uses the production `DevChromeListener` source. An actual
 `chrome.runtime.connectNative` frame crosses both Swift processes, with host
 and listener code identities checked in opposite directions, before a synthetic
 Node controller replies. The production service-worker source then completes a
 `hello`/`observe` exchange, reports the fixture's semantic `Find invoice` field
-without its synthetic input value, and revokes the grant
-after a reload. Replacing either peer CDHash causes a browser-visible
+without its synthetic input value, and revokes the grant after a reload.
+Replacing either peer CDHash causes a browser-visible
 disconnect without another probe delivered. The check does not exercise a real
-toolbar click or `activeTab` grant, run the complete AppKit app, perform a fill,
-or test Google Chrome/current-profile behavior. Chromium's test lookup under its
+physical toolbar click, run the complete AppKit app, perform a fill, or test
+Google Chrome/current-profile behavior. Chromium's test lookup under its
 temporary user-data directory was observed locally; it must not be assumed to
 describe Google Chrome's installed lookup on other machines.
+The same isolated check first invokes the copied handler **without** a host
+grant. Chromium reports `OFF` and no semantic observation reaches the
+controller. The positive read uses Chromium's test-only
+[`Extensions.triggerAction`](https://chromedevtools.github.io/devtools-protocol/tot/Extensions/)
+command on the exact disposable tab, exercising the production `onClicked`
+handler and temporary `activeTab` permission without a persistent host grant.
+The flag `--enable-unsafe-extension-debugging` is used only for this test; it
+is not a product dependency or a change to the owner's Chrome. A physical
+toolbar click and installed Google Chrome remain unverified. A documented
+`_execute_action` shortcut registered, but Playwright-generated keys did not
+dispatch it in headless or headed mode.
 
 Release packaging must place the host at its final absolute path and run
 `node scripts/stage-chrome-native-host.mjs EXTENSION_ID HOST_PATH MANIFEST_PATH

@@ -58,10 +58,11 @@ established by the current fixture-only native or browser tests.
   [#36 managed semantic navigation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/36),
   [#37 guarded Chrome host registration](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/37),
   [#38 isolated Chrome native transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/38),
-  [#39 Chrome host/listener integration](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/39).
+  [#39 Chrome host/listener integration](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/39),
+  [#40 Chrome action-scoped grant](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/40).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/chrome-listener-integration`,
-  stacked on `codex/chrome-isolated-transport`.
+- The current implementation branch is `codex/chrome-grant-boundary`,
+  stacked on `codex/chrome-listener-integration`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -151,8 +152,11 @@ A temporary Playwright Chromium profile now connects a test-modified copy of
 the production extension to the signed Swift host and a signed test executable
 built from the production `DevChromeListener` source. Both peer identities are
 checked, with changed hashes rejected. The production service-worker source
-observes a semantic fixture field and revokes the grant on reload. Real toolbar
-invocation, complete AppKit integration and installed Google Chrome remain open.
+observes a semantic fixture field after Chromium's test-only extension action
+trigger grants `activeTab`, then revokes the grant on reload. A physical toolbar
+click, complete AppKit integration and installed Google Chrome remain open.
+The isolated handler also fails to observe a tab without a browser host grant;
+the successful read needs the action-triggered `activeTab` grant.
 Host/helper release identity, TCC attribution after installation and
 update, voice, CLM inference, privacy review, crash recovery across real workers,
 packaging/notarization and clean-Mac installation are unverified. Treat effects
