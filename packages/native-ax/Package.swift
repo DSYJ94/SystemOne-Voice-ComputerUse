@@ -7,10 +7,12 @@ let package = Package(
     products: [
         .library(name: "NativeAX", targets: ["NativeAX"]),
         .executable(name: "NativeAXValueCheck", targets: ["NativeAXValueCheck"]),
+        .executable(name: "NativeAXPressCheck", targets: ["NativeAXPressCheck"]),
     ],
     targets: [
         .target(name: "NativeAX"),
         .executableTarget(name: "NativeAXCheck", dependencies: ["NativeAX"]),
         .executableTarget(name: "NativeAXValueCheck", dependencies: ["NativeAX"]),
+        .executableTarget(name: "NativeAXPressCheck", dependencies: ["NativeAX"]),
     ]
 )

@@ -24,17 +24,17 @@ public enum NativeValueOutcome: Equatable {
     case unknown
 }
 
-private enum SetterResult {
+enum NativeDispatchResult {
     case notDispatched
     case returned
     case unknown
 }
 
-/// One-use local gate. Stop waits for a setter already inside `run` to return,
-/// then prevents any later setter. It cannot undo a completed setter or bound
+/// One-use local gate. Stop waits for an action already inside `run` to return,
+/// then prevents any later action. It cannot undo a completed action or bound
 /// an AX call that ignores its per-element messaging timeout. The UI must call
 /// Stop off the main thread when waiting for this fence.
-public final class NativeValueFence: @unchecked Sendable {
+public final class NativeActionFence: @unchecked Sendable {
     private let dispatchLock = NSLock()
     private let stateLock = NSLock()
     private var used = false
@@ -57,7 +57,7 @@ public final class NativeValueFence: @unchecked Sendable {
         return stopRequested
     }
 
-    fileprivate func run(_ operation: () -> SetterResult) -> SetterResult {
+    func run(_ operation: () -> NativeDispatchResult) -> NativeDispatchResult {
         dispatchLock.lock()
         defer { dispatchLock.unlock() }
         guard !used, !isStopped else { return .notDispatched }
@@ -65,6 +65,10 @@ public final class NativeValueFence: @unchecked Sendable {
         return operation()
     }
 }
+
+/// Kept for existing value-action callers; the same one-use barrier also
+/// protects other native semantic actions.
+public typealias NativeValueFence = NativeActionFence
 
 public enum NativeValuePreparation<Backend: AXValueActionBackend> {
     /// Current value matched before an action; the host still owns final

@@ -952,3 +952,24 @@ shortcut delivery, focus across spaces/displays and a live Stop request remain
 **unverified**. The menu/Dock fallback is retained. The
 [owner-run check](NATIVE_SHORTCUT_TEST.md) covers a synthetic focus target and
 Stop entry point; it cannot alone qualify post-dispatch cancellation.
+
+## Native semantic-press source and synthetic navigator, 28 September 2026
+
+`npm run test:native-ax` compiled the registry, value-action and new press-action
+sources and passed all three isolated Swift checks. The press check proves that
+Stop before send, a failed durable-boundary callback, a changed node before or
+during that callback, and replay send no `AXPress`. A synthetic press receipt
+remains `returnedUnverified`; the test observes the resulting Documents-like
+surface separately. A thrown reply after effect is unknown. `npm run
+build:native-mock` compiled and ad-hoc signed the expanded Fixture and Mock;
+`npm run build:native-dev` compiled and ad-hoc signed the panel with this press
+source. `npm run check` passed **215/215** TypeScript/Node tests, zero skipped.
+
+The updated Fixture and panel were **not launched**. No press operation is
+connected to host admission, the signed worker permit, the task journal or the
+controller yet. These checks do not establish a live Finder workflow, exact
+LOCATE/OPEN verification, native Stop under a press hang, or release signing.
+An initial Swift compile failed because this SDK does not expose `kAXLinkRole`;
+the new driver was limited to buttons and menu items. A later test compile
+failed because a synthetic test type was private at top level; its visibility
+was corrected. Only the final passing runs count as validation.

@@ -1,4 +1,22 @@
-# Native value-action source status
+# Native action source status
+
+The native package also has a **disconnected** semantic `AXPress` source for
+observed buttons and menu items. `prepareNativePress` retains the exact node,
+role, label and target identity; its one-use fence requires a durable boundary
+callback before dispatch. A returned `AXPress` is `returnedUnverified`, never
+task completion. Errors after entry are unknown, and a changed control at the
+boundary sends no action. A synthetic backend proves Stop, stale-control,
+boundary-failure, replay and uncertain-effect behavior, then separately
+re-observes a Documents-like surface. The development AppKit bundle compiles
+this source, but the controller does **not** yet admit or dispatch `AXPress`.
+The next integration must bind operation-specific policy and a signed permit,
+journal each press, and independently verify exact folder/file identity before
+claiming LOCATE or OPEN.
+
+The synthetic Fixture now exposes Documents and Downloads controls, a file with
+the same name under either folder, and separate select/open states. This makes
+path and locate-versus-open checks possible without touching personal files.
+The updated Fixture was compiled but not launched for this slice.
 
 `NativeAX/ValueAction.swift` is a restricted B11 driver for one semantic
 Accessibility `AXValue` replacement. It is compiled into the development app
