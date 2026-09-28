@@ -61,10 +61,11 @@ established by the current fixture-only native or browser tests.
   [#39 Chrome host/listener integration](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/39),
   [#40 Chrome action-scoped grant](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/40),
   [#41 isolated Chrome journaled fill](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/41),
-  [#42 Chrome Stop after dispatch](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/42).
+  [#42 Chrome Stop after dispatch](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/42),
+  [#43 production controller Chrome transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/43).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/chrome-stop-transport`,
-  stacked on `codex/chrome-journaled-fill`.
+- The current implementation branch is `codex/chrome-controller-transport`,
+  stacked on `codex/chrome-stop-transport`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -151,14 +152,15 @@ exact origin and configuration. Its install/verify/remove checks use only a
 temporary synthetic directory. Release bundling and a separate-account
 extension-to-host qualification still precede any owner-profile test.
 A temporary Playwright Chromium profile now connects a test-modified copy of
-the production extension to the signed Swift host and a signed test executable
-built from the production `DevChromeListener` source. Both peer identities are
-checked, with changed hashes rejected. The production service-worker source
-observes and fills a semantic fixture field after Chromium's test-only extension
-action trigger grants `activeTab`, then revokes the grant on reload. A second
-edit followed by Stop and a delayed matched receipt remains unresolved after
-the grant is revoked. A physical toolbar click, complete AppKit integration and
-installed Google Chrome remain open.
+the production extension to the signed Swift host, a signed test executable
+built from the production `DevChromeListener` source, and the production Node
+controller child over its private pipe. Both peer identities are checked, with
+changed hashes rejected. The production service-worker source observes and
+fills a semantic fixture field after Chromium's test-only extension action
+trigger grants `activeTab`, then revokes the grant on reload. A second edit
+followed by Stop and a delayed matched receipt remains unresolved after the
+grant is revoked; the persisted journal is checked after child exit. A physical
+toolbar click, complete AppKit integration and installed Google Chrome remain open.
 The isolated handler also fails to observe a tab without a browser host grant;
 the successful read needs the action-triggered `activeTab` grant.
 Host/helper release identity, TCC attribution after installation and

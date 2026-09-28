@@ -56,7 +56,9 @@ field fill. There is no general-purpose executor or release binary yet.
   peers, rejects an ambiguous field before dispatch, and verifies the durable
   journal and current DOM value. A second real edit with a delayed receipt
   confirms Stop revokes the grant while retaining an unresolved outcome after
-  the effect. No host is installed in the owner's Chrome,
+  the effect. The isolated check now runs the production controller child and
+  private pipe, rather than a test-only authority in its place. No host is
+  installed in the owner's Chrome,
   no current profile has been exercised, and fill remains unqualified in an
   installed Google Chrome extension. See [existing Chrome](docs/EXISTING_CHROME.md).
 - An ignored, movable development app bundles a checksum-verified official
