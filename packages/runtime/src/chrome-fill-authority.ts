@@ -4,6 +4,7 @@ import { bindEndpoint } from '../../protocol/src/session.ts';
 import { AttemptJournal } from './attempt-journal.ts';
 import { ChromeReadSession } from './chrome-read-session.ts';
 import { CommittedInputSession } from './committed-input.ts';
+import { bindCommandValue } from './command-value-span.ts';
 import { TaskAdmissionRegistry } from './task-authority.ts';
 import { buildActionCandidates, fromChromeObservation,
   selectBoundCandidate } from './action-candidates.ts';
@@ -111,7 +112,7 @@ export class ChromeFillAuthority {
         || command.mode !== 'command' || command.isFinal !== true
         || command.taskId !== request.requestId || command.taskEpoch !== 1
         || command.goalRevision !== 1
-        || command.text !== `Fill ${request.fieldLabel} in existing Chrome tab ${grant.url} with supplied text`
+        || command.text !== `Fill ${request.fieldLabel} in existing Chrome tab ${grant.url} with text: ${request.value}`
         || command.originSurface === null || typeof command.originSurface !== 'object'
         || Array.isArray(command.originSurface)
         || command.originSurface.appBundleId !== 'com.aurium.systemone.dev') {
@@ -122,6 +123,9 @@ export class ChromeFillAuthority {
       const input = new CommittedInputSession(endpoint, revision);
       const route = input.accept(endpoint, Buffer.from(JSON.stringify(command)));
       if (route.kind !== 'interpret_command') return 'error';
+      const fillParameter = bindCommandValue(route.input, 'fill-value',
+        `Fill ${request.fieldLabel} in existing Chrome tab ${grant.url} with text: `,
+        request.value);
       const observation = await this.#session.observeGrant(request.grantId);
       if (active.stopped) return 'stopped';
       if (!['Invoice Portal Fixture', 'Invoice search'].includes(observation.title)) {
@@ -150,8 +154,7 @@ export class ChromeFillAuthority {
         // the network. Record that potential effect instead of calling it a
         // purely local edit.
         approvedEffects: ['READ', 'LOCAL_EDIT', 'EXTERNAL_WRITE'],
-        parameters: [{ parameterRef: 'fill-value', sourceRef: request.requestId,
-          valueDigest: digest(request.value) }],
+        parameters: [fillParameter],
       });
       registry.claimForTask(admission);
       this.#journal.startTask(request.requestId, 1, 1);

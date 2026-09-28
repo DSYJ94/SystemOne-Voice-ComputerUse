@@ -63,10 +63,11 @@ established by the current fixture-only native or browser tests.
   [#41 isolated Chrome journaled fill](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/41),
   [#42 Chrome Stop after dispatch](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/42),
   [#43 production controller Chrome transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/43),
-  [#44 shared action candidates](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/44).
+  [#44 shared action candidates](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/44),
+  [#45 structured input byte provenance](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/45).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/shared-candidate-projection`,
-  stacked on `codex/chrome-controller-transport`.
+- The current implementation branch is `codex/input-byte-provenance`,
+  stacked on `codex/shared-candidate-projection`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -181,8 +182,10 @@ B02 and G1 remain open.
 The [shared candidate foundation](ACTION_CANDIDATES.md) now gates the current
 native field, managed field/link and Chrome field actions before their existing
 admission and permits. Provider projection excludes private target/parameter
-refs and requires disclosure review of candidate descriptions. B13 is not
-complete: byte-span provenance, broader legal actions and candidate-recall
+refs and requires disclosure review of candidate descriptions. The development
+panel's structured value commands now carry exact UTF-8 span provenance checked
+at task admission. B13 is not complete: free-form utterance/selection binding,
+broader legal actions and candidate-recall
 benchmarks remain.
 The development controller now acknowledges native and existing-Chrome Stop
 from their worker fences without awaiting delayed action receipts. Managed

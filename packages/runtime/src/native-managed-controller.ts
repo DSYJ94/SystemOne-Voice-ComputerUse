@@ -8,6 +8,7 @@ import { ManagedLaunchFailure, ManagedObservationSession } from '../../browser/s
 import { ContractError, digest, parseJSON } from '../../protocol/src/json.ts';
 import { bindEndpoint } from '../../protocol/src/session.ts';
 import { CommittedInputSession } from './committed-input.ts';
+import { bindCommandValue } from './command-value-span.ts';
 import { AttemptJournal } from './attempt-journal.ts';
 import { TaskAdmissionRegistry } from './task-authority.ts';
 import { NativeFillAuthority } from './native-fill-authority.ts';
@@ -398,7 +399,7 @@ export class NativeManagedController {
         || command.mode !== 'command' || command.isFinal !== true
         || command.taskId !== request.requestId || command.taskEpoch !== 1
         || command.goalRevision !== 1
-        || command.text !== `Fill ${request.fieldLabel} on ${request.url} with supplied text`
+        || command.text !== `Fill ${request.fieldLabel} on ${request.url} with text: ${request.value}`
         || command.originSurface === undefined || !isRecord(command.originSurface)
         || command.originSurface.appBundleId !== 'com.aurium.systemone.dev') {
         throw new ContractError('native command binding changed');
@@ -408,6 +409,8 @@ export class NativeManagedController {
       const input = new CommittedInputSession(endpoint, revision);
       const route = input.accept(endpoint, Buffer.from(JSON.stringify(command)));
       if (route.kind !== 'interpret_command') throw new ContractError('not a command');
+      const fillParameter = bindCommandValue(route.input, 'fill-value',
+        `Fill ${request.fieldLabel} on ${request.url} with text: `, request.value);
       const origin = approvedOrigin(request.url);
       const session = await ManagedObservationSession.launch(request.url, {
         allowedOrigins: [origin], headless: this.#headless,
@@ -439,8 +442,7 @@ export class NativeManagedController {
         // the requested DOM operation is only a field fill.
         policyRevision: 'managed-policy-v1',
         approvedEffects: ['READ', 'LOCAL_EDIT', 'EXTERNAL_WRITE'],
-        parameters: [{ parameterRef: 'fill-value',
-          sourceRef: request.requestId, valueDigest: digest(request.value) }],
+        parameters: [fillParameter],
       });
       if (active.cancelled) return;
       const task = new ManagedFillTask(this.#journal, registry, admission,
@@ -498,6 +500,9 @@ export class NativeManagedController {
       const input = new CommittedInputSession(endpoint, revision);
       const route = input.accept(endpoint, Buffer.from(JSON.stringify(command)));
       if (route.kind !== 'interpret_command') throw new ContractError('not a command');
+      const destinationParameter = bindCommandValue(route.input, 'destination',
+        `Navigate via ${request.linkLabel} on ${request.url} to `,
+        request.destinationUrl);
       const session = await ManagedObservationSession.launch(request.url, {
         allowedOrigins: [origin], headless: this.#headless,
       });
@@ -527,8 +532,7 @@ export class NativeManagedController {
         outcomeKind: 'NAVIGATE', scopeRef: session.scopeRef,
         completionVerifierRef: 'managed-url-v1',
         policyRevision: 'managed-policy-v1', approvedEffects: ['READ', 'NAVIGATE'],
-        parameters: [{ parameterRef: 'destination',
-          sourceRef: request.requestId, valueDigest: digest(request.destinationUrl) }],
+        parameters: [destinationParameter],
       });
       if (active.cancelled) return;
       const task = new ManagedNavigateTask(this.#journal, registry, admission,

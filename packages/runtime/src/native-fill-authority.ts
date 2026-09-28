@@ -3,6 +3,7 @@ import { ContractError, digest } from '../../protocol/src/json.ts';
 import { bindEndpoint } from '../../protocol/src/session.ts';
 import { AttemptJournal } from './attempt-journal.ts';
 import { CommittedInputSession } from './committed-input.ts';
+import { bindCommandValue } from './command-value-span.ts';
 import { TaskAdmissionRegistry } from './task-authority.ts';
 import { buildActionCandidates, fromNativeObservation,
   selectBoundCandidate } from './action-candidates.ts';
@@ -189,7 +190,7 @@ export class NativeFillAuthority {
         || command.mode !== 'command' || command.isFinal !== true
         || command.taskId !== request.requestId || command.taskEpoch !== 1
         || command.goalRevision !== 1
-        || command.text !== `Fill ${request.fieldLabel} in ${request.bundleId} with supplied text`
+        || command.text !== `Fill ${request.fieldLabel} in ${request.bundleId} with text: ${request.value}`
         || command.originSurface === undefined
         || command.originSurface === null
         || typeof command.originSurface !== 'object'
@@ -202,6 +203,9 @@ export class NativeFillAuthority {
       const input = new CommittedInputSession(endpoint, revision);
       const route = input.accept(endpoint, Buffer.from(JSON.stringify(command)));
       if (route.kind !== 'interpret_command') return 'error';
+      const fillParameter = bindCommandValue(route.input, 'fill-value',
+        `Fill ${request.fieldLabel} in ${request.bundleId} with text: `,
+        request.value);
       active.workerTouched = true;
       const observation = await this.#worker.observe({
         taskId: request.requestId, bundleId: request.bundleId,
@@ -230,8 +234,7 @@ export class NativeFillAuthority {
         completionVerifierRef: 'native-ax-value-v1',
         policyRevision: 'native-ax-policy-v1',
         approvedEffects: ['READ', 'LOCAL_EDIT'],
-        parameters: [{ parameterRef: 'fill-value',
-          sourceRef: request.requestId, valueDigest: digest(request.value) }],
+        parameters: [fillParameter],
       });
       registry.claimForTask(admission);
       this.#journal.startTask(request.requestId, 1, 1);

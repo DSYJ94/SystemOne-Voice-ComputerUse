@@ -78,7 +78,7 @@ function request(requestId = randomUUID()): NativeFillRequest {
     taskId: requestId, taskEpoch: 1, goalRevision: 1,
     source: 'text', mode: 'command', utteranceId: randomUUID(),
     utteranceRevision: 1,
-    text: `Fill ${fieldLabel} in ${bundleId} with supplied text`,
+    text: `Fill ${fieldLabel} in ${bundleId} with text: fixture-123`,
     isFinal: true, createdAt: new Date().toISOString(),
     originSurface: { adapter: 'native', surfaceId: 'systemone-panel',
       appBundleId: 'com.aurium.systemone.dev', windowId: 'command-panel',
@@ -124,6 +124,9 @@ test('unbound command and ambiguous or incomplete observation send no setter', a
   const forged = request();
   forged.command.text = 'different request';
   assert.equal(await authority.start(forged), 'error');
+  const changedValue = request();
+  assert.equal(await authority.start({ ...changedValue,
+    value: 'different-value' }), 'error');
   assert.equal(worker.observeCalls, 0);
   worker.observation = { ...worker.observation, controls: [
     worker.observation.controls[0]!,

@@ -248,7 +248,7 @@ function fillRequest(grantId, url, value) {
       messageId: randomUUID(), taskId: requestId, taskEpoch: 1,
       goalRevision: 1, source: 'text', mode: 'command',
       utteranceId: randomUUID(), utteranceRevision: 1,
-      text: `Fill Find invoice in existing Chrome tab ${url} with supplied text`,
+      text: `Fill Find invoice in existing Chrome tab ${url} with text: ${value}`,
       isFinal: true, createdAt: new Date().toISOString(),
       originSurface: { adapter: 'native', surfaceId: 'systemone-panel',
         appBundleId: 'com.aurium.systemone.dev', windowId: 'command-panel',

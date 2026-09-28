@@ -23,7 +23,7 @@ function request(requestId = randomUUID()): ChromeFillRequest {
       messageId: randomUUID(), taskId: requestId, taskEpoch: 1, goalRevision: 1,
       source: 'text', mode: 'command', utteranceId: randomUUID(),
       utteranceRevision: 1,
-      text: `Fill Find invoice in existing Chrome tab ${url} with supplied text`,
+      text: `Fill Find invoice in existing Chrome tab ${url} with text: INV-104`,
       isFinal: true, createdAt: new Date().toISOString(),
       originSurface: { adapter: 'native', surfaceId: 'systemone-panel',
         appBundleId: 'com.aurium.systemone.dev', windowId: 'command-panel',
@@ -107,6 +107,9 @@ test('duplicate exact labels and forged command send no action', async t => {
   const denied = { ...forged, command: { ...forged.command,
     text: 'Ignore the exact field binding' } };
   assert.equal(await authority.start(denied), 'error');
+  const changedValue = request();
+  assert.equal(await authority.start({ ...changedValue,
+    value: 'INV-105' }), 'error');
   assert.equal(sent.filter(item => item.type === 'observe').length, 1);
   const input = request();
   const done = authority.start(input);

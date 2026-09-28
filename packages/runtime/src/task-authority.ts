@@ -1,4 +1,4 @@
-import { ContractError } from '../../protocol/src/json.ts';
+import { ContractError, digest } from '../../protocol/src/json.ts';
 import { receive } from '../../protocol/src/session.ts';
 import type { Message } from '../../protocol/src/contract.ts';
 import type { Endpoint, TaskRevision } from '../../protocol/src/session.ts';
@@ -28,6 +28,9 @@ export interface TaskParameter {
   readonly parameterRef: string;
   readonly sourceRef: string;
   readonly valueDigest: string;
+  readonly sourceStart?: number;
+  readonly sourceEnd?: number;
+  readonly offsetUnit?: 'utf8_bytes';
 }
 
 export interface TaskAdmissionDraft {
@@ -86,6 +89,28 @@ export class TaskAdmissionRegistry {
       assertId(parameter.parameterRef, 'parameter reference');
       assertId(parameter.sourceRef, 'parameter source');
       if (!DIGEST.test(parameter.valueDigest)) throw new ContractError('invalid parameter digest');
+      if (parameter.sourceStart !== undefined || parameter.sourceEnd !== undefined
+        || parameter.offsetUnit !== undefined) {
+        if (parameter.offsetUnit !== 'utf8_bytes'
+          || !Number.isSafeInteger(parameter.sourceStart)
+          || !Number.isSafeInteger(parameter.sourceEnd)
+          || parameter.sourceStart! < 0
+          || parameter.sourceEnd! < parameter.sourceStart!
+          || parameter.sourceRef !== `utterance.${input.utteranceId}.r${input.utteranceRevision}`) {
+          throw new ContractError('invalid final command value span');
+        }
+        const bytes = Buffer.from(input.text, 'utf8');
+        if (parameter.sourceEnd! > bytes.length) {
+          throw new ContractError('command value span exceeds input');
+        }
+        let selected: string;
+        try { selected = new TextDecoder('utf-8', { fatal: true }).decode(
+          bytes.subarray(parameter.sourceStart, parameter.sourceEnd)); }
+        catch { throw new ContractError('command value span splits UTF-8 character'); }
+        if (digest(selected) !== parameter.valueDigest) {
+          throw new ContractError('command value span digest mismatch');
+        }
+      }
       return Object.freeze({ ...parameter });
     });
     if (new Set(parameters.map(x => x.parameterRef)).size !== parameters.length) {
