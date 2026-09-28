@@ -51,10 +51,11 @@ established by the current fixture-only native or browser tests.
   [#29 movable bundled development runtime](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/29),
   [#30 fixture-only CLM reference probe](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/30),
   [#31 bounded development Stop acknowledgement](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/31),
-  [#32 bundled controller running-code identity](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/32).
+  [#32 bundled controller running-code identity](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/32),
+  [#33 native worker digest binding](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/33).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/bundled-controller-identity`,
-  stacked on `codex/early-stop-ack`.
+- The current implementation branch is `codex/native-worker-digest-binding`,
+  stacked on `codex/bundled-controller-identity`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -154,6 +155,10 @@ running code identity against a signed-bundle CDHash pin before processing
 controller output or issuing commands. A changed-hash app copy was rejected.
 External-source development mode is still unauthenticated, and release peer
 identity plus durable worker-side permit consumption remain open.
+The native AppKit worker now recomputes candidate/action digests from its
+retained observation and supplied value before preparing the AX setter. A
+Swift/TypeScript vector check passes; no live AX action was re-run for this
+change. Digest agreement is not authorization or a durable worker permit.
 
 ## Next implementation order
 

@@ -37,6 +37,7 @@ export interface NativeFieldWorker {
     readonly candidateId: string; readonly value: string;
     readonly executionId: string; readonly permitRef: string;
     readonly actionDigest: string; readonly candidateSetDigest: string;
+    readonly policyRevision: string;
     readonly signal: AbortSignal }): Promise<
       { readonly kind: 'ready'; readonly preparationRef: string }
       | { readonly kind: 'matched_at_preflight' }
@@ -249,6 +250,7 @@ export class NativeFillAuthority {
         executionId: permit.executionId, permitRef: permit.permitRef,
         actionDigest: permit.actionDigest,
         candidateSetDigest: permit.candidateSetDigest,
+        policyRevision: permit.policyRevision,
         signal: active.abort.signal,
       });
       if (active.stopped) return 'stopped';

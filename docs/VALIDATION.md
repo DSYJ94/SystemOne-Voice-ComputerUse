@@ -689,3 +689,19 @@ Final `npm run check` passed **199/199 tests**. `npm run test:mac-peer`
 accepted the expected signed peer and rejected wrong signing identifier and
 CDHash; it controlled no app or browser. Swift linked with the same
 command-line-tools missing search-path warnings as before.
+
+## Native worker digest binding, 28 September 2026
+
+The AppKit AX worker now retains the exact projected control list it sent to
+the host and recomputes the candidate-set and action digests, including the
+supplied value digest and `native-ax-policy-v1`, before preparation.
+`npm run test:native-permit-digest` compiled the Swift worker-digest routine
+and compared it with TypeScript protocol-2 digests. The authentic vector
+matched; changed candidate-set digest, action digest, policy revision and
+value were rejected. `zsh scripts/build-native-dev.sh` compiled the worker.
+This was synthetic, with no Accessibility call or changed system permission.
+Final `npm run check` passed **199/199 tests**, zero failed or skipped.
+`zsh scripts/build-bundled-dev.sh` rebuilt the ad-hoc bundle and
+`node scripts/check-bundled-dev.mjs ABSOLUTE_APP_PATH` passed its AppKit
+controller-identity and isolated Chromium fixture checks. The smoke check
+does not exercise a live AX setter or the new worker digest guard.

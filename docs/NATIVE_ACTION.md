@@ -50,8 +50,10 @@ The development controller connects this host class to the AppKit AX worker
 through inherited private pipes. One controller owns both native and managed
 task slots and blocks either surface after native recovery becomes necessary.
 This pipe is not an authenticated release boundary. The AppKit worker checks
-one-use preparation, task, execution and permit references, but it does not
-cryptographically verify the host's candidate/action digests or signing
-identity. No recovery-clearance API exists yet, so a stopped boundary-crossed
+one-use preparation, task, execution and permit references. It now recomputes
+the protocol-2 candidate-set and action digests from its retained observation,
+presented label, supplied value and fixed native policy revision before
+preparing a setter. A digest consistency check is not a host signature or a
+durable worker-side execution permit. No recovery-clearance API exists yet, so a stopped boundary-crossed
 task intentionally stays blocked. Follow the [development test](NATIVE_COMPUTER_USE_TEST.md)
 for the optional live synthetic fixture check.
