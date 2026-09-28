@@ -156,3 +156,17 @@ extension SystemAXBackend: AXValueActionBackend {
         guard result == .success else { throw SystemAXError.unavailable(result) }
     }
 }
+
+extension SystemAXBackend: AXPressActionBackend {
+    public func press(_ handle: AXUIElement) throws {
+        let detail = try describe(handle)
+        guard detail.enabled, !detail.secure,
+              [kAXButtonRole as String, kAXMenuItemRole as String]
+                .contains(detail.role),
+              detail.capabilities.contains("press") else {
+            throw SystemAXError.invalidData
+        }
+        let result = AXUIElementPerformAction(handle, kAXPressAction as CFString)
+        guard result == .success else { throw SystemAXError.unavailable(result) }
+    }
+}

@@ -27,6 +27,7 @@ if [[ ! -x "$binary" ||
       "$repository_root/packages/native-ax/Sources/NativeAX/Observation.swift" -nt "$binary" ||
       "$repository_root/packages/native-ax/Sources/NativeAX/SystemAXBackend.swift" -nt "$binary" ||
       "$repository_root/packages/native-ax/Sources/NativeAX/ValueAction.swift" -nt "$binary" ||
+      "$repository_root/packages/native-ax/Sources/NativeAX/PressAction.swift" -nt "$binary" ||
       "$script_dir/build-native-dev.sh" -nt "$binary" ]]; then
   if [[ -f "$app_dir/Contents/Info.plist" ]] &&
      /usr/libexec/PlistBuddy -c 'Print :SystemOneChromeExtensionId' \
