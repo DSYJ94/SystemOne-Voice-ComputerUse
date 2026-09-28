@@ -69,7 +69,8 @@ established by the current fixture-only native or browser tests.
   [#47 development global shortcuts](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/47),
   [#48 native semantic press source](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/48),
   [#49 fixed native Documents controller action](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/49),
-  [#50 synthetic native file LOCATE task](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/50).
+  [#50 synthetic native file LOCATE task](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/50),
+  [#51 distinct synthetic native OPEN task](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/51).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current implementation branch is `codex/native-fixture-open`,
   stacked on `codex/native-fixture-locate`.
