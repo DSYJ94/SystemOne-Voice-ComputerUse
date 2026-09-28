@@ -51,10 +51,12 @@ field fill. There is no general-purpose executor or release binary yet.
   native-messaging host and listener now pass an isolated Chromium integration
   check with mutual signed-peer authentication and a semantic read through a
   temporary copy of the production extension. Chromium's test-only action
-  trigger exercises `activeTab` without a persistent host grant. No host is
-  installed in the owner's Chrome, no current profile has been exercised,
-  and fill remains unqualified in an
-  installed extension. See [existing Chrome](docs/EXISTING_CHROME.md).
+  trigger exercises `activeTab` without a persistent host grant. The same
+  disposable-browser check now fills one synthetic field through the signed
+  peers, rejects an ambiguous field before dispatch, and verifies the durable
+  journal and current DOM value. No host is installed in the owner's Chrome,
+  no current profile has been exercised, and fill remains unqualified in an
+  installed Google Chrome extension. See [existing Chrome](docs/EXISTING_CHROME.md).
 - An ignored, movable development app bundles a checksum-verified official
   Apple Silicon Node runtime, locked production packages and Playwright
   Chromium. The AppKit parent checks the launched signed Node child's pinned

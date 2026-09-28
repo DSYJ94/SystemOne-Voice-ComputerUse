@@ -91,10 +91,15 @@ executable uses the production `DevChromeListener` source. An actual
 and listener code identities checked in opposite directions, before a synthetic
 Node controller replies. The production service-worker source then completes a
 `hello`/`observe` exchange, reports the fixture's semantic `Find invoice` field
-without its synthetic input value, and revokes the grant after a reload.
+without its synthetic input value, and revokes the grant after a reload. The
+same signed path rejects a second editable `Find invoice` field without an
+attempt, then sends one host-admitted, journaled fill to the retained field.
+It verifies the current DOM value and durable completed task, rejects replay
+of the request, and checks that no search form was submitted. This is a DOM
+field edit in a disposable Chromium fixture, not proof of server persistence.
 Replacing either peer CDHash causes a browser-visible
 disconnect without another probe delivered. The check does not exercise a real
-physical toolbar click, run the complete AppKit app, perform a fill, or test
+physical toolbar click, run the complete AppKit app, or test
 Google Chrome/current-profile behavior. Chromium's test lookup under its
 temporary user-data directory was observed locally; it must not be assumed to
 describe Google Chrome's installed lookup on other machines.
