@@ -18,6 +18,13 @@ descriptions; actual element handles stay private in the browser session.
 `prepareFill` rechecks the retained node's identity, capability, URL and
 navigation revision without modifying the page. Any label or context may still
 be private and must pass provider disclosure policy before model egress.
+Plain same-origin links now expose an exact approved destination URL; external,
+download and new-tab links have no navigable destination. `prepareNavigate`
+rechecks the retained anchor, label, context, href and document revision.
+Its send step goes directly to the exact href with a GET rather than firing
+page click handlers. A subsequent observation must show that URL on a newer
+document revision before an admitted `NAVIGATE` task can complete. This is not
+an `OPEN` predicate for a named object, and GET may still have server effects.
 
 `ManagedFillTask` binds one final-command task admission, exact browser-session
 scope and source-byte digest to a one-use in-process permit and durable journal
@@ -36,12 +43,16 @@ structured final command and explicit field/value; the controller verifies the
 binding and admits it before the browser action. A successful fill leaves the
 isolated browser open for inspection until Stop. This is a source-level
 development bridge, not a bundled or OS-authenticated release worker.
+The same panel now has **Navigate link** for an exact link label and explicit
+same-origin expected URL. The controller requires a complete observation,
+one matching link, a `NAVIGATE` admission and one journaled permit. It keeps
+the browser open after exact-URL verification; Stop closes it. See the
+[synthetic test](MANAGED_NAVIGATION_TEST.md). This is still one action per task.
 Controller Stop now reports a closed-context fence without waiting for a late
 workflow result. If browser launch is still in flight, Stop reports uncertainty
 and blocks further work until that launch settles; it does not claim closure of
 an unseen process.
-It cannot press, navigate by task action,
-upload, download or verify a broader goal. Automatic page code can still run on navigation, and
+It cannot press, upload, download or verify a broader goal. Automatic page code can still run on navigation, and
 the network policy does not establish a production privacy or security boundary
 for arbitrary sites. Before release, add a supervised worker, authenticated
 controller authority, exact tab/frame/document registries, fixed semantic

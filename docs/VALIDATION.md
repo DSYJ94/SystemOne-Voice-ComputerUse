@@ -745,3 +745,24 @@ action request; no product action failed. `zsh scripts/build-bundled-dev.sh
 running-code/key acceptance and isolated Chromium smoke. This is not a live
 native setter, Developer ID/notarization, clean-Mac or existing-profile Chrome
 test.
+
+## Managed semantic navigation, 28 September 2026
+
+`node --test packages/browser/test/managed-navigate-task.test.ts
+packages/runtime/test/managed-navigate-controller.test.ts
+packages/runtime/test/native-managed-controller.test.ts` passed **7/7** focused
+tests. Against the loopback portal, one admitted observed link navigated to the
+explicit expected URL and re-observed it. A wrong destination and stale
+observation sent no navigation. Stop during preflight prevented send; Stop after
+the journal boundary left a late result uncertain rather than completed. The
+controller process test kept `NAVIGATE` distinct from opening an invoice detail.
+An external link is visible for inspection but has no executable destination.
+
+`npm run check` passed **204/204 tests**, zero skipped. `npm run build:native-dev`
+compiled the revised panel. The ad-hoc bundled app rebuilt using the pinned
+Node 26.5.0 and Chromium assets, and `node scripts/check-bundled-dev.mjs
+ABSOLUTE_APP_PATH` passed its identity/key and isolated-browser smoke. The
+bundled smoke starts the controller but does not run its new navigation action;
+that action was tested through the source controller and managed Chromium.
+No real site, account, existing Chrome profile, CLM model or live native AX
+action was used.

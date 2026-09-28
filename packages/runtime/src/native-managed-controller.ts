@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ManagedFillTask } from '../../browser/src/managed-fill-task.ts';
+import { ManagedNavigateTask } from '../../browser/src/managed-navigate-task.ts';
 import { ManagedLaunchFailure, ManagedObservationSession } from '../../browser/src/managed-observation.ts';
 import { ContractError, digest, parseJSON } from '../../protocol/src/json.ts';
 import { bindEndpoint } from '../../protocol/src/session.ts';
@@ -25,6 +26,15 @@ interface StartFill {
   readonly url: string;
   readonly fieldLabel: string;
   readonly value: string;
+  readonly command: Record<string, JSONValue>;
+}
+
+interface StartNavigate {
+  readonly type: 'start_navigate';
+  readonly requestId: string;
+  readonly url: string;
+  readonly linkLabel: string;
+  readonly destinationUrl: string;
   readonly command: Record<string, JSONValue>;
 }
 
@@ -53,12 +63,12 @@ interface StartChromeFill {
   readonly command: Record<string, JSONValue>;
 }
 
-type NativeRequest = StartFill | StartNativeFill | StartChromeFill | Stop;
+type NativeRequest = StartFill | StartNavigate | StartNativeFill | StartChromeFill | Stop;
 type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
   | 'verified_dom_fill' | 'unsupported' | 'uncertain' | 'stopping'
   | 'stopped' | 'busy' | 'error' | 'blocked_recovery'
   | 'observing_native' | 'verified_native_fill' | 'already_matched'
-  | 'observing_chrome' | 'verified_chrome_dom_fill';
+  | 'observing_chrome' | 'verified_chrome_dom_fill' | 'verified_navigation';
 
 function isRecord(value: JSONValue): value is Record<string, JSONValue> {
   return value !== null && !Array.isArray(value) && typeof value === 'object';
@@ -111,6 +121,21 @@ function requestFromLine(line: Uint8Array): NativeRequest {
       connectionId: value.connectionId, grantId: value.grantId,
       fieldLabel: value.fieldLabel, value: value.value, command: value.command };
   }
+  if (value.type === 'start_navigate') {
+    if (Object.keys(value).sort().join(',')
+        !== 'command,destinationUrl,linkLabel,requestId,type,url'
+      || typeof value.url !== 'string' || value.url.length > 2_048
+      || typeof value.destinationUrl !== 'string'
+      || value.destinationUrl.length > 2_048
+      || typeof value.linkLabel !== 'string' || value.linkLabel.length < 1
+      || value.linkLabel.length > 160 || !value.linkLabel.isWellFormed()
+      || value.command === undefined || !isRecord(value.command)) {
+      throw new ContractError('invalid managed navigation request');
+    }
+    return { type: 'start_navigate', requestId: value.requestId as string,
+      url: value.url, destinationUrl: value.destinationUrl,
+      linkLabel: value.linkLabel, command: value.command };
+  }
   if (value.type !== 'start_fill'
     || Object.keys(value).sort().join(',') !== 'command,fieldLabel,requestId,type,url,value'
     || typeof value.url !== 'string' || value.url.length > 2_048
@@ -143,7 +168,7 @@ interface ActiveTask {
   keepOpen: boolean;
   launchFenceUnconfirmed: boolean;
   session?: ManagedObservationSession;
-  task?: ManagedFillTask;
+  task?: ManagedFillTask | ManagedNavigateTask;
   browserFenced: boolean;
   done: Promise<void>;
 }
@@ -267,7 +292,8 @@ export class NativeManagedController {
       browserFenced: false, done: Promise.resolve() };
     this.#active = active;
     this.#send(request.requestId, 'starting');
-    active.done = this.#run(request, active).finally(() => {
+    active.done = (request.type === 'start_navigate'
+      ? this.#runNavigate(request, active) : this.#run(request, active)).finally(() => {
       if (this.#active === active && !active.keepOpen && !active.cancelled) {
         this.#active = undefined;
         this.#send(request.requestId,
@@ -426,6 +452,91 @@ export class NativeManagedController {
       await active.task?.stop().catch(() => {});
     } finally {
       if (!active.keepOpen || active.cancelled) {
+        if (active.task && this.#journal.getTaskState(request.requestId) === 'active') {
+          const fence = await active.task.stop().catch(() => undefined);
+          if (!fence?.browserFenced) this.#workerFenceFailed = true;
+        }
+        try {
+          await active.session?.close();
+          active.browserFenced = !active.launchFenceUnconfirmed;
+        } catch { this.#workerFenceFailed = true; }
+      }
+    }
+  }
+
+  async #runNavigate(request: StartNavigate, active: ActiveTask): Promise<void> {
+    try {
+      const command = request.command;
+      if (command.type !== 'command' || command.source !== 'text'
+        || command.mode !== 'command' || command.isFinal !== true
+        || command.taskId !== request.requestId || command.taskEpoch !== 1
+        || command.goalRevision !== 1
+        || command.text !== `Navigate via ${request.linkLabel} on ${request.url} to ${request.destinationUrl}`
+        || command.originSurface === undefined || !isRecord(command.originSurface)
+        || command.originSurface.appBundleId !== 'com.aurium.systemone.dev') {
+        throw new ContractError('native navigation command binding changed');
+      }
+      const origin = approvedOrigin(request.url);
+      const destinationOrigin = approvedOrigin(request.destinationUrl);
+      const destination = new URL(request.destinationUrl);
+      if (destinationOrigin !== origin || destination.href !== request.destinationUrl
+        || destination.hash) throw new ContractError('navigation destination outside exact scope');
+      const revision = { taskId: request.requestId, taskEpoch: 1, goalRevision: 1 };
+      const endpoint = bindEndpoint(['command']);
+      const input = new CommittedInputSession(endpoint, revision);
+      const route = input.accept(endpoint, Buffer.from(JSON.stringify(command)));
+      if (route.kind !== 'interpret_command') throw new ContractError('not a command');
+      const session = await ManagedObservationSession.launch(request.url, {
+        allowedOrigins: [origin], headless: this.#headless,
+      });
+      active.session = session;
+      if (active.cancelled) return;
+      this.#send(request.requestId, 'observing');
+      const observed = await session.observe();
+      if (active.cancelled) return;
+      const matching = observed.controls.filter(control => control.enabled
+        && control.label === request.linkLabel
+        && control.destinationUrl === request.destinationUrl
+        && control.destinationUrl !== observed.url);
+      if (matching.length !== 1 || !observed.coverage.complete) {
+        this.#send(request.requestId, 'unsupported');
+        return;
+      }
+      const registry = new TaskAdmissionRegistry(revision, input);
+      const admission = registry.admit(route.input, {
+        admissionId: randomUUID(), goal: route.input.text,
+        outcomeKind: 'NAVIGATE', scopeRef: session.scopeRef,
+        completionVerifierRef: 'managed-url-v1',
+        policyRevision: 'managed-policy-v1', approvedEffects: ['READ', 'NAVIGATE'],
+        parameters: [{ parameterRef: 'destination',
+          sourceRef: request.requestId, valueDigest: digest(request.destinationUrl) }],
+      });
+      if (active.cancelled) return;
+      const task = new ManagedNavigateTask(this.#journal, registry, admission,
+        session, observed, matching[0]!.id, request.destinationUrl, 'destination');
+      active.task = task;
+      if (active.cancelled) { await task.stop(); return; }
+      this.#send(request.requestId, 'dispatching');
+      const attempt = await task.execute(task.issuePermit());
+      if (active.cancelled) return;
+      if (attempt.outcome?.verification === 'matched'
+        && this.#journal.getTaskState(request.requestId) === 'completed') {
+        active.keepOpen = true;
+        this.#send(request.requestId, 'verified_navigation');
+      } else { this.#send(request.requestId, 'uncertain'); }
+    } catch (error) {
+      if (error instanceof ManagedLaunchFailure) {
+        active.launchFenceUnconfirmed = true;
+        this.#workerFenceFailed = true;
+      }
+      if (!active.cancelled) this.#send(request.requestId, 'error');
+      await active.task?.stop().catch(() => {});
+    } finally {
+      if (!active.keepOpen || active.cancelled) {
+        if (active.task && this.#journal.getTaskState(request.requestId) === 'active') {
+          const fence = await active.task.stop().catch(() => undefined);
+          if (!fence?.browserFenced) this.#workerFenceFailed = true;
+        }
         try {
           await active.session?.close();
           active.browserFenced = !active.launchFenceUnconfirmed;

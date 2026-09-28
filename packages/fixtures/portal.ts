@@ -65,7 +65,8 @@ export async function startPortalFixture(options: { downloadDelayMs?: number } =
       respond(response, 200, 'text/html; charset=utf-8', page('Invoice Portal Fixture',
         `<main data-page="home"><h1>Invoice Portal Fixture</h1>
          <p class="note">Synthetic documents only. Search by title, account or invoice ID.</p>
-         ${searchForm('')}<p><a href="/invoices">Browse all invoices</a></p></main>`), request.method);
+         ${searchForm('')}<p><a href="/invoices">Browse all invoices</a></p>
+         <p><a href="https://outside.invalid/path">External sample</a></p></main>`), request.method);
     } else if (path === '/invoices') {
       const q = url.searchParams.get('q') ?? '';
       if (q.length > 100) {
