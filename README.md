@@ -75,7 +75,8 @@ field fill. There is no general-purpose executor or release binary yet.
   durable-boundary callback before setting it. Synthetic interference and Stop
   checks pass. The development panel now routes one explicit field fill through
   the persistent controller, journal and private AppKit worker pipe. This path
-  has passed synthetic process tests, but a live AX run and release peer/permit
+  recomputes candidate/action digests in the AppKit worker and has passed
+  synthetic process and cross-language vector tests. A live AX run and release peer/permit
   authentication remain unverified. See [native action status](docs/NATIVE_ACTION.md).
 - A separate native host task class binds a final text command, complete
   candidate set, supplied-value digest and one journaled attempt before calling

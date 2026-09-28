@@ -12,6 +12,7 @@ final class DevNativeFieldWorker: @unchecked Sendable {
         let backend: SystemAXBackend
         let registry: NativeAXObservationRegistry<SystemAXBackend>
         let observation: AXObservation
+        let projectedControls: [[String: Any]]
         let fence: NativeValueFence
         var preparedOnce = false
         var prepared: PreparedNativeValue<SystemAXBackend>?
@@ -23,12 +24,14 @@ final class DevNativeFieldWorker: @unchecked Sendable {
 
         init(taskID: String, target: AXTarget, backend: SystemAXBackend,
              registry: NativeAXObservationRegistry<SystemAXBackend>,
-             observation: AXObservation, fence: NativeValueFence) {
+             observation: AXObservation, projectedControls: [[String: Any]],
+             fence: NativeValueFence) {
             self.taskID = taskID
             self.target = target
             self.backend = backend
             self.registry = registry
             self.observation = observation
+            self.projectedControls = projectedControls
             self.fence = fence
         }
     }
@@ -118,9 +121,6 @@ final class DevNativeFieldWorker: @unchecked Sendable {
             let observation = try registry.observe(target)
             if isStopped(taskID) { return [:] }
             let fence = NativeValueFence()
-            state = State(taskID: taskID, target: target, backend: backend,
-                registry: registry, observation: observation, fence: fence)
-            setFence(taskID, fence)
             let controls: [[String: Any]] = observation.nodes.compactMap { node in
                 let detail = node.description
                 guard [kAXTextFieldRole as String, kAXTextAreaRole as String]
@@ -130,6 +130,10 @@ final class DevNativeFieldWorker: @unchecked Sendable {
                     "enabled": detail.enabled, "secure": detail.secure,
                     "canSetValue": detail.capabilities.contains("setValue")]
             }
+            state = State(taskID: taskID, target: target, backend: backend,
+                registry: registry, observation: observation,
+                projectedControls: controls, fence: fence)
+            setFence(taskID, fence)
             return ["observationId": observation.id,
                 "scopeRef": observation.scopeRef, "bundleId": bundleID,
                 "complete": observation.complete, "controls": controls]
@@ -148,9 +152,23 @@ final class DevNativeFieldWorker: @unchecked Sendable {
               let permitRef = message["permitRef"] as? String,
               let actionDigest = message["actionDigest"] as? String,
               let candidateSetDigest = message["candidateSetDigest"] as? String,
+              let policyRevision = message["policyRevision"] as? String,
+              policyRevision == NativeWorkerPermitDigest.policyRevision,
               Self.validID(executionID), Self.validID(permitRef),
               Self.validDigest(actionDigest), Self.validDigest(candidateSetDigest),
               !node.description.secure else { return ["kind": "unsupported"] }
+        guard let presented = state.projectedControls.first(where: {
+                  $0["id"] as? String == candidateID }),
+              let label = presented["label"] as? String,
+              NativeWorkerPermitDigest.matches(
+                  controls: state.projectedControls,
+                  taskID: taskID, scopeRef: state.observation.scopeRef,
+                  observationID: observationID, candidateID: candidateID,
+                  label: label, value: value, policyRevision: policyRevision,
+                  candidateSetDigest: candidateSetDigest,
+                  actionDigest: actionDigest) else {
+            return ["kind": "unsupported"]
+        }
         state.preparedOnce = true
         do {
             let result = try prepareNativeValue(backend: state.backend,

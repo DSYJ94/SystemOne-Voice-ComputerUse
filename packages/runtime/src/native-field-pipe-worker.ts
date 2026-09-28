@@ -71,6 +71,7 @@ export class NativeFieldPipeWorker implements NativeFieldWorker {
     readonly candidateId: string; readonly value: string;
     readonly executionId: string; readonly permitRef: string;
     readonly actionDigest: string; readonly candidateSetDigest: string;
+    readonly policyRevision: string;
     readonly signal: AbortSignal }): Promise<
       { readonly kind: 'ready'; readonly preparationRef: string }
       | { readonly kind: 'matched_at_preflight' }
@@ -81,6 +82,7 @@ export class NativeFieldPipeWorker implements NativeFieldWorker {
       executionId: input.executionId, permitRef: input.permitRef,
       actionDigest: input.actionDigest,
       candidateSetDigest: input.candidateSetDigest,
+      policyRevision: input.policyRevision,
     }, 5_000, input.signal);
     if (!record(result) || typeof result.kind !== 'string'
       || !['ready', 'matched_at_preflight', 'unsupported'].includes(result.kind)

@@ -15,6 +15,7 @@
     "test:mac-peer": "scripts/check-peer-identity.sh",
     "test:chrome-host": "zsh scripts/check-chrome-native-host.sh",
     "test:native-ax": "zsh scripts/check-native-ax.sh",
+    "test:native-permit-digest": "node scripts/check-native-permit-digest.mjs",
     "test:mac-launch": "zsh scripts/test-native-mock-processes.sh",
     "build:native-mock": "scripts/build-native-mock.sh",
     "run:native-mock": "scripts/run-native-mock.sh",

@@ -70,6 +70,9 @@ test('private pipe carries a journaled native task and fences a late result', as
         break;
       case 'prepare':
         assert.equal(request.value, 'fixture-123');
+        assert.equal(request.policyRevision, 'native-ax-policy-v1');
+        assert.match(String(request.actionDigest), /^[a-f0-9]{64}$/);
+        assert.match(String(request.candidateSetDigest), /^[a-f0-9]{64}$/);
         assert.match(String(request.permitRef), /^[a-f0-9-]{36}$/);
         reply(request, { kind: 'ready', preparationRef: randomUUID() });
         break;
