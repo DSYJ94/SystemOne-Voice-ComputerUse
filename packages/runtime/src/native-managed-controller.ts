@@ -9,6 +9,8 @@ import { bindEndpoint } from '../../protocol/src/session.ts';
 import { CommittedInputSession } from './committed-input.ts';
 import { AttemptJournal } from './attempt-journal.ts';
 import { TaskAdmissionRegistry } from './task-authority.ts';
+import { NativeFillAuthority } from './native-fill-authority.ts';
+import { NativeFieldPipeWorker } from './native-field-pipe-worker.ts';
 import type { JSONValue } from '../../protocol/src/json.ts';
 
 const MAX_LINE_BYTES = 16_384;
@@ -30,10 +32,20 @@ interface Stop {
   readonly targetRequestId: string;
 }
 
-type NativeRequest = StartFill | Stop;
+interface StartNativeFill {
+  readonly type: 'start_native_fill';
+  readonly requestId: string;
+  readonly bundleId: string;
+  readonly fieldLabel: string;
+  readonly value: string;
+  readonly command: Record<string, JSONValue>;
+}
+
+type NativeRequest = StartFill | StartNativeFill | Stop;
 type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
   | 'verified_dom_fill' | 'unsupported' | 'uncertain' | 'stopping'
-  | 'stopped' | 'busy' | 'error' | 'blocked_recovery';
+  | 'stopped' | 'busy' | 'error' | 'blocked_recovery'
+  | 'observing_native' | 'verified_native_fill' | 'already_matched';
 
 function isRecord(value: JSONValue): value is Record<string, JSONValue> {
   return value !== null && !Array.isArray(value) && typeof value === 'object';
@@ -53,6 +65,22 @@ function requestFromLine(line: Uint8Array): NativeRequest {
     }
     return { type: 'stop', requestId: value.requestId as string,
       targetRequestId: value.targetRequestId };
+  }
+  if (value.type === 'start_native_fill') {
+    if (Object.keys(value).sort().join(',')
+        !== 'bundleId,command,fieldLabel,requestId,type,value'
+      || typeof value.bundleId !== 'string'
+      || !/^[A-Za-z0-9.-]{3,160}$/.test(value.bundleId)
+      || typeof value.fieldLabel !== 'string' || value.fieldLabel.length < 1
+      || value.fieldLabel.length > 160 || !value.fieldLabel.isWellFormed()
+      || typeof value.value !== 'string' || !value.value.isWellFormed()
+      || Buffer.byteLength(value.value, 'utf8') > MAX_VALUE_BYTES
+      || value.command === undefined || !isRecord(value.command)) {
+      throw new ContractError('invalid native field request');
+    }
+    return { type: 'start_native_fill', requestId: value.requestId as string,
+      bundleId: value.bundleId, fieldLabel: value.fieldLabel,
+      value: value.value, command: value.command };
   }
   if (value.type !== 'start_fill'
     || Object.keys(value).sort().join(',') !== 'command,fieldLabel,requestId,type,url,value'
@@ -98,21 +126,33 @@ export class NativeManagedController {
   readonly #journal: AttemptJournal;
   readonly #send: (requestId: string, phase: Phase) => void;
   readonly #headless: boolean;
+  readonly #nativeWorker: NativeFieldPipeWorker | undefined;
+  readonly #nativeAuthority: NativeFillAuthority | undefined;
   readonly #seen = new Set<string>();
   #active: ActiveTask | undefined;
+  #nativeActive: { readonly requestId: string;
+    readonly done: Promise<void> } | undefined;
   #workerFenceFailed = false;
 
   constructor(journal: AttemptJournal, send: (requestId: string, phase: Phase) => void,
-    headless = false) {
+    headless = false, nativeWorker?: NativeFieldPipeWorker) {
     this.#journal = journal;
     this.#send = send;
     this.#headless = headless;
+    this.#nativeWorker = nativeWorker;
+    this.#nativeAuthority = nativeWorker
+      ? new NativeFillAuthority(journal, nativeWorker) : undefined;
     journal.recoverAfterRestart();
   }
 
   receive(line: Uint8Array): void {
     let request: NativeRequest;
-    try { request = requestFromLine(line); }
+    try {
+      if (line.byteLength > MAX_LINE_BYTES) throw new ContractError('native request too large');
+      const parsed = parseJSON(line);
+      if (this.#nativeWorker?.receive(parsed)) return;
+      request = requestFromLine(line);
+    }
     catch { this.#send('invalid', 'error'); return; }
     if (this.#seen.has(request.requestId) || this.#seen.size >= 1_000) {
       this.#send(request.requestId, 'error');
@@ -123,9 +163,37 @@ export class NativeManagedController {
       void this.#stop(request);
       return;
     }
-    if (this.#active) { this.#send(request.requestId, 'busy'); return; }
-    if (this.#workerFenceFailed || this.#journal.unresolvedAttempts().length) {
+    if (this.#active || this.#nativeActive) {
+      this.#send(request.requestId, 'busy'); return;
+    }
+    if (this.#workerFenceFailed || this.#nativeAuthority?.needsRecovery
+      || this.#journal.unresolvedAttempts().length) {
       this.#send(request.requestId, 'blocked_recovery');
+      return;
+    }
+    if (request.type === 'start_native_fill') {
+      const authority = this.#nativeAuthority;
+      if (!authority) { this.#send(request.requestId, 'error'); return; }
+      this.#send(request.requestId, 'observing_native');
+      const active = { requestId: request.requestId,
+        done: Promise.resolve() };
+      this.#nativeActive = active;
+      active.done = authority.start(request).then(result => {
+        const phase: Phase = result === 'verified' ? 'verified_native_fill'
+          : result === 'already_matched' ? 'already_matched'
+            : result === 'unsupported' ? 'unsupported'
+              : result === 'uncertain' ? 'uncertain'
+                : result === 'stopped' ? 'stopped' : 'error';
+        if (result !== 'stopped') this.#send(request.requestId, phase);
+      }).catch(() => {
+        this.#send(request.requestId, 'uncertain');
+      }).finally(() => {
+        if (this.#nativeActive === active) {
+          this.#nativeActive = undefined;
+          this.#send(request.requestId,
+            authority.needsRecovery ? 'blocked_recovery' : 'ready');
+        }
+      });
       return;
     }
     const active: ActiveTask = { requestId: request.requestId,
@@ -144,6 +212,11 @@ export class NativeManagedController {
   }
 
   async close(): Promise<void> {
+    if (this.#nativeActive) {
+      await this.#nativeAuthority?.stop().catch(() => {});
+      await this.#nativeActive.done.catch(() => {});
+    }
+    this.#nativeWorker?.close();
     const active = this.#active;
     if (active) {
       active.cancelled = true;
@@ -231,10 +304,23 @@ export class NativeManagedController {
   }
 
   async #stop(request: Stop): Promise<void> {
+    const nativeActive = this.#nativeActive;
+    if (nativeActive?.requestId === request.targetRequestId) {
+      this.#send(request.requestId, 'stopping');
+      const result = await this.#nativeAuthority!.stop().catch(() => ({
+        workerFenced: false, unresolvedExecutionIds: [] as readonly string[],
+      }));
+      await nativeActive.done.catch(() => {});
+      this.#send(request.requestId,
+        result.workerFenced && !this.#nativeAuthority!.needsRecovery
+          ? 'stopped' : 'uncertain');
+      return;
+    }
     const active = this.#active;
     if (!active || active.requestId !== request.targetRequestId) {
-      this.#send(request.requestId, active ? 'error'
-        : this.#workerFenceFailed || this.#journal.unresolvedAttempts().length
+      this.#send(request.requestId, active || this.#nativeActive ? 'error'
+        : this.#workerFenceFailed || this.#nativeAuthority?.needsRecovery
+          || this.#journal.unresolvedAttempts().length
           ? 'uncertain' : 'stopped');
       return;
     }
@@ -266,8 +352,11 @@ async function main(): Promise<void> {
   const write = (requestId: string, phase: Phase) => {
     process.stdout.write(`${JSON.stringify({ type: 'status', requestId, phase })}\n`);
   };
+  const worker = new NativeFieldPipeWorker(value => {
+    process.stdout.write(`${JSON.stringify(value)}\n`);
+  });
   const controller = new NativeManagedController(journal, write,
-    process.env.SYSTEMONE_MANAGED_HEADLESS === '1');
+    process.env.SYSTEMONE_MANAGED_HEADLESS === '1', worker);
   write('startup', 'ready');
   let pending = Buffer.alloc(0);
   process.stdin.on('data', chunk => {

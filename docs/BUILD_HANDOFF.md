@@ -46,8 +46,8 @@ established by the current fixture-only native or browser tests.
   [#24 guarded native value driver](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/24),
   [#25 journaled native task authority](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/25).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/native-ax-task-authority`,
-  stacked on `codex/native-ax-action-driver`.
+- The current implementation branch is `codex/native-ax-controller-bridge`,
+  stacked on `codex/native-ax-task-authority`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -103,14 +103,14 @@ user input. Labels and capabilities remain local; field values are not read.
 Compilation and synthetic registry checks pass; live observation remains
 unverified while the earlier manual browser test stays available. See
 [native inspection test](NATIVE_INSPECTION_TEST.md).
-The B11 source now includes a guarded native `AXValue` driver and synthetic
-Stop/interference checks. It is not connected to the UI, host journal or a
-signed worker permit, so there is still no native action in the development
-app. See [native action status](NATIVE_ACTION.md).
-The host-side native task class now admits a final command against one exact
-complete observation and records a journaled attempt before an abstract
-worker commit. It is tested with a synthetic worker only; the AppKit worker,
-OS peer identity and cross-surface owner are not connected.
+The B11 source includes a guarded native `AXValue` driver and synthetic
+Stop/interference checks. The development panel can now submit one exact
+native field edit through the same persistent controller used for managed
+Chromium. A private pipe connects the journaled host task class to the AppKit
+AX worker. The process-level test uses a synthetic worker; a live action through
+the new bridge is pending. The worker is not OS-authenticated and does not
+verify a release permit. See [native action status](NATIVE_ACTION.md) and the
+[optional native test](NATIVE_COMPUTER_USE_TEST.md).
 It fences both stores on Stop. Stop distinguishes browser context closure from
 an independent local save still pending and reports an incomplete worker fence
 for the latter. Context closure does not prove an already-dispatched action had
@@ -128,13 +128,10 @@ undo an already-dispatched effect.
 
 ## Next implementation order
 
-1. Move the in-process portal permit issuer behind authenticated B03/B09/B15
-   host/worker IPC. The scripted task still calls Playwright directly from
-   trusted code in the same process; its durable candidate/argument digests and
-   one-use permits do not authenticate an OS peer. Preserve the
-   already-dispatched uncertainty and make Stop's worker fence measurable.
-   Extend the B10 read-only native observer to an approved live fixture under
-   the authenticated host; build B11 actions only after authority/Stop tests.
+1. Qualify the new native panel-to-controller-to-AX path on the synthetic
+   Fixture with an explicit user test. Capture the verified result and Stop
+   behavior without claiming general native control. Authenticate the release
+   host/worker boundary and make worker-side permit consumption durable.
 2. Integrate B03/B09/B15 host authority, authenticated worker identity, durable
    permit consumption and a real native/managed-browser Stop barrier. Qualify
    dispatch timing and unknown outcomes before broadening native or browser

@@ -1,9 +1,9 @@
 # Native Accessibility inspection development test
 
 This opt-in macOS check reads one running app's bounded Accessibility tree.
-It does not change an app, read field values, or qualify native computer-use
-actions. The worktree build is separate from the currently running managed-
-browser test; do not launch two SystemOne Dev builds at once.
+The **Inspect app** button does not change an app or read field values. The
+separate [native field test](NATIVE_COMPUTER_USE_TEST.md) uses an explicit
+action and has additional limits. Do not launch two SystemOne Dev builds at once.
 
 After closing the earlier SystemOne Dev app, run `npm run run:native-dev` from
 the updated checkout. In the panel's **Native app — read-only inspection**

@@ -512,3 +512,22 @@ AppKit task route or OS peer authentication was exercised. A successful
 synthetic worker receipt is not evidence of a real app change. Recovery after
 a stopped boundary-crossed task remains blocked pending explicit fresh
 observation and user intent.
+
+## Development native controller bridge, 28 September 2026
+
+`node --test packages/runtime/test/native-pipe-bridge.test.ts` passed its
+process-level synthetic native task and late-Stop case. `npm run check` passed
+TypeScript checking and **177/177** tests when run with local loopback access.
+The first restricted run had **156 passes and 21 failures**, all because the
+sandbox denied the synthetic portal's `127.0.0.1` listen socket (`EPERM`);
+the exact suite then passed with that local access. `npm run build:native-dev`
+compiled and ad-hoc signed the AppKit bundle after the build guard received
+permission to inspect running processes. `zsh -n scripts/build-native-dev.sh
+scripts/run-native-dev.sh` and `git diff --check` passed.
+
+The new source route is panel -> one persistent Node controller -> journaled
+native host task -> private AppKit AX worker -> field re-read. The process test
+simulates the AppKit worker; no live Accessibility action was run through this
+route. No release-signed helper, OS-authenticated peer, durable worker-side
+permit, clean install, or update/TCC continuity was tested. See the
+[optional live synthetic test](NATIVE_COMPUTER_USE_TEST.md).
