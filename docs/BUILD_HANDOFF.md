@@ -63,7 +63,8 @@ established by the current fixture-only native or browser tests.
   [#41 isolated Chrome journaled fill](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/41),
   [#42 Chrome Stop after dispatch](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/42),
   [#43 production controller Chrome transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/43),
-  [#44 shared action candidates](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/44).
+  [#44 shared action candidates](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/44),
+  [#45 structured input byte provenance](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/45).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current implementation branch is `codex/input-byte-provenance`,
   stacked on `codex/shared-candidate-projection`.
