@@ -74,8 +74,8 @@ established by the current fixture-only native or browser tests.
   [#52 scoped read-only native AX coverage](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/52),
   [#53 local computer-use test session](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/53).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/local-v1-test-setup`,
-  stacked on `codex/native-ax-coverage`.
+- The current implementation branch is `codex/voice-command-alpha`,
+  stacked on `codex/local-v1-test-setup`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -230,21 +230,22 @@ and external-source mode still lacks code authentication.
 
 ## Next implementation order
 
-The new `npm run try:local` prepares the current synthetic Fixture, development
-AppKit panel and loopback portal for one owner-run native/managed test. It does
-not attach to existing Chrome or constitute v1. See [Try local](TRY_LOCAL.md).
-On this Mac, older Dev and Fixture processes from the OneDrive checkout blocked
-opening a second build; the launcher now rejects both before another launch.
-The owner must quit those earlier apps before this worktree's test can start.
+The owner redirected priority from repeated Fixture tests toward the actual
+voice-driven product. The compact panel now accepts a final typed or on-device
+speech transcript, captures the real frontmost native app for one labeled field
+edit, or opens an explicitly named HTTPS page in managed Chromium for one field
+edit. Both routes reuse the persistent controller, journal, permits, Stop and
+field-value verification. This is a bounded development slice; physical
+microphone, real-app and headed-browser behavior await manual use. See
+[voice computer-use test](VOICE_COMPUTER_USE_TEST.md). `npm run try:local`
+remains a synthetic diagnostic; it is no longer the primary user-facing test.
 
-1. Exercise the development panel's global open/Stop shortcuts and focus
-   display using the [synthetic shortcut guide](NATIVE_SHORTCUT_TEST.md).
-   A compile pass alone does not prove registration, cross-app focus or Stop.
-   Qualify the new native panel-to-controller-to-AX path on the synthetic
-   Fixture with an explicit user test. Capture the verified result and Stop
-   behavior without claiming general native control. Authenticate the release
-   host/worker boundary under Developer ID signing and qualify the signed
-   permit across installation, update and crash recovery.
+1. Qualify the compact panel on a disposable field in a real native app and a
+   harmless HTTPS page, including physical push-to-talk, final transcript
+   review, Stop, focus capture, permission denial and on-device-only behavior.
+   Record supported app/field combinations and failed coverage; do not infer
+   general compatibility from one success. The old synthetic shortcut/Fixture
+   checks remain useful diagnostics, but are not the product acceptance test.
 2. Integrate B03/B09/B15 host authority, release worker identity, signed
    permit validation and a real native/managed-browser Stop barrier. Qualify
    dispatch timing and unknown outcomes before broadening native or browser

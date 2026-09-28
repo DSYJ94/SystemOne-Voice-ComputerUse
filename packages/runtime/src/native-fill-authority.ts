@@ -4,6 +4,7 @@ import { bindEndpoint } from '../../protocol/src/session.ts';
 import { AttemptJournal } from './attempt-journal.ts';
 import { CommittedInputSession } from './committed-input.ts';
 import { bindCommandValue } from './command-value-span.ts';
+import { parseScopedNativeFill } from './scoped-native-command.ts';
 import { TaskAdmissionRegistry } from './task-authority.ts';
 import { buildActionCandidates, fromNativeObservation,
   selectBoundCandidate } from './action-candidates.ts';
@@ -34,6 +35,7 @@ export interface NativeFieldObservation {
 export interface NativeFieldWorker {
   /** Effect-free, bounded AX observation. Values must not cross this boundary. */
   observe(input: { readonly taskId: string; readonly bundleId: string;
+    readonly targetPid?: number; readonly targetLaunchMillis?: number;
     readonly signal: AbortSignal }): Promise<NativeFieldObservation>;
   /** Effect-free revalidation. The worker retains the value and one handle. */
   prepare(input: { readonly taskId: string; readonly observationId: string;
@@ -60,6 +62,8 @@ export interface NativeFieldWorker {
 export interface NativeFillRequest {
   readonly requestId: string;
   readonly bundleId: string;
+  readonly targetPid?: number;
+  readonly targetLaunchMillis?: number;
   readonly fieldLabel: string;
   readonly value: string;
   readonly command: Record<string, JSONValue>;
@@ -79,6 +83,10 @@ interface Active {
 
 function validRequest(request: NativeFillRequest): boolean {
   return ID.test(request.requestId) && BUNDLE_ID.test(request.bundleId)
+    && (request.targetPid === undefined && request.targetLaunchMillis === undefined
+      || Number.isSafeInteger(request.targetPid) && request.targetPid! > 0
+        && Number.isSafeInteger(request.targetLaunchMillis)
+        && request.targetLaunchMillis! > 0)
     && typeof request.fieldLabel === 'string'
     && request.fieldLabel.length > 0 && request.fieldLabel.length <= 160
     && request.fieldLabel.isWellFormed()
@@ -186,11 +194,21 @@ export class NativeFillAuthority {
     let executionId: string | undefined;
     try {
       const command = request.command;
-      if (command.type !== 'command' || command.source !== 'text'
+      const canonicalPrefix = `Fill ${request.fieldLabel} in ${request.bundleId} with text: `;
+      const scoped = typeof command.text === 'string'
+        && !command.text.startsWith(canonicalPrefix)
+        ? parseScopedNativeFill(command.text) : undefined;
+      const valuePrefix = scoped?.prefix ?? canonicalPrefix;
+      if (scoped && (request.targetPid === undefined
+        || request.targetLaunchMillis === undefined)) return 'error';
+      if (command.type !== 'command'
+        || (command.source !== 'text' && command.source !== 'voice')
         || command.mode !== 'command' || command.isFinal !== true
         || command.taskId !== request.requestId || command.taskEpoch !== 1
         || command.goalRevision !== 1
-        || command.text !== `Fill ${request.fieldLabel} in ${request.bundleId} with text: ${request.value}`
+        || (scoped !== undefined
+          ? scoped.fieldLabel !== request.fieldLabel || scoped.value !== request.value
+          : command.text !== canonicalPrefix + request.value)
         || command.originSurface === undefined
         || command.originSurface === null
         || typeof command.originSurface !== 'object'
@@ -204,11 +222,15 @@ export class NativeFillAuthority {
       const route = input.accept(endpoint, Buffer.from(JSON.stringify(command)));
       if (route.kind !== 'interpret_command') return 'error';
       const fillParameter = bindCommandValue(route.input, 'fill-value',
-        `Fill ${request.fieldLabel} in ${request.bundleId} with text: `,
+        valuePrefix,
         request.value);
       active.workerTouched = true;
       const observation = await this.#worker.observe({
         taskId: request.requestId, bundleId: request.bundleId,
+        ...(request.targetPid === undefined ? {} : {
+          targetPid: request.targetPid,
+          targetLaunchMillis: request.targetLaunchMillis,
+        }),
         signal: active.abort.signal,
       });
       if (active.stopped) return 'stopped';

@@ -203,6 +203,10 @@ Accessibility permission.
 For one local launch command covering the synthetic native target and managed
 Chromium portal, run `npm run try:local` and follow [Try local](docs/TRY_LOCAL.md).
 It does not attach to the existing Chrome profile or qualify v1.
+For the newer compact voice/text panel and one bounded action on a real native
+app or an HTTPS page, follow [Voice computer-use test](docs/VOICE_COMPUTER_USE_TEST.md).
+This is the next user-facing development slice; CLM-driven multi-hop tasks and
+existing-profile Chrome remain open.
 The separate [native inspection test](docs/NATIVE_INSPECTION_TEST.md) exercises
 read-only Accessibility observations and requires a grant to the current Dev build.
 For the current PR stack, open gates and next implementation order, see

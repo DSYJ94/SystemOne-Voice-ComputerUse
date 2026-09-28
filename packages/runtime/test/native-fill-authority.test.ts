@@ -28,6 +28,7 @@ class FakeWorker implements NativeFieldWorker {
       enabled: true, secure: false, canSetValue: true }],
   };
   observeCalls = 0;
+  capturedPID: number | undefined;
   prepareCalls = 0;
   commitCalls: Array<{ taskId: string; executionId: string;
     permitRef: string; preparationRef: string }> = [];
@@ -40,10 +41,12 @@ class FakeWorker implements NativeFieldWorker {
   commitThrows = false;
   verifyResult = true;
 
-  async observe(input: { taskId: string; bundleId: string }): Promise<NativeFieldObservation> {
+  async observe(input: { taskId: string; bundleId: string;
+    targetPid?: number }): Promise<NativeFieldObservation> {
     assert.equal(input.bundleId, bundleId);
     assert.match(input.taskId, /^[a-f0-9-]{36}$/);
     this.observeCalls++;
+    this.capturedPID = input.targetPid;
     return this.observation;
   }
   async prepare(input: { taskId: string; observationId: string;
@@ -117,6 +120,27 @@ test('native host admits exact candidate and journaled setter once', async t => 
   assert.equal(worker.commitCalls.length, 1);
   assert.equal(worker.commitCalls[0]?.executionId, attempts[0]?.executionId);
   assert.equal(await authority.start(input), 'error', 'task request cannot replay');
+});
+
+test('reviewed voice command enters the same native permit and verification path', async t => {
+  const { worker, journal, authority } = harness(t);
+  const input = { ...request(), targetPid: 501,
+    targetLaunchMillis: 1_790_000_000_000 };
+  input.command.source = 'voice';
+  input.command.text = 'Fill Fixture Name with fixture-123';
+  assert.equal(await authority.start(input), 'verified');
+  assert.equal(worker.capturedPID, 501);
+  assert.equal(worker.commitCalls.length, 1);
+  assert.equal(journal.getTaskState(input.requestId), 'completed');
+  const altered = { ...request(), targetPid: 501,
+    targetLaunchMillis: 1_790_000_000_000 };
+  altered.command.source = 'voice';
+  altered.command.text = 'Fill Other Name with fixture-123';
+  assert.equal(await authority.start(altered), 'error');
+  const unbound = request();
+  unbound.command.source = 'voice';
+  unbound.command.text = 'Fill Fixture Name with fixture-123';
+  assert.equal(await authority.start(unbound), 'error');
 });
 
 test('unbound command and ambiguous or incomplete observation send no setter', async t => {

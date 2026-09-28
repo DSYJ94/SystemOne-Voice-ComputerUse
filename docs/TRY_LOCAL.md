@@ -17,6 +17,11 @@ the app running. The launcher refuses to open an ambiguous target. A rebuild
 of the ad-hoc-signed Dev app can require a new macOS
 Accessibility grant.
 
+SystemOne Dev now opens a compact voice/text command panel. The sections below
+are in **Open Developer Tools** from its menu-bar item. For a bounded action
+on a real app or HTTPS page through the compact panel, see
+[Voice computer-use test](VOICE_COMPUTER_USE_TEST.md).
+
 In the **Native app** section, enter bundle ID
 `com.aurium.systemone.fixture`, label `Fixture Name`, and a disposable value such
 as `fixture-456`. Choose **Request Accessibility** only if you want to grant this
@@ -39,8 +44,9 @@ The existing-Chrome bridge has an isolated automated test:
 `npm run test:chrome-browser-transport`. It uses disposable Playwright Chromium
 and never touches your Chrome profile. The full installed bridge still needs a
 separate-account, signed-host qualification before a current-profile test.
-This command therefore does **not** test existing Chrome, voice, CLM, or a
-distributable v1. Those remain required for v1.
+This command does **not** test existing Chrome, CLM, or a distributable v1.
+Voice can now be tried separately in the compact panel after you explicitly
+enable it. Those remaining capabilities are still required for v1.
 
 If a task reports **uncertain**, **Earlier effect unresolved**, or a failed Stop
 fence, inspect the visible result and do not immediately repeat the action.

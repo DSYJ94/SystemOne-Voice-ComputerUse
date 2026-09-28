@@ -8,6 +8,17 @@ private let systemOneHotkeySignature: OSType = 0x53314B59 // S1KY
 private let openPanelHotkeyID: UInt32 = 1
 private let stopHotkeyID: UInt32 = 2
 
+private final class HoldToTalkButton: NSButton {
+    var onPress: (() -> Void)?
+    var onRelease: (() -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        onPress?()
+        super.mouseDown(with: event)
+        onRelease?()
+    }
+}
+
 private func systemOneHotkeyHandler(_ event: EventHandlerCallRef?,
                                     _ eventRef: EventRef?,
                                     _ userData: UnsafeMutableRawPointer?) -> OSStatus {
@@ -26,7 +37,7 @@ private func systemOneHotkeyHandler(_ event: EventHandlerCallRef?,
 }
 
 @MainActor
-final class SystemOneDev: NSObject, NSApplicationDelegate {
+final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private enum ActiveSurface {
         case managed, managedNavigation, portal, native, nativeNavigation,
              nativeLocate, nativeOpen, chrome
@@ -37,6 +48,13 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     }
     private var statusItem: NSStatusItem?
     private var panel: NSPanel?
+    private var commandPanel: NSPanel?
+    private var taskField: NSTextField?
+    private var commandStatus: NSTextField?
+    private var commandTarget: NSTextField?
+    private var capturedApp: (bundleID: String, pid: pid_t, launchDate: Date)?
+    private var finalSpeechText: String?
+    private let speech = OnDeviceSpeech()
     private var urlField: NSTextField?
     private var labelField: NSTextField?
     private var valueField: NSTextField?
@@ -110,6 +128,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         item.button?.title = "S1 Dev"
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Open Command Panel", action: #selector(openPanel), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Open Developer Tools", action: #selector(openDeveloperPanel), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Stop", action: #selector(stop), keyEquivalent: ""))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit SystemOne Dev", action: #selector(quit), keyEquivalent: ""))
@@ -117,6 +136,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
         item.menu = menu
         statusItem = item
         makePanel()
+        makeCommandPanel()
         registerGlobalHotkeys()
         startController()
         startChromeListener()
@@ -131,12 +151,87 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         unregisterGlobalHotkeys()
+        speech.cancel()
         if nativeActionActive, let activeRequestID {
             nativeWorker.requestLocalStop(activeRequestID)
         }
         chromeListener?.stop()
         controllerOutput?.fileHandleForReading.readabilityHandler = nil
         controllerInput?.fileHandleForWriting.closeFile()
+    }
+
+    private func makeCommandPanel() {
+        let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 540, height: 225),
+                             styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.title = "SystemOne"
+        window.delegate = self
+        window.isFloatingPanel = true
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.center()
+        let backdrop = NSVisualEffectView(frame: window.contentView?.bounds ?? .zero)
+        backdrop.material = .popover
+        backdrop.blendingMode = .behindWindow
+        backdrop.state = .active
+        backdrop.autoresizingMask = [.width, .height]
+        window.contentView = backdrop
+        let target = NSTextField(wrappingLabelWithString: "Open the panel from a target app.")
+        target.textColor = .secondaryLabelColor
+        commandTarget = target
+        let field = NSTextField()
+        field.placeholderString = "Fill Field with value · or Fill Field on https://… with value"
+        field.setAccessibilityLabel("Task request")
+        taskField = field
+        let enableVoice = NSButton(title: "Enable Voice", target: self,
+                                   action: #selector(enableVoice))
+        let talk = HoldToTalkButton(title: "Hold Talk", target: nil, action: nil)
+        talk.onPress = { [weak self] in self?.speech.start() }
+        talk.onRelease = { [weak self] in self?.speech.stop() }
+        let run = NSButton(title: "Run request", target: self,
+                           action: #selector(runTaskRequest))
+        let stop = NSButton(title: "Stop", target: self, action: #selector(stop))
+        let fields = NSButton(title: "Show fields", target: self,
+                              action: #selector(showCapturedFields))
+        let actions = NSStackView(views: [enableVoice, talk, fields, run, stop])
+        actions.orientation = .horizontal
+        actions.spacing = 8
+        let status = NSTextField(wrappingLabelWithString:
+            "Voice stays on this Mac. Review the final transcript before running.")
+        status.textColor = .secondaryLabelColor
+        status.setAccessibilityLabel("Task status")
+        commandStatus = status
+        let stack = NSStackView(views: [target, field, actions, status])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        backdrop.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor, constant: 18),
+            stack.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor, constant: -18),
+            stack.centerYAnchor.constraint(equalTo: backdrop.centerYAnchor),
+            target.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            field.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            status.widthAnchor.constraint(equalTo: stack.widthAnchor),
+        ])
+        speech.onText = { [weak self] text, isFinal in
+            self?.taskField?.stringValue = text
+            self?.finalSpeechText = isFinal ? text : nil
+        }
+        speech.onStatus = { [weak self] message in
+            self?.commandStatus?.stringValue = message
+        }
+        commandPanel = window
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        if let closing = notification.object as? NSWindow, closing === commandPanel {
+            speech.cancel()
+        }
+    }
+
+    func applicationDidResignActive(_ notification: Notification) {
+        speech.cancel()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -310,6 +405,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             chromeValue.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
         panel = window
+        window.orderOut(nil)
     }
 
     private func startController() {
@@ -627,14 +723,16 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
                 : "Field absent, ambiguous or outside observed coverage. No fill sent."
         case "uncertain":
             statusField?.stringValue = nativeActionActive
-                ? "Native outcome uncertain. Inspect the Fixture before retrying."
+                ? "Native outcome uncertain. Inspect the target app before retrying."
                 : "Outcome or browser fence uncertain. Inspect the page before retrying."
             if requestID == stopRequestID {
                 stopRequestID = nil
                 if quitPending { quitPending = false; NSApp.reply(toApplicationShouldTerminate: false) }
             }
         case "blocked_recovery": statusField?.stringValue = "Earlier effect unresolved. Re-observation is required before another task."
-        case "stopping": statusField?.stringValue = "Stopping browser and fencing future actions…"
+        case "stopping": statusField?.stringValue = nativeActionActive
+            ? "Fencing the native worker; a dispatched edit may already have happened…"
+            : "Stopping browser and fencing future actions…"
         case "stopped": statusField?.stringValue = "Stopped. An already-sent action may have taken effect."
         case "busy": statusField?.stringValue = "A task is already active."
         case "error": statusField?.stringValue = "The request was rejected or failed. No success is claimed."
@@ -650,6 +748,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
             activeSurface = nil
             stopRequestID = nil
             if quitPending { quitPending = false; NSApp.reply(toApplicationShouldTerminate: true) }
+        }
+        if phase != "ready", let message = statusField?.stringValue {
+            commandStatus?.stringValue = message
         }
     }
 
@@ -675,18 +776,142 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openPanel() {
-        guard let panel else { return }
+        guard let commandPanel else { return }
         let frontmost = NSWorkspace.shared.frontmostApplication
         if let frontmost, frontmost.processIdentifier != ProcessInfo.processInfo.processIdentifier,
-           !frontmost.isTerminated {
+           !frontmost.isTerminated, let bundleID = frontmost.bundleIdentifier,
+           let launchDate = frontmost.launchDate,
+           bundleID.range(of: "^[A-Za-z0-9.-]{3,160}$",
+                          options: .regularExpression) != nil {
             let name = frontmost.localizedName ?? frontmost.bundleIdentifier ?? "an unnamed app"
+            capturedApp = (bundleID, frontmost.processIdentifier, launchDate)
+            commandTarget?.stringValue = "Target: \(name) (\(bundleID))."
             focusField?.stringValue = "Previously focused: \(name) (PID \(frontmost.processIdentifier)). Select a target explicitly."
         } else {
+            capturedApp = nil
+            commandTarget?.stringValue = "No target app captured. Focus an app, then reopen this panel."
             focusField?.stringValue = "No external app captured. Enter the target explicitly."
         }
         NSApp.activate(ignoringOtherApps: true)
+        commandPanel.makeKeyAndOrderFront(nil)
+        commandPanel.makeFirstResponder(taskField)
+    }
+
+    @objc private func openDeveloperPanel() {
+        guard let panel else { return }
+        NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(urlField)
+    }
+
+    @objc private func enableVoice() { speech.requestPermissions() }
+
+    @objc private func showCapturedFields() {
+        guard AXIsProcessTrustedWithOptions(nil), let capturedApp,
+              let app = NSRunningApplication.runningApplications(
+                withBundleIdentifier: capturedApp.bundleID).first,
+              app.processIdentifier == capturedApp.pid,
+              app.launchDate == capturedApp.launchDate,
+              let bundleURL = app.bundleURL else {
+            commandStatus?.stringValue = "Capture a running app and grant Accessibility first."
+            return
+        }
+        let target = AXTarget(pid: capturedApp.pid, bundleID: capturedApp.bundleID,
+            bundleURL: bundleURL, launchDate: capturedApp.launchDate,
+            scopeRef: "command-preview:\(UUID().uuidString)")
+        commandStatus?.stringValue = "Reading editable field labels without their values…"
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let preview = try await self.nativeInspector.editableLabels(target)
+                let names = preview.labels.prefix(5).joined(separator: ", ")
+                self.commandStatus?.stringValue = names.isEmpty
+                    ? "No labeled editable field observed. No action sent."
+                    : "Observed fields: \(names)"
+                      + (preview.complete ? "" : " (coverage incomplete)")
+            } catch {
+                self.commandStatus?.stringValue = "Field observation unavailable: \(error)."
+            }
+        }
+    }
+
+    @objc private func runTaskRequest() {
+        guard !speech.isCapturing else {
+            commandStatus?.stringValue = "Wait for a final transcript before running a request."
+            return
+        }
+        guard let input = controllerInput, controller?.isRunning == true,
+              activeRequestID == nil, stopRequestID == nil,
+              !inspectionPending else {
+            commandStatus?.stringValue = "Controller unavailable or another task is active."
+            return
+        }
+        let text = taskField?.stringValue ?? ""
+        if let managed = ScopedManagedFill.parse(text) {
+            let taskID = UUID().uuidString.lowercased()
+            let request: [String: Any] = ["type": "start_fill",
+                "requestId": taskID, "url": managed.url,
+                "fieldLabel": managed.fieldLabel, "value": managed.value,
+                "command": committedTaskCommand(taskID: taskID, text: text)]
+            guard send(request, through: input) else {
+                commandStatus?.stringValue = "Could not send browser request to the controller."
+                return
+            }
+            activeRequestID = taskID
+            activeSurface = .managed
+            commandStatus?.stringValue = "Opening an isolated Chromium page and checking the field…"
+            return
+        }
+        if text.range(of: " on ", options: .caseInsensitive) != nil {
+            commandStatus?.stringValue = "Use an exact HTTPS URL (or local 127.0.0.1) for a browser request. No action sent."
+            return
+        }
+        guard AXIsProcessTrustedWithOptions(nil) else {
+            commandStatus?.stringValue = "Grant Accessibility to this SystemOne Dev build first."
+            return
+        }
+        guard let parsed = ScopedNativeFill.parse(text) else {
+            commandStatus?.stringValue = "Supported: Fill <field> with <value>, or Fill <field> on <HTTPS URL> with <value>."
+            return
+        }
+        guard let capturedApp,
+              NSRunningApplication.runningApplications(withBundleIdentifier: capturedApp.bundleID)
+                .filter({ !$0.isTerminated }).count == 1,
+              let current = NSRunningApplication.runningApplications(
+                withBundleIdentifier: capturedApp.bundleID).first,
+              current.processIdentifier == capturedApp.pid,
+              current.launchDate == capturedApp.launchDate else {
+            commandStatus?.stringValue = "The captured app changed. Focus it and reopen the panel."
+            return
+        }
+        let taskID = UUID().uuidString.lowercased()
+        let request: [String: Any] = ["type": "start_native_fill",
+            "requestId": taskID, "bundleId": capturedApp.bundleID,
+            "targetPid": Int(capturedApp.pid),
+            "targetLaunchMillis": Int64((capturedApp.launchDate.timeIntervalSince1970
+                * 1_000).rounded()),
+            "fieldLabel": parsed.fieldLabel, "value": parsed.value,
+            "command": committedTaskCommand(taskID: taskID, text: text)]
+        guard send(request, through: input) else {
+            commandStatus?.stringValue = "Could not send request to the controller."
+            return
+        }
+        activeRequestID = taskID
+        activeSurface = .native
+        commandStatus?.stringValue = "Observing the captured app and exact field…"
+    }
+
+    private func committedTaskCommand(taskID: String, text: String) -> [String: Any] {
+        ["type": "command", "protocolVersion": "2.0",
+         "messageId": UUID().uuidString.lowercased(),
+         "taskId": taskID, "taskEpoch": 1, "goalRevision": 1,
+         "source": finalSpeechText == text ? "voice" : "text",
+         "mode": "command", "utteranceId": UUID().uuidString.lowercased(),
+         "utteranceRevision": 1, "text": text, "isFinal": true,
+         "createdAt": ISO8601DateFormatter().string(from: Date()),
+         "originSurface": ["adapter": "native", "surfaceId": "systemone-panel",
+             "appBundleId": "com.aurium.systemone.dev", "windowId": "command-panel",
+             "contentRevision": taskID]]
     }
 
     func handleGlobalHotkey(_ id: UInt32) {
@@ -1034,6 +1259,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate {
     }
 
     @objc private func stop() {
+        speech.cancel()
         if inspectionPending {
             inspectionEpoch += 1
             let epoch = inspectionEpoch

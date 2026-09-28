@@ -1113,3 +1113,35 @@ checks found this worktree's Dev (PID 14168) and Fixture (PID 14455), and a
 loopback GET returned the portal title and `Find invoice` control. The portal
 session was left running for the owner's interactive test. These checks do not
 establish that either UI action completed.
+
+## Voice/text command panel and real-target routes, 28 September 2026
+
+`npm run check` typechecked and passed **241/241** tests. This includes a
+child-process run of the persistent controller with a voice-sourced managed
+field command, plus native authority tests that verify a voice-sourced command
+uses the existing journaled permit and rejects a changed field name. The
+Swift-side `npm run test:task-command` passed its native/managed grammar and
+unsafe-origin cases. `npm run build:native-dev` compiled and ad-hoc signed the
+compact panel with the on-device Speech and microphone frameworks. `git diff
+--check` passed. `npm run run:native-dev` reported launch, and an exact-path
+process check found the current app running (PID 21189 before the final status
+copy change). None of these commands requested microphone or Speech permission,
+recorded audio, dispatched a real-app action, or attached to existing Chrome.
+
+After the captured-process guard, `npm run check` still passed **241/241** and
+`npm run build:native-dev` compiled. The final app ran at the exact current
+worktree path (PID 23919). Read-only accessibility inspection bound by that
+path found the compact **SystemOne** window with its task field, Enable Voice,
+Hold Talk, Show fields, Run request and Stop. A prior name-based inspection had
+opened a stale bundled-dev copy; that exact older test process was stopped.
+The native request now carries captured PID and launch time through the
+controller pipe, and a synthetic child-process test checked both fields. The
+worker rejects a different running app instance before AX observation. This
+does not prove the live microphone or a real-app edit works.
+
+The manual gates are a final on-device transcript, held-button microphone
+shutdown, captured-app and editable-label accuracy, one verified edit in a
+real native app, one headed managed-browser edit on an approved public page,
+and Stop during those paths. This development build does not qualify CLM,
+multi-hop open/download commands, existing-profile Chrome, Developer ID
+distribution or clean-Mac permissions.

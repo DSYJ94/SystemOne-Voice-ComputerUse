@@ -11,6 +11,7 @@ import { ContractError, digest, parseJSON } from '../../protocol/src/json.ts';
 import { bindEndpoint } from '../../protocol/src/session.ts';
 import { CommittedInputSession } from './committed-input.ts';
 import { bindCommandValue } from './command-value-span.ts';
+import { parseScopedManagedFill } from './scoped-native-command.ts';
 import { AttemptJournal } from './attempt-journal.ts';
 import { TaskAdmissionRegistry } from './task-authority.ts';
 import { NativeFillAuthority } from './native-fill-authority.ts';
@@ -54,6 +55,8 @@ interface StartNativeFill {
   readonly type: 'start_native_fill';
   readonly requestId: string;
   readonly bundleId: string;
+  readonly targetPid?: number;
+  readonly targetLaunchMillis?: number;
   readonly fieldLabel: string;
   readonly value: string;
   readonly command: Record<string, JSONValue>;
@@ -148,20 +151,29 @@ function requestFromLine(line: Uint8Array): NativeRequest {
       url: value.url, command: value.command };
   }
   if (value.type === 'start_native_fill') {
-    if (Object.keys(value).sort().join(',')
-        !== 'bundleId,command,fieldLabel,requestId,type,value'
+    const keys = Object.keys(value).sort().join(',');
+    const scoped = keys
+      === 'bundleId,command,fieldLabel,requestId,targetLaunchMillis,targetPid,type,value';
+    if (keys !== 'bundleId,command,fieldLabel,requestId,type,value'
+        && !scoped
       || typeof value.bundleId !== 'string'
       || !/^[A-Za-z0-9.-]{3,160}$/.test(value.bundleId)
       || typeof value.fieldLabel !== 'string' || value.fieldLabel.length < 1
       || value.fieldLabel.length > 160 || !value.fieldLabel.isWellFormed()
       || typeof value.value !== 'string' || !value.value.isWellFormed()
       || Buffer.byteLength(value.value, 'utf8') > MAX_VALUE_BYTES
+      || (scoped && (!Number.isSafeInteger(value.targetPid)
+        || !Number.isSafeInteger(value.targetLaunchMillis)
+        || (value.targetPid as number) <= 0
+        || (value.targetLaunchMillis as number) <= 0))
       || value.command === undefined || !isRecord(value.command)) {
       throw new ContractError('invalid native field request');
     }
     return { type: 'start_native_fill', requestId: value.requestId as string,
       bundleId: value.bundleId, fieldLabel: value.fieldLabel,
-      value: value.value, command: value.command };
+      value: value.value, command: value.command,
+      ...(scoped ? { targetPid: value.targetPid as number,
+        targetLaunchMillis: value.targetLaunchMillis as number } : {}) };
   }
   if (value.type === 'start_native_press') {
     if (Object.keys(value).sort().join(',')
@@ -545,11 +557,20 @@ export class NativeManagedController {
   async #run(request: StartFill, active: ActiveTask): Promise<void> {
     try {
       const command = request.command;
-      if (command.type !== 'command' || command.source !== 'text'
+      const canonicalPrefix = `Fill ${request.fieldLabel} on ${request.url} with text: `;
+      const scoped = typeof command.text === 'string'
+        && !command.text.startsWith(canonicalPrefix)
+        ? parseScopedManagedFill(command.text) : undefined;
+      const valuePrefix = scoped?.prefix ?? canonicalPrefix;
+      if (command.type !== 'command'
+        || (command.source !== 'text' && command.source !== 'voice')
         || command.mode !== 'command' || command.isFinal !== true
         || command.taskId !== request.requestId || command.taskEpoch !== 1
         || command.goalRevision !== 1
-        || command.text !== `Fill ${request.fieldLabel} on ${request.url} with text: ${request.value}`
+        || (scoped !== undefined
+          ? scoped.fieldLabel !== request.fieldLabel || scoped.url !== request.url
+            || scoped.value !== request.value
+          : command.text !== canonicalPrefix + request.value)
         || command.originSurface === undefined || !isRecord(command.originSurface)
         || command.originSurface.appBundleId !== 'com.aurium.systemone.dev') {
         throw new ContractError('native command binding changed');
@@ -560,7 +581,7 @@ export class NativeManagedController {
       const route = input.accept(endpoint, Buffer.from(JSON.stringify(command)));
       if (route.kind !== 'interpret_command') throw new ContractError('not a command');
       const fillParameter = bindCommandValue(route.input, 'fill-value',
-        `Fill ${request.fieldLabel} on ${request.url} with text: `, request.value);
+        valuePrefix, request.value);
       const origin = approvedOrigin(request.url);
       const session = await ManagedObservationSession.launch(request.url, {
         allowedOrigins: [origin], headless: this.#headless,

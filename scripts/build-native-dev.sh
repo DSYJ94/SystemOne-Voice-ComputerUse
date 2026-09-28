@@ -26,6 +26,7 @@ fi
 
 mkdir -p "$contents/MacOS" "$repository_root/.build/native-dev/module-cache"
 swiftc -swift-version 6 -parse-as-library -framework AppKit -framework Carbon \
+  -framework AVFoundation -framework Speech \
   -framework Security -lbsm -lsqlite3 \
   -module-cache-path "$repository_root/.build/native-dev/module-cache" \
   "${native_dev_sources[@]}" \
@@ -62,6 +63,8 @@ metadata = {
     'CFBundleVersion': '1',
     'CFBundleShortVersionString': '0.1.0',
     'NSHighResolutionCapable': True,
+    'NSMicrophoneUsageDescription': 'Capture speech only while you hold Talk to draft a task request on this Mac.',
+    'NSSpeechRecognitionUsageDescription': 'Transcribe held speech on this Mac into an editable task request.',
     'SystemOneNodeExecutable': node,
     'SystemOneControllerScript': controller,
 }

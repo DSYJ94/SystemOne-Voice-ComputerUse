@@ -65,9 +65,14 @@ export class NativeFieldPipeWorker implements NativeFieldWorker, NativePressWork
   }
 
   async observe(input: { readonly taskId: string; readonly bundleId: string;
+    readonly targetPid?: number; readonly targetLaunchMillis?: number;
     readonly signal: AbortSignal }): Promise<NativeFieldObservation> {
     const result = await this.#request('observe', { taskId: input.taskId,
-      bundleId: input.bundleId }, 5_000, input.signal);
+      bundleId: input.bundleId,
+      ...(input.targetPid === undefined ? {} : {
+        targetPid: input.targetPid,
+        targetLaunchMillis: input.targetLaunchMillis!,
+      }) }, 5_000, input.signal);
     if (!record(result)) throw new ContractError('invalid native observation');
     // The host authority validates exact candidate fields and limits before use.
     return result as unknown as NativeFieldObservation;
