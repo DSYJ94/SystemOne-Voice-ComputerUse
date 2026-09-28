@@ -43,10 +43,11 @@ established by the current fixture-only native or browser tests.
   [#21 admitted managed-browser fill](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/21),
   [#22 native-to-managed development bridge](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/22),
   [#23 native read-only inspection](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/23),
-  [#24 guarded native value driver](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/24).
+  [#24 guarded native value driver](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/24),
+  [#25 journaled native task authority](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/25).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/native-ax-action-driver`,
-  stacked on `codex/native-ax-worker`.
+- The current implementation branch is `codex/native-ax-task-authority`,
+  stacked on `codex/native-ax-action-driver`.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -106,6 +107,10 @@ The B11 source now includes a guarded native `AXValue` driver and synthetic
 Stop/interference checks. It is not connected to the UI, host journal or a
 signed worker permit, so there is still no native action in the development
 app. See [native action status](NATIVE_ACTION.md).
+The host-side native task class now admits a final command against one exact
+complete observation and records a journaled attempt before an abstract
+worker commit. It is tested with a synthetic worker only; the AppKit worker,
+OS peer identity and cross-surface owner are not connected.
 It fences both stores on Stop. Stop distinguishes browser context closure from
 an independent local save still pending and reports an incomplete worker fence
 for the latter. Context closure does not prove an already-dispatched action had
