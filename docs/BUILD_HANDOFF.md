@@ -60,7 +60,8 @@ established by the current fixture-only native or browser tests.
   [#38 isolated Chrome native transport](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/38),
   [#39 Chrome host/listener integration](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/39),
   [#40 Chrome action-scoped grant](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/40),
-  [#41 isolated Chrome journaled fill](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/41).
+  [#41 isolated Chrome journaled fill](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/41),
+  [#42 Chrome Stop after dispatch](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/42).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current implementation branch is `codex/chrome-stop-transport`,
   stacked on `codex/chrome-journaled-fill`.
