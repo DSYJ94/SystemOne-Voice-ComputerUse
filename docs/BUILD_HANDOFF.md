@@ -118,8 +118,9 @@ Stop/interference checks. The development panel can now submit one exact
 native field edit through the same persistent controller used for managed
 Chromium. A private pipe connects the journaled host task class to the AppKit
 AX worker. The process-level test uses a synthetic worker; a live action through
-the new bridge is pending. The worker is not OS-authenticated and does not
-verify a release permit. See [native action status](NATIVE_ACTION.md) and the
+the new bridge is pending. The external-source controller is unauthenticated;
+the bundled child now has a code-hash check and a worker-verified per-process
+permit, but no release identity is qualified. See [native action status](NATIVE_ACTION.md) and the
 [optional native test](NATIVE_COMPUTER_USE_TEST.md).
 It fences both stores on Stop. Stop distinguishes browser context closure from
 an independent local save still pending and reports an incomplete worker fence

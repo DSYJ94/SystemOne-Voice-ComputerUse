@@ -27,8 +27,9 @@ The driver tests use a synthetic backend, including interference, replay,
 Stop before and during setter, and error after effect. A separate process test
 exercises the controller and private pipe with a synthetic AppKit worker. These
 checks prove source behavior, not a live AX effect or release security.
-Before release, authenticate worker identity and permits, make their consumption
-durable, and qualify recovery and independent re-observation on real apps.
+Before release, qualify Developer ID identity and the signed permit across
+installation and update, then prove recovery and independent re-observation on
+real apps. The current ledger and permit checks are development evidence.
 Do not infer permission from a model proposal or from a successful read-only
 inspection. App-specific semantics, secure controls, focus changes and other
 native operations remain separate qualification work.
