@@ -3,6 +3,7 @@
 native_dev_sources=(
   "$repository_root/apps/native-dev/main.swift"
   "$repository_root/apps/native-dev/ScopedTaskCommand.swift"
+  "$repository_root/apps/native-dev/DevTaskIntake.swift"
   "$repository_root/apps/native-dev/OnDeviceSpeech.swift"
   "$repository_root/apps/native-dev/DevChromeListener.swift"
   "$repository_root/apps/native-dev/NativeFieldWorker.swift"

@@ -238,16 +238,25 @@ are on this branch, but the physical permission flow has **not** been retested.
 Read [voice crash handoff](VOICE_CRASH_HANDOFF.md) before the next voice run.
 Do not describe voice as owner-qualified until that gate is recorded.
 
+The selected architecture candidate is now implemented in this draft branch:
+`DevTaskIntake` builds committed commands and typed start requests for the
+compact panel and developer buttons, sends once, and retains one active task
+only after delivery. The UI keeps target preflight; the controller keeps action
+authority, the journal and Stop fences. See [task intake](TASK_INTAKE.md) and
+[task language](../CONTEXT.md). The synthetic intake check and native build
+pass; live panel behavior remains unverified. This is a reversible module
+refactor, not a scope or primary-model change.
+
 The owner-requested `ask-matt` skill routed the crash to `diagnosing-bugs` and
 the codebase-health review to `improve-codebase-architecture`. The resulting
 visual survey is `/private/tmp/architecture-review-20260928-voice.html` on this
 Mac (temporary, not a durable repository artifact). Its strongest candidate is
 to deepen native task intake: the voice/text and developer-panel paths in
-`apps/native-dev/main.swift` repeat command provenance, dispatch and active
-state. A lifecycle seam across native/managed/Chrome is worth exploring only
+`apps/native-dev/main.swift` repeated command provenance, dispatch and active
+state before this refactor. A lifecycle seam across native/managed/Chrome is worth exploring only
 with Stop and unknown-effect semantics preserved. A voice packaging/capability
-check is secondary. These are review candidates, **not approved refactors**;
-the immediate callback crash fix is limited to the Speech path.
+check is secondary. The remaining two are review candidates, **not approved
+refactors**; the callback crash work is limited to the Speech/microphone path.
 
 The owner redirected priority from repeated Fixture tests toward the actual
 voice-driven product. The compact panel now accepts a final typed or on-device

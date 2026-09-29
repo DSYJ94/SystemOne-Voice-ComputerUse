@@ -222,6 +222,13 @@ actor-isolation check. The branch has a narrow fix and a synthetic background
 callback check; the real macOS permission flow remains unverified. See
 [voice crash handoff](VOICE_CRASH_HANDOFF.md).
 
+On 29 September, the chosen intake deepening moved command envelope creation,
+typed start-request construction, send-once behavior and the active writer
+record into `DevTaskIntake`; all UI entry points now use it. Native build and
+synthetic one-writer/provenance checks pass. Controller admission, permits and
+Stop semantics were not broadened. Live panel use and live voice remain open.
+See [task intake](TASK_INTAKE.md).
+
 1. Move the now-journaled fixture portal task behind one authenticated host
    authority and one-use permits. Prove the browser close fence at that dispatch
    boundary and preserve already-dispatched uncertainty. Add

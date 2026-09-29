@@ -14,12 +14,17 @@ final class OnDeviceSpeech {
     private var listening = false
     private var finishing = false
     private let speechAuthorization: (@escaping @Sendable (SFSpeechRecognizerAuthorizationStatus) -> Void) -> Void
+    private let microphoneAuthorization: (@escaping @Sendable (Bool) -> Void) -> Void
     var isCapturing: Bool { listening || finishing }
 
     init(speechAuthorization: @escaping (@escaping @Sendable (SFSpeechRecognizerAuthorizationStatus) -> Void) -> Void = { completion in
-        SFSpeechRecognizer.requestAuthorization(completion)
-    }) {
+             SFSpeechRecognizer.requestAuthorization(completion)
+         },
+         microphoneAuthorization: @escaping (@escaping @Sendable (Bool) -> Void) -> Void = { completion in
+             AVCaptureDevice.requestAccess(for: .audio, completionHandler: completion)
+         }) {
         self.speechAuthorization = speechAuthorization
+        self.microphoneAuthorization = microphoneAuthorization
     }
 
     func requestPermissions() {
@@ -33,7 +38,7 @@ final class OnDeviceSpeech {
                     self.onStatus?("Speech recognition permission was not granted.")
                     return
                 }
-                AVCaptureDevice.requestAccess(for: .audio) { @Sendable [weak self] allowed in
+                self.microphoneAuthorization { @Sendable [weak self] allowed in
                     Task { @MainActor [weak self] in
                         self?.onStatus?(allowed
                             ? "Voice is ready. Hold Talk, then review and run the final transcript."
@@ -69,9 +74,7 @@ final class OnDeviceSpeech {
         let currentEpoch = epoch
         self.recognizer = recognizer
         self.request = request
-        input.installTap(onBus: 0, bufferSize: 1_024, format: format) { buffer, _ in
-            request.append(buffer)
-        }
+        Self.installAudioTap(input: input, format: format, request: request)
         do {
             engine.prepare()
             try engine.start()
@@ -135,5 +138,14 @@ final class OnDeviceSpeech {
         recognizer = nil
         listening = false
         finishing = false
+    }
+
+    // AVAudioEngine invokes tap blocks on an audio queue. Form the block in a
+    // nonisolated context so it never inherits this class's main-actor executor.
+    nonisolated private static func installAudioTap(input: AVAudioInputNode,
+        format: AVAudioFormat, request: SFSpeechAudioBufferRecognitionRequest) {
+        input.installTap(onBus: 0, bufferSize: 1_024, format: format) { buffer, _ in
+            request.append(buffer)
+        }
     }
 }

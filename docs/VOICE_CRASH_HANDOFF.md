@@ -32,10 +32,19 @@ recording audio. The test checks the exact denied-permission status on the main
 actor. It protects the callback isolation pattern but cannot prove the system
 permission dialog, microphone lifecycle, or final transcription works.
 
+On 29 September, the microphone request was also made injectable. The
+synthetic test now delivers authorized Speech and both denied/authorized
+microphone replies from background queues; all expected statuses reach the
+main actor. This closes the adjacent callback test gap without opening either
+system permission prompt. The audio tap block is now formed in a nonisolated
+method so it does not inherit the main-actor executor when AVAudioEngine calls
+it on its audio queue. Compilation is verified, but that tap has **not** been
+run with a microphone; it does not establish a successful live recording.
+
 ## Validation and next agent
 
 - `npm run test:voice-permission-callback`: passed on this Mac, synthetic
-  background callback only.
+  background Speech and microphone callbacks only.
 - `npm run build:native-dev`: passed, ad-hoc development app rebuilt.
 - `npm run check`: passed, 241/241 TypeScript/Node tests.
 - A sandboxed first attempt to run the Swift smoke could not write the global

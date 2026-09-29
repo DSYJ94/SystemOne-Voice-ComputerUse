@@ -38,13 +38,11 @@ private func systemOneHotkeyHandler(_ event: EventHandlerCallRef?,
 
 @MainActor
 final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    private enum ActiveSurface {
-        case managed, managedNavigation, portal, native, nativeNavigation,
-             nativeLocate, nativeOpen, chrome
-    }
+    private let taskIntake = DevTaskIntake()
+    private var activeRequestID: String? { taskIntake.activeRequestID }
+    private var activeSurface: DevTaskIntake.Surface? { taskIntake.activeSurface }
     private var nativeActionActive: Bool {
-        activeSurface == .native || activeSurface == .nativeNavigation
-            || activeSurface == .nativeLocate || activeSurface == .nativeOpen
+        activeSurface?.usesNativeWorker == true
     }
     private var statusItem: NSStatusItem?
     private var panel: NSPanel?
@@ -85,8 +83,6 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var controllerInput: Pipe?
     private var controllerOutput: Pipe?
     private var outputBuffer = Data()
-    private var activeRequestID: String?
-    private var activeSurface: ActiveSurface?
     private var stopRequestID: String?
     private var quitPending = false
     private var identityCheckSupport: URL?
@@ -737,15 +733,13 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "busy": statusField?.stringValue = "A task is already active."
         case "error": statusField?.stringValue = "The request was rejected or failed. No success is claimed."
         case "ready":
-            if requestID == activeRequestID {
-                activeRequestID = nil
-                activeSurface = nil
-            }
+            taskIntake.releaseIfReady(requestID: requestID)
         default: statusField?.stringValue = "Unrecognized controller status."
         }
         if phase == "stopped" && requestID == stopRequestID {
-            activeRequestID = nil
-            activeSurface = nil
+            if let activeRequestID {
+                taskIntake.releaseIfReady(requestID: activeRequestID)
+            }
             stopRequestID = nil
             if quitPending { quitPending = false; NSApp.reply(toApplicationShouldTerminate: true) }
         }
@@ -854,17 +848,14 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         let text = taskField?.stringValue ?? ""
         if let managed = ScopedManagedFill.parse(text) {
-            let taskID = UUID().uuidString.lowercased()
-            let request: [String: Any] = ["type": "start_fill",
-                "requestId": taskID, "url": managed.url,
-                "fieldLabel": managed.fieldLabel, "value": managed.value,
-                "command": committedTaskCommand(taskID: taskID, text: text)]
-            guard send(request, through: input) else {
+            let intent = DevTaskIntake.Intent.managedFill(url: managed.url,
+                field: managed.fieldLabel, value: managed.value)
+            guard taskIntake.submit(intent, originalText: text,
+                voice: finalSpeechText == text,
+                send: { [weak self] in self?.send($0, through: input) == true }) else {
                 commandStatus?.stringValue = "Could not send browser request to the controller."
                 return
             }
-            activeRequestID = taskID
-            activeSurface = .managed
             commandStatus?.stringValue = "Opening an isolated Chromium page and checking the field…"
             return
         }
@@ -890,34 +881,19 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             commandStatus?.stringValue = "The captured app changed. Focus it and reopen the panel."
             return
         }
-        let taskID = UUID().uuidString.lowercased()
-        let request: [String: Any] = ["type": "start_native_fill",
-            "requestId": taskID, "bundleId": capturedApp.bundleID,
-            "targetPid": Int(capturedApp.pid),
-            "targetLaunchMillis": Int64((capturedApp.launchDate.timeIntervalSince1970
-                * 1_000).rounded()),
-            "fieldLabel": parsed.fieldLabel, "value": parsed.value,
-            "command": committedTaskCommand(taskID: taskID, text: text)]
-        guard send(request, through: input) else {
+        let target = DevTaskIntake.NativeTarget.captured(
+            bundleID: capturedApp.bundleID, pid: Int(capturedApp.pid),
+            launchMillis: Int64((capturedApp.launchDate.timeIntervalSince1970
+                * 1_000).rounded()))
+        let intent = DevTaskIntake.Intent.nativeFill(target: target,
+            field: parsed.fieldLabel, value: parsed.value)
+        guard taskIntake.submit(intent, originalText: text,
+            voice: finalSpeechText == text,
+            send: { [weak self] in self?.send($0, through: input) == true }) else {
             commandStatus?.stringValue = "Could not send request to the controller."
             return
         }
-        activeRequestID = taskID
-        activeSurface = .native
         commandStatus?.stringValue = "Observing the captured app and exact field…"
-    }
-
-    private func committedTaskCommand(taskID: String, text: String) -> [String: Any] {
-        ["type": "command", "protocolVersion": "2.0",
-         "messageId": UUID().uuidString.lowercased(),
-         "taskId": taskID, "taskEpoch": 1, "goalRevision": 1,
-         "source": finalSpeechText == text ? "voice" : "text",
-         "mode": "command", "utteranceId": UUID().uuidString.lowercased(),
-         "utteranceRevision": 1, "text": text, "isFinal": true,
-         "createdAt": ISO8601DateFormatter().string(from: Date()),
-         "originSurface": ["adapter": "native", "surfaceId": "systemone-panel",
-             "appBundleId": "com.aurium.systemone.dev", "windowId": "command-panel",
-             "contentRevision": taskID]]
     }
 
     func handleGlobalHotkey(_ id: UInt32) {
@@ -977,26 +953,12 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             statusField?.stringValue = "Use an HTTPS page (or 127.0.0.1), an exact field label and at most 1,024 bytes."
             return
         }
-        let taskID = UUID().uuidString.lowercased()
-        let command: [String: Any] = [
-            "type": "command", "protocolVersion": "2.0", "messageId": UUID().uuidString.lowercased(),
-            "taskId": taskID, "taskEpoch": 1, "goalRevision": 1,
-            "source": "text", "mode": "command", "utteranceId": UUID().uuidString.lowercased(),
-            "utteranceRevision": 1,
-            "text": "Fill \(field) on \(url) with text: \(value)", "isFinal": true,
-            "createdAt": ISO8601DateFormatter().string(from: Date()),
-            "originSurface": ["adapter": "native", "surfaceId": "systemone-panel",
-                "appBundleId": "com.aurium.systemone.dev", "windowId": "command-panel",
-                "contentRevision": taskID],
-        ]
-        let request: [String: Any] = ["type": "start_fill", "requestId": taskID,
-            "url": url, "fieldLabel": field, "value": value, "command": command]
-        guard send(request, through: input) else {
+        let intent = DevTaskIntake.Intent.managedFill(url: url, field: field, value: value)
+        guard taskIntake.submit(intent,
+            send: { [weak self] in self?.send($0, through: input) == true }) else {
             statusField?.stringValue = "Could not send the request to the controller."
             return
         }
-        activeRequestID = taskID
-        activeSurface = .managed
         statusField?.stringValue = "Request sent to the local controller…"
     }
 
@@ -1022,27 +984,13 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             statusField?.stringValue = "Use a page URL, exact link label and expected URL on the same approved origin."
             return
         }
-        let taskID = UUID().uuidString.lowercased()
-        let command: [String: Any] = [
-            "type": "command", "protocolVersion": "2.0", "messageId": UUID().uuidString.lowercased(),
-            "taskId": taskID, "taskEpoch": 1, "goalRevision": 1,
-            "source": "text", "mode": "command", "utteranceId": UUID().uuidString.lowercased(),
-            "utteranceRevision": 1,
-            "text": "Navigate via \(label) on \(url) to \(destination)", "isFinal": true,
-            "createdAt": ISO8601DateFormatter().string(from: Date()),
-            "originSurface": ["adapter": "native", "surfaceId": "systemone-panel",
-                "appBundleId": "com.aurium.systemone.dev", "windowId": "command-panel",
-                "contentRevision": taskID],
-        ]
-        let request: [String: Any] = ["type": "start_navigate", "requestId": taskID,
-            "url": url, "linkLabel": label, "destinationUrl": destination,
-            "command": command]
-        guard send(request, through: input) else {
+        let intent = DevTaskIntake.Intent.managedNavigate(url: url,
+            label: label, destination: destination)
+        guard taskIntake.submit(intent,
+            send: { [weak self] in self?.send($0, through: input) == true }) else {
             statusField?.stringValue = "Could not send navigation to the controller."
             return
         }
-        activeRequestID = taskID
-        activeSurface = .managedNavigation
         statusField?.stringValue = "Navigation request sent to the local controller…"
     }
 
@@ -1062,26 +1010,11 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             statusField?.stringValue = "Enter the synthetic portal's exact http://127.0.0.1:<port>/ URL first."
             return
         }
-        let taskID = UUID().uuidString.lowercased()
-        let command: [String: Any] = [
-            "type": "command", "protocolVersion": "2.0", "messageId": UUID().uuidString.lowercased(),
-            "taskId": taskID, "taskEpoch": 1, "goalRevision": 1,
-            "source": "text", "mode": "command", "utteranceId": UUID().uuidString.lowercased(),
-            "utteranceRevision": 1,
-            "text": "Download fixture invoice INV-105 from \(url)", "isFinal": true,
-            "createdAt": ISO8601DateFormatter().string(from: Date()),
-            "originSurface": ["adapter": "native", "surfaceId": "systemone-panel",
-                "appBundleId": "com.aurium.systemone.dev", "windowId": "command-panel",
-                "contentRevision": taskID],
-        ]
-        let request: [String: Any] = ["type": "start_portal_workflow",
-            "requestId": taskID, "url": url, "command": command]
-        guard send(request, through: input) else {
+        guard taskIntake.submit(.portal(url: url),
+            send: { [weak self] in self?.send($0, through: input) == true }) else {
             statusField?.stringValue = "Could not send fixture workflow request."
             return
         }
-        activeRequestID = taskID
-        activeSurface = .portal
         statusField?.stringValue = "Fixture workflow sent to the local controller…"
     }
 
@@ -1107,27 +1040,13 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             nativeOutput?.string = "Enter an exact app bundle ID and field label, with at most 1,024 value bytes."
             return
         }
-        let taskID = UUID().uuidString.lowercased()
-        let command: [String: Any] = [
-            "type": "command", "protocolVersion": "2.0", "messageId": UUID().uuidString.lowercased(),
-            "taskId": taskID, "taskEpoch": 1, "goalRevision": 1,
-            "source": "text", "mode": "command", "utteranceId": UUID().uuidString.lowercased(),
-            "utteranceRevision": 1,
-            "text": "Fill \(field) in \(bundleID) with text: \(value)", "isFinal": true,
-            "createdAt": ISO8601DateFormatter().string(from: Date()),
-            "originSurface": ["adapter": "native", "surfaceId": "systemone-panel",
-                "appBundleId": "com.aurium.systemone.dev", "windowId": "command-panel",
-                "contentRevision": taskID],
-        ]
-        let request: [String: Any] = ["type": "start_native_fill",
-            "requestId": taskID, "bundleId": bundleID,
-            "fieldLabel": field, "value": value, "command": command]
-        guard send(request, through: input) else {
+        let intent = DevTaskIntake.Intent.nativeFill(
+            target: .explicit(bundleID: bundleID), field: field, value: value)
+        guard taskIntake.submit(intent,
+            send: { [weak self] in self?.send($0, through: input) == true }) else {
             nativeOutput?.string = "Could not send native request to the controller."
             return
         }
-        activeRequestID = taskID
-        activeSurface = .native
         statusField?.stringValue = "Native request sent to the local controller…"
     }
 
@@ -1142,31 +1061,11 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             statusField?.stringValue = "Accessibility is not granted to this SystemOne Dev build."
             return
         }
-        let taskID = UUID().uuidString.lowercased()
-        let command: [String: Any] = [
-            "type": "command", "protocolVersion": "2.0",
-            "messageId": UUID().uuidString.lowercased(),
-            "taskId": taskID, "taskEpoch": 1, "goalRevision": 1,
-            "source": "text", "mode": "command",
-            "utteranceId": UUID().uuidString.lowercased(),
-            "utteranceRevision": 1,
-            "text": "Navigate synthetic fixture to Documents", "isFinal": true,
-            "createdAt": ISO8601DateFormatter().string(from: Date()),
-            "originSurface": ["adapter": "native", "surfaceId": "systemone-panel",
-                "appBundleId": "com.aurium.systemone.dev",
-                "windowId": "command-panel", "contentRevision": taskID],
-        ]
-        let request: [String: Any] = ["type": "start_native_press",
-            "requestId": taskID, "bundleId": "com.aurium.systemone.fixture",
-            "folderName": "Documents",
-            "expectedWindowTitle": "SystemOne Fixture — Documents",
-            "command": command]
-        guard send(request, through: input) else {
+        guard taskIntake.submit(.fixtureDocuments,
+            send: { [weak self] in self?.send($0, through: input) == true }) else {
             statusField?.stringValue = "Could not send fixture navigation request."
             return
         }
-        activeRequestID = taskID
-        activeSurface = .nativeNavigation
         statusField?.stringValue = "Fixture navigation sent to the local controller…"
     }
 
@@ -1189,36 +1088,11 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             statusField?.stringValue = "Accessibility is not granted to this SystemOne Dev build."
             return
         }
-        let taskID = UUID().uuidString.lowercased()
-        let command: [String: Any] = [
-            "type": "command", "protocolVersion": "2.0",
-            "messageId": UUID().uuidString.lowercased(),
-            "taskId": taskID, "taskEpoch": 1, "goalRevision": 1,
-            "source": "text", "mode": "command",
-            "utteranceId": UUID().uuidString.lowercased(),
-            "utteranceRevision": 1,
-            "text": open ? "Open synthetic fixture file Documents/Budget.xlsx"
-                         : "Locate synthetic fixture file Documents/Budget.xlsx",
-            "isFinal": true,
-            "createdAt": ISO8601DateFormatter().string(from: Date()),
-            "originSurface": ["adapter": "native", "surfaceId": "systemone-panel",
-                "appBundleId": "com.aurium.systemone.dev",
-                "windowId": "command-panel", "contentRevision": taskID],
-        ]
-        let request: [String: Any] = ["type": open ? "start_native_open"
-                                                 : "start_native_locate",
-            "requestId": taskID, "bundleId": "com.aurium.systemone.fixture",
-            "folderName": "Documents", "fileName": "Budget.xlsx",
-            "expectedWindowTitle": open
-                ? "SystemOne Fixture — Documents — Budget.xlsx opened"
-                : "SystemOne Fixture — Documents — Budget.xlsx selected",
-            "command": command]
-        guard send(request, through: input) else {
+        guard taskIntake.submit(.fixtureFile(open: open),
+            send: { [weak self] in self?.send($0, through: input) == true }) else {
             statusField?.stringValue = "Could not send fixture file request."
             return
         }
-        activeRequestID = taskID
-        activeSurface = open ? .nativeOpen : .nativeLocate
         statusField?.stringValue = open
             ? "Synthetic file opening sent to the local controller…"
             : "Synthetic file selection sent to the local controller…"
@@ -1240,27 +1114,13 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             statusField?.stringValue = "Only the loopback fixture's Find invoice field is supported."
             return
         }
-        let taskID = UUID().uuidString.lowercased()
-        let command: [String: Any] = [
-            "type": "command", "protocolVersion": "2.0", "messageId": UUID().uuidString.lowercased(),
-            "taskId": taskID, "taskEpoch": 1, "goalRevision": 1,
-            "source": "text", "mode": "command", "utteranceId": UUID().uuidString.lowercased(),
-            "utteranceRevision": 1,
-            "text": "Fill \(field) in existing Chrome tab \(url) with text: \(value)", "isFinal": true,
-            "createdAt": ISO8601DateFormatter().string(from: Date()),
-            "originSurface": ["adapter": "native", "surfaceId": "systemone-panel",
-                "appBundleId": "com.aurium.systemone.dev", "windowId": "command-panel",
-                "contentRevision": taskID],
-        ]
-        let request: [String: Any] = ["type": "start_chrome_fill",
-            "requestId": taskID, "connectionId": connectionID, "grantId": grantID,
-            "fieldLabel": field, "value": value, "command": command]
-        guard send(request, through: input) else {
+        let intent = DevTaskIntake.Intent.chromeFill(connectionID: connectionID,
+            grantID: grantID, url: url, field: field, value: value)
+        guard taskIntake.submit(intent,
+            send: { [weak self] in self?.send($0, through: input) == true }) else {
             statusField?.stringValue = "Could not send the Chrome request."
             return
         }
-        activeRequestID = taskID
-        activeSurface = .chrome
         statusField?.stringValue = "Existing Chrome request sent to the local controller…"
     }
 

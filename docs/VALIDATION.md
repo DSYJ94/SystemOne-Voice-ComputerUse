@@ -1169,3 +1169,20 @@ temporary cache. The first sandboxed full suite hit loopback `EPERM`; the
 permitted local run passed. No OS permission request, audio capture, or live
 Enable Voice click was run by the agent. The manual gate remains open; see
 [handoff](VOICE_CRASH_HANDOFF.md).
+
+## Task intake and adjacent voice callback, 29 September 2026
+
+`npm run test:dev-task-intake` passed its synthetic one-writer, failed-send,
+stale-status, voice/text provenance, captured PID/launch identity,
+LOCATE-versus-OPEN and Chrome grant checks. `npm run
+test:voice-permission-callback` passed with denied Speech plus denied and
+authorized microphone results injected from background queues. Neither check
+requested macOS permission or audio input. `npm run build:native-dev` compiled
+and ad-hoc signed the refactored app, including a nonisolated audio-tap block.
+The audio tap was not exercised. The first compile needed a Swift `return`
+correction in the new request switch; the second build passed. `npm run check`
+passed 241/241 TypeScript/Node tests. No live Enable Voice click, final
+transcript, real-app edit, headed browser edit or existing-Chrome-profile
+action was run in this session. No SystemOne Dev crash report newer than the
+two 28 September permission incidents was present when checked. These results
+do not certify the app against further live crashes.
