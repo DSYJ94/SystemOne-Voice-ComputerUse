@@ -1186,3 +1186,9 @@ transcript, real-app edit, headed browser edit or existing-Chrome-profile
 action was run in this session. No SystemOne Dev crash report newer than the
 two 28 September permission incidents was present when checked. These results
 do not certify the app against further live crashes.
+
+After the final build, `npm run run:native-dev` launched the exact worktree
+bundle and an exact executable-path process check found PID 47288 still running.
+The two 28 September incidents remained the newest SystemOne Dev crash reports
+at that check. This is a startup-only observation; Enable Voice, Talk and task
+execution were not invoked.

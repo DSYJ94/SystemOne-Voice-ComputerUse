@@ -54,6 +54,9 @@ run with a microphone; it does not establish a successful live recording.
   regressions.
 - **Unverified:** clicking Enable Voice in the rebuilt app, both permission
   prompts, actual held speech, transcript completion, and no new crash report.
+- The final development bundle launched and remained running by exact process
+  path (PID 47288 at the check); no newer `.ips` report appeared. This is a
+  startup smoke, not a permission-flow or recording result.
 
 The next agent should first inspect `git status`, the latest commit/PR, and
 this handoff. Do not infer live voice success from the smoke. When the owner is
