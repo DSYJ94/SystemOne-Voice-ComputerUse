@@ -9,7 +9,10 @@ managed-Chromium field edit. Synthetic fixture and existing-Chrome paths remain
 separate development checks. There is no general-purpose executor or release
 binary yet. The owner-reported Enable Voice crash has a callback fix and
 synthetic regression checks, but its rebuilt app still needs a live permission
-test; see [crash handoff](docs/VOICE_CRASH_HANDOFF.md).
+test; see [crash handoff](docs/VOICE_CRASH_HANDOFF.md). The compact panel now
+declares managed Mission Control behavior after the owner reported that it
+disappeared from the trackpad window overview; physical gesture verification
+remains open.
 
 ## Current implementation
 

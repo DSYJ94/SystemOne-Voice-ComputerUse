@@ -72,3 +72,10 @@ reset TCC or alter machine settings automatically.
 The product remains a bounded development alpha. It does not yet use CLM in
 the task loop, accept arbitrary multi-hop computer-use requests, qualify the
 existing Chrome profile, or meet signed/notarized distribution gates.
+
+The later window-visibility branch makes the compact command panel explicitly
+participate in Mission Control; this is independent of the permission callback
+fix. Its built-window check passed, but the owner still needs to verify the
+trackpad gesture and then the physical Enable Voice/Talk flow. Follow the
+[current test guide](VOICE_COMPUTER_USE_TEST.md) and keep the two outcomes
+separate in this handoff.

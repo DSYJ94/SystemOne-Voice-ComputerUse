@@ -10,27 +10,51 @@ flow testable without a model download. The planned pinned WhisperKit path and
 representative speech evaluation remain open; this does not change CLM as the
 primary decision model.
 
-From the `codex/voice-command-alpha` checkout, run `npm run run:native-dev` if
-SystemOne Dev is not already open. Its compact translucent **SystemOne** panel
-opens on launch; Control–Option–Space reopens it. The menu-bar or Dock item also
-opens it. Control–Option–Escape is Stop. A rebuild is ad-hoc signed and may need
-a fresh Accessibility grant for native actions.
+For the current window-visibility build, first quit any earlier **SystemOne Dev**
+with **Command–Q**. Closing the window can leave the app running. In Terminal:
+
+```sh
+cd '/Users/daryl/.codex/worktrees/task-lifecycle/SystemOne-Voice-ComputerUse'
+npm run run:native-dev
+```
+
+The compact translucent **SystemOne** window opens on launch; Control–Option–Space
+reopens it. The menu-bar or Dock item also opens it. Control–Option–Escape is
+Stop. A rebuild is ad-hoc signed and may need a fresh Accessibility grant for
+native actions. If the launcher reports another exact SystemOne Dev path, quit
+that app with Command–Q and run the command again; do not use a force-quit script.
+
+First check the reported window problem: with **SystemOne** visible, use your
+trackpad's Mission Control gesture (normally swipe up with three or four fingers)
+and, if applicable, App Exposé (normally swipe down). The SystemOne window should
+remain in the window overview and be selectable. Command–Tab alone is not the
+acceptance check. If it still disappears, report which gesture you used and
+whether Stage Manager or multiple Spaces are enabled. The built-window
+`npm run test:window-visibility` check verifies the explicit AppKit `.managed`
+setting, but only the physical gesture verifies the actual desktop behavior.
+
+"No target app captured" on initial launch is expected: SystemOne itself can be
+frontmost then. Focus the app you want to test, then press Control–Option–Space;
+the panel should name that app. Do not run a native request while no target is
+captured.
 
 For a real native app, open a disposable document or field in an app you choose
 and bring that app to the front. Press Control–Option–Space. Confirm the panel's
 **Target** names that app. Choose **Show fields** to see up to five observed,
 nonsecure editable labels. If macOS asks for Accessibility access, grant it to
 this exact development build and choose **Show fields** again. If coverage is
-incomplete or no label appears, do
-not guess. Enter `Fill <exact displayed label> with <disposable value>`. Choose
+incomplete or no label appears, do not guess. Enter
+`Fill <exact displayed label> with <disposable value>`. Choose
 **Run request** once. **Verified** means a fresh read found that exact value in
 the chosen field. It does not mean the document was saved or submitted.
 
-For voice, choose **Enable Voice** once and grant microphone and speech
-recognition access to this build. Hold **Talk** while speaking the same command,
+Before running any action, test voice alone. Choose **Enable Voice** once and
+grant microphone and speech recognition access to this build. Hold **Talk**
+while speaking the same command,
 then release. Recording stops on release. Wait for **Final transcript ready**,
-read and edit the command text if needed, then choose **Run request**. Partial
-transcripts never run. Recognition requires an available on-device recognizer
+read and edit the command text if needed. Only then choose **Run request** if
+you intend to test the selected disposable field. Partial transcripts never
+run. Recognition requires an available on-device recognizer
 for the current Mac language; it never falls back to network speech. Raw audio
 is not saved. If the recognizer is unavailable, type the command instead.
 
