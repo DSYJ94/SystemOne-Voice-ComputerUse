@@ -73,7 +73,8 @@ established by the current fixture-only native or browser tests.
   [#51 distinct synthetic native OPEN task](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/51),
   [#52 scoped read-only native AX coverage](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/52),
   [#53 local computer-use test session](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/53),
-  [#54 compact voice/text command alpha](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/54).
+  [#54 compact voice/text command alpha](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/54),
+  [#55 controller task slot and voice bundle check](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/55).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current architecture branch is `codex/task-lifecycle`, stacked on
   `codex/voice-command-alpha` (draft PR #54). The preceding checkout's exact
