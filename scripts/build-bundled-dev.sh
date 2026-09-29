@@ -103,6 +103,7 @@ fi
   "Add :SystemOneControllerNodeCDHash string $node_cdhash" "$contents/Info.plist"
 codesign --force --sign - --identifier com.aurium.systemone.dev "$app"
 codesign --verify --deep --strict "$app"
+/usr/bin/python3 "$script_dir/check-voice-bundle-metadata.py" "$app"
 
 print "Built movable ad-hoc development app: $app"
 print 'No Chrome native host is bundled or registered; this is not a notarized release.'

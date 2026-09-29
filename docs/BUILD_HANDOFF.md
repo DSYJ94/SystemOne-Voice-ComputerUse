@@ -1,6 +1,6 @@
 # Build handoff
 
-Updated 28 September 2026. This is the current implementation handoff, not a
+Updated 29 September 2026. This is the current implementation handoff, not a
 release claim. Read this with [implementation status](IMPLEMENTATION_STATUS.md),
 the [fixture test](FIXTURE_COMPUTER_USE_TEST.md),
 [managed-browser status](MANAGED_BROWSER.md), and the reviewed
@@ -75,8 +75,10 @@ established by the current fixture-only native or browser tests.
   [#53 local computer-use test session](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/53),
   [#54 compact voice/text command alpha](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/54).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current implementation branch is `codex/voice-command-alpha`,
-  stacked on `codex/local-v1-test-setup`.
+- The current architecture branch is `codex/task-lifecycle`, stacked on
+  `codex/voice-command-alpha` (draft PR #54). The preceding checkout's exact
+  development app remains the pending live voice test target; do not replace
+  that running app from this branch.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -238,7 +240,7 @@ are on this branch, but the physical permission flow has **not** been retested.
 Read [voice crash handoff](VOICE_CRASH_HANDOFF.md) before the next voice run.
 Do not describe voice as owner-qualified until that gate is recorded.
 
-The selected architecture candidate is now implemented in this draft branch:
+The first selected architecture candidate is implemented in the preceding draft:
 `DevTaskIntake` builds committed commands and typed start requests for the
 compact panel and developer buttons, sends once, and retains one active task
 only after delivery. The UI keeps target preflight; the controller keeps action
@@ -253,10 +255,26 @@ visual survey is `/private/tmp/architecture-review-20260928-voice.html` on this
 Mac (temporary, not a durable repository artifact). Its strongest candidate is
 to deepen native task intake: the voice/text and developer-panel paths in
 `apps/native-dev/main.swift` repeated command provenance, dispatch and active
-state before this refactor. A lifecycle seam across native/managed/Chrome is worth exploring only
-with Stop and unknown-effect semantics preserved. A voice packaging/capability
-check is secondary. The remaining two are review candidates, **not approved
-refactors**; the callback crash work is limited to the Speech/microphone path.
+state before this refactor. This branch applies the next candidate narrowly:
+one exclusive controller task slot spans native, managed Chromium and existing
+Chrome, with identity-checked release of late completions. Each adapter retains
+its own Stop and unknown-effect fence. A signed development-bundle check now
+rejects missing or empty microphone/Speech purpose strings. These changes do
+not qualify a live TCC prompt, controller release identity or general actions.
+
+## Shortest path to a testable v1
+
+This remains a bounded development alpha, not an almost-finished v1. The next
+integrated milestone is a user-run voice/text command in a disposable real
+native field and harmless HTTPS managed page, with fresh observation,
+verified effect, Stop and no crash. The current app has these bounded routes,
+but they have not been physically qualified. Then generalize native and
+managed navigation from fixed commands to a persistent observe/propose/validate/
+execute/verify task loop, integrate and calibrate CLM as primary decision model,
+and qualify the existing Chrome extension/host in the owner's current profile.
+Release identity, signed/notarized packaging, privacy, recovery, updates and
+clean-Mac compatibility follow. G1-G6 remain unverified; draft PR and test
+counts are not a measure of release readiness.
 
 The owner redirected priority from repeated Fixture tests toward the actual
 voice-driven product. The compact panel now accepts a final typed or on-device

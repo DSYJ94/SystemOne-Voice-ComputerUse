@@ -17,6 +17,12 @@ test; see [crash handoff](docs/VOICE_CRASH_HANDOFF.md).
   start requests once for the compact panel and developer actions, retaining a
   single active request only after send succeeds. Its synthetic check passes;
   controller-side admission and effect authority remain independent.
+- The development controller now reserves one task slot across native, managed
+  Chromium and existing Chrome, so a late completion cannot release a newer
+  task or free the slot before a pending Stop barrier. Each adapter keeps its
+  own Stop fence. Development builds check that
+  microphone and Speech purpose strings exist in the signed app bundle; live
+  voice authorization remains unverified.
 
 - Protocol 2.0 schema and the corrected independent Python conformance oracle.
 - TypeScript strict JSON ingress, schema validation, bounded private-RPC framing,
