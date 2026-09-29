@@ -75,7 +75,8 @@ established by the current fixture-only native or browser tests.
   [#53 local computer-use test session](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/53),
   [#54 compact voice/text command alpha](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/54),
   [#55 controller task slot and voice bundle check](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/55),
-  [#56 compact window Mission Control behavior](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/56).
+  [#56 compact window Mission Control behavior](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/56),
+  [#57 target-first Accessibility preflight](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/57).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current preflight branch is `codex/ax-preflight`, stacked on
   `codex/window-visibility` (draft PR #56), then `codex/task-lifecycle`
