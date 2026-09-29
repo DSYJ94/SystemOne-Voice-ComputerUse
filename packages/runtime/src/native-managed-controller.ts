@@ -114,7 +114,7 @@ type NativeRequest = StartFill | StartNavigate | StartNativeFill | StartNativePr
   | StartChromeFill | StartPortalWorkflow | Stop;
 type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
   | 'verified_dom_fill' | 'unsupported' | 'uncertain' | 'stopping'
-  | 'stopped' | 'busy' | 'error' | 'blocked_recovery'
+  | 'stopped' | 'busy' | 'error' | 'blocked_recovery' | 'paused_budget'
   | 'observing_native' | 'verified_native_fill' | 'already_matched'
   | 'observing_native_navigation' | 'verified_native_navigation'
   | 'observing_native_locate' | 'verified_native_locate'
@@ -330,7 +330,14 @@ export class NativeManagedController {
     portalStore?: ScriptedPortalStore) {
     this.#journal = journal;
     this.#portalStore = portalStore;
-    this.#send = send;
+    this.#send = (requestId, phase) => {
+      // Adapter cleanup may catch a journal refusal. Preserve the durable
+      // pause instead of translating it into success or a safe retry.
+      const budgetPaused = journal.getTaskState(requestId) === 'paused'
+        && journal.taskEventKinds(requestId).some(event => event.startsWith('paused_budget:'));
+      send(requestId, budgetPaused && !['ready', 'stopped', 'stopping', 'busy',
+        'blocked_recovery'].includes(phase) ? 'paused_budget' : phase);
+    };
     this.#headless = headless;
     this.#nativeWorker = nativeWorker;
     this.#chromeOutput = chromeOutput;

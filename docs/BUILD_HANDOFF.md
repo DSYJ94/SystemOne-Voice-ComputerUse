@@ -78,12 +78,14 @@ established by the current fixture-only native or browser tests.
   [#56 compact window Mission Control behavior](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/56),
   [#57 target-first Accessibility preflight](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/57).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current preflight branch is `codex/ax-preflight`, stacked on
+- The current source branch is `codex/durable-task-budgets`, stacked on
+  `codex/ax-preflight` (draft PR #57), which is stacked on
   `codex/window-visibility` (draft PR #56), then `codex/task-lifecycle`
   (draft PR #55), itself stacked on
   `codex/voice-command-alpha` (draft PR #54). Use the current branch's exact
-  app for the next target/Accessibility test; quit an earlier SystemOne Dev with
-  Command–Q first. The [test guide](VOICE_COMPUTER_USE_TEST.md) has the command.
+  app when the owner explicitly revisits manual testing; tests are currently
+  parked. Quit an earlier SystemOne Dev with Command–Q before changing builds.
+  The [test guide](VOICE_COMPUTER_USE_TEST.md) preserves the steps.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -237,6 +239,31 @@ identity/key-handoff smoke pass. The ad-hoc bundle is not a Developer ID release
 and external-source mode still lacks code authentication.
 
 ## Next implementation order
+
+### Owner direction and current source slice, 29 September
+
+Manual Mac tests are parked at the owner's request. Preserve the one successful
+physical voice transcript and prior Fixture fill; captured-target Accessibility,
+trackpad window overview, real-app action and headed-browser qualification
+remain unverified. Do not automatically prompt for permissions, record audio,
+launch the app or resume the previous goal. Source work continues.
+
+The current B15/B17 slice adds persistent host-owned preparation limits and
+deadlines to the shared attempt journal, with a truthful `paused_budget` UI
+status. It also rejects unknown-effect retries while budget remains. The
+scripted portal store enforces outcome-specific stage transitions and one
+advancement at a time. See [task limits](TASK_EXECUTION_LIMITS.md).
+Automated checks pass (255/255 at the latest run) and the native bundle
+compiles; this does not establish new live action coverage.
+
+Next source priority is the general task actor: persist an admitted goal and
+verified checkpoints in one reconciled lifecycle, expire current facts after
+re-observation, apply decision/no-progress budgets, and invalidate proposals on
+correction. Replace fixed workflow choices with legal semantic next-action
+candidates for native and managed navigation. Prove scripted dispatch, Stop,
+unknown effects and terminal predicates before inserting primary CLM decisions;
+qualify current-profile Chrome and signed delivery before v1. Manual gates stay
+open while these source changes progress.
 
 **Current owner-reported blocker:** the owner completed one Enable Voice and
 held-Talk run on 29 September with a final editable transcript and no crash.

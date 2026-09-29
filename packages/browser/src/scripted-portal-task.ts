@@ -4,7 +4,7 @@ import { basename, dirname, isAbsolute, join } from 'node:path';
 import { lstatSync, realpathSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { digest } from '../../protocol/src/json.ts';
-import { AttemptJournal } from '../../runtime/src/attempt-journal.ts';
+import { AttemptJournal, TaskBudgetExceeded } from '../../runtime/src/attempt-journal.ts';
 import { TaskAdmissionRegistry } from '../../runtime/src/task-authority.ts';
 import type { TaskAdmission, Effect } from '../../runtime/src/task-authority.ts';
 import { PortalActionAuthority } from './portal-action-authority.ts';
@@ -14,6 +14,10 @@ type GoalKind = PortalGoal['kind'];
 type Stage = 'admitted' | 'located' | 'opened' | 'downloaded_temporary' | 'saved';
 type State = 'active' | 'paused' | 'completed' | 'cancelled';
 type Action = 'search' | 'open' | 'download' | 'save';
+const TRANSITIONS: Record<Action, readonly [Stage, Stage]> = {
+  search: ['admitted', 'located'], open: ['located', 'opened'],
+  download: ['opened', 'downloaded_temporary'], save: ['downloaded_temporary', 'saved'],
+};
 const ID = /^[A-Za-z0-9_.:-]{1,160}$/;
 const INVOICE_ID = /^INV-\d{3}$/;
 
@@ -144,16 +148,32 @@ export class ScriptedPortalStore {
 
   begin(taskId: string, action: Action): void {
     if (!['search', 'open', 'download', 'save'].includes(action)) throw new Error('invalid action');
+    const task = this.get(taskId);
+    if (!task || ((action === 'download' || action === 'save') && task.outcomeKind !== 'DOWNLOAD')
+      || (action === 'open' && task.outcomeKind === 'LOCATE')) {
+      throw new Error('action is outside the task outcome');
+    }
     const result = this.#db.prepare(`UPDATE scripted_portal_tasks SET in_flight = ?
-      WHERE task_id = ? AND state = 'active' AND in_flight IS NULL`).run(action, taskId);
+      WHERE task_id = ? AND state = 'active' AND in_flight IS NULL AND stage = ?`)
+      .run(action, taskId, TRANSITIONS[action][0]);
     if (result.changes !== 1) throw new Error('task is not ready for an action');
   }
 
   verified(taskId: string, stage: Stage, completed: boolean, action?: Action): boolean {
+    const task = this.get(taskId);
+    if (!task) return false;
+    const terminalStage = task.outcomeKind === 'LOCATE' ? 'located'
+      : task.outcomeKind === 'OPEN' ? 'opened' : 'saved';
+    const validTransition = action === undefined
+      ? completed && task.inFlight === null && task.outcomeKind !== 'DOWNLOAD'
+        && (task.stage === 'admitted' || task.stage === 'located' || task.stage === stage)
+      : task.inFlight === action && task.stage === TRANSITIONS[action]?.[0]
+        && stage === TRANSITIONS[action]?.[1];
+    if (!validTransition || completed !== (stage === terminalStage)) return false;
     const result = this.#db.prepare(`UPDATE scripted_portal_tasks
       SET stage = ?, state = ?, in_flight = NULL, reason = NULL
-      WHERE task_id = ? AND state = 'active' AND in_flight IS ?`)
-      .run(stage, completed ? 'completed' : 'active', taskId, action ?? null);
+      WHERE task_id = ? AND state = 'active' AND in_flight IS ? AND stage = ?`)
+      .run(stage, completed ? 'completed' : 'active', taskId, action ?? null, task.stage);
     return result.changes === 1;
   }
 
@@ -201,6 +221,7 @@ export class ScriptedPortalTask {
   readonly #authority: PortalActionAuthority;
   #receipt: PortalDownload | undefined;
   #localSaveActive = false;
+  #advancing = false;
 
   constructor(store: ScriptedPortalStore, journal: AttemptJournal,
     session: PortalSession, admission: TaskAdmission, started: ScriptedPortalRecord) {
@@ -251,6 +272,13 @@ export class ScriptedPortalTask {
   }
 
   async advance(): Promise<ScriptedPortalRecord> {
+    if (this.#advancing) throw new Error('task advance already in progress');
+    this.#advancing = true;
+    try { return await this.#advance(); }
+    finally { this.#advancing = false; }
+  }
+
+  async #advance(): Promise<ScriptedPortalRecord> {
     const task = this.#store.get(this.#taskId)!;
     if (task.state !== 'active' || task.inFlight !== null) {
       throw new Error('scripted task is not active and settled');
@@ -358,18 +386,20 @@ export class ScriptedPortalTask {
     try { permit = this.#authority.issue(current, action, fresh); }
     catch { return this.#store.pause(task.taskId, `${action} was not admitted`); }
     try { this.#journal.prepare(permit); }
-    catch { return this.#store.pause(task.taskId, `${action} journal preparation failed`); }
+    catch (error) { return this.#store.pause(task.taskId, error instanceof TaskBudgetExceeded
+      ? error.message : `${action} journal preparation failed`); }
     try {
       this.#authority.consume(permit, current, action, fresh);
       this.#store.begin(task.taskId, action);
       // No await between the durable marker and the browser call. The marker
       // means an effect is possible, including during Playwright auto-waiting.
       this.#journal.markDispatchBoundary(permit.executionId);
-    } catch {
+    } catch (error) {
       if (this.#journal.getAttempt(permit.executionId)?.phase === 'prepared') {
         this.#journal.recordNotDispatched(permit.executionId);
       }
-      return this.#store.pause(task.taskId, `${action} was not dispatched`);
+      return this.#store.pause(task.taskId, error instanceof TaskBudgetExceeded
+        ? error.message : `${action} was not dispatched`);
     }
     let evidenceRef: string;
     try { evidenceRef = await body(); }
@@ -385,10 +415,13 @@ export class ScriptedPortalTask {
       if (this.#journal.getTaskState(task.taskId) === 'active'
         && this.#store.get(task.taskId)?.state === 'active') {
         if (completed) this.#journal.completeTask(task.taskId, evidenceRef);
-        this.#store.verified(task.taskId, stage, completed, action);
+        if (!this.#store.verified(task.taskId, stage, completed, action)) {
+          throw new Error('progress checkpoint was refused');
+        }
       }
-    } catch {
-      return this.#store.pause(task.taskId, `${action} journal outcome uncertain`);
+    } catch (error) {
+      return this.#store.pause(task.taskId, error instanceof TaskBudgetExceeded
+        ? error.message : `${action} journal outcome uncertain`);
     }
     return this.#store.get(task.taskId)!;
   }
@@ -397,7 +430,9 @@ export class ScriptedPortalTask {
     try {
       this.#assertTaskActive(task.taskId);
       this.#journal.completeTask(task.taskId, evidenceRef);
-      this.#store.verified(task.taskId, stage, true);
+      if (!this.#store.verified(task.taskId, stage, true)) {
+        throw new Error('terminal checkpoint was refused');
+      }
     } catch {
       this.#store.pause(task.taskId, 'terminal verification could not be recorded');
     }

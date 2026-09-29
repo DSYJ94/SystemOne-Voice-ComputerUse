@@ -78,6 +78,82 @@ function privateStore() {
     journal: new AttemptJournal(database) };
 }
 
+test('progress cannot skip, repeat, or complete at an intermediate stage', () => {
+  const local = privateStore();
+  const record = start(local.store, { taskId: 'task-stage-guard',
+    origin: 'http://127.0.0.1:12345', outcomeKind: 'DOWNLOAD',
+    invoiceId: 'INV-105', title: 'April Service Statement', account: 'Harbor Works',
+    query: 'April', destinationPath: join(local.output, 'INV-105.txt') });
+  try {
+    assert.throws(() => local.store.begin(record.taskId, 'download'), /not ready/);
+    assert.equal(local.store.verified(record.taskId, 'saved', true), false);
+    local.store.begin(record.taskId, 'search');
+    assert.equal(local.store.verified(record.taskId, 'located', true, 'search'), false);
+    assert.equal(local.store.verified(record.taskId, 'opened', false, 'search'), false);
+    assert.equal(local.store.verified(record.taskId, 'located', false, 'search'), true);
+    assert.throws(() => local.store.begin(record.taskId, 'search'), /not ready/);
+    assert.equal(local.store.get(record.taskId)?.stage, 'located');
+    assert.equal(local.store.get(record.taskId)?.state, 'active');
+  } finally {
+    local.journal.close(); local.store.close();
+    rmSync(local.root, { recursive: true, force: true });
+  }
+});
+
+test('a LOCATE contract cannot advance to opening or downloading', () => {
+  const local = privateStore();
+  const record = start(local.store, { taskId: 'task-locate-stage',
+    origin: 'http://127.0.0.1:12345', outcomeKind: 'LOCATE', invoiceId: 'INV-105',
+    title: 'April Service Statement', account: 'Harbor Works', query: 'April' });
+  try {
+    local.store.begin(record.taskId, 'search');
+    assert.equal(local.store.verified(record.taskId, 'located', false, 'search'), false);
+    assert.equal(local.store.verified(record.taskId, 'located', true, 'search'), true);
+    assert.throws(() => local.store.begin(record.taskId, 'open'), /outside/);
+    assert.throws(() => local.store.begin(record.taskId, 'download'), /outside/);
+  } finally {
+    local.journal.close(); local.store.close();
+    rmSync(local.root, { recursive: true, force: true });
+  }
+});
+
+test('concurrent advancement is rejected without disturbing the first task step', async () => {
+  const local = privateStore();
+  const origin = 'http://127.0.0.1:12345';
+  const record = start(local.store, { taskId: 'task-single-step', origin,
+    outcomeKind: 'LOCATE', invoiceId: 'INV-105', title: 'April Service Statement',
+    account: 'Harbor Works', query: 'April' });
+  let release!: (value: PortalObservation) => void;
+  const held = new Promise<PortalObservation>(resolve => { release = resolve; });
+  let observations = 0;
+  let searches = 0;
+  const home: PortalObservation = { kind: 'home', revision: 1, url: origin };
+  const fake = {
+    origin, stop: async () => ({ workerFenced: true }),
+    observe: async () => ++observations === 1 ? held : home,
+    search: async (): Promise<PortalObservation> => {
+      searches++;
+      return { kind: 'results', revision: 2, url: `${origin}/invoices?q=April`, rows: [] };
+    },
+    openInvoice: async (): Promise<PortalObservation> => { throw new Error('unexpected open'); },
+    downloadInvoice: async () => { throw new Error('unexpected download'); },
+    verifyGoal: async () => ({ status: 'matched', revision: 2 } as const),
+  };
+  try {
+    const task = newTask(local.store, local.journal, fake, record);
+    const pending = task.advance();
+    await assert.rejects(task.advance(), /already in progress/);
+    assert.equal(observations, 1);
+    release(home);
+    assert.equal((await pending).state, 'completed');
+    assert.equal(searches, 1);
+    assert.equal(local.journal.attemptsForTask(record.taskId).length, 1);
+  } finally {
+    local.journal.close(); local.store.close();
+    rmSync(local.root, { recursive: true, force: true });
+  }
+});
+
 test('portal start rejects forged or altered admission before any task is stored', () => {
   const local = privateStore();
   const contract: ScriptedPortalContract = {

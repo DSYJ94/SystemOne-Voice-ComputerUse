@@ -1,5 +1,46 @@
 # Initial foundation validation
 
+## Durable task budgets and workflow progress, 29 September 2026
+
+Branch `codex/durable-task-budgets`, based on draft #57. Five new journal
+counterexamples failed before implementation: reopening/resetting an action
+budget, expiry before dispatch, late verified completion, exhaustion with an
+unknown earlier effect, and invalid limits/backwards clock. They passed after
+the persistent guard was added. An initial implementation used a TypeScript
+parameter property unsupported by Node's strip-only execution; it was replaced
+with an ordinary declared field. No test expectation was weakened.
+
+Commands run from the idle `ax-preflight` managed worktree:
+
+- `node --test packages/runtime/test/attempt-journal.test.ts`: first run
+  9 passed/5 failed as expected, then 14/14 passed. Final added cases cover
+  remaining budget after an unknown effect and completion at the last step.
+- `node --test --test-name-pattern='progress cannot|LOCATE contract|concurrent advancement' packages/browser/test/scripted-portal-task.test.ts`:
+  3/3 synthetic progress/concurrency checks passed, no browser launched.
+- `node --test --test-timeout=5000 packages/runtime/test/controller-task-budget.test.ts`:
+  2/2 passed. Synthetic worker replies through the real controller/pipe adapter
+  prove no commit before expired preparation and no completion after a late
+  verified effect. The first run failed in test cleanup because controller
+  closure already owns journal closure; the redundant test close was removed.
+- `npm run check`: typecheck and full automated suite passed, 255/255.
+  The authorized unsandboxed run used disposable loopback/headless fixtures;
+  it did not launch the normal AppKit UI or operate user applications/accounts.
+- `npm run build:native-dev`: passed; signed bundle metadata check passed.
+  The new bundle was compiled in the idle worktree and not launched.
+
+Runtime: Node 26.5.0; dependencies remain lockfile-pinned (Playwright 1.63.0,
+TypeScript 7.0.2, Ajv 8.20.0, ajv-formats 3.0.1, jsonc-parser 3.3.1,
+@types/node 26.6.3). No model weights, provider call, audio recording or TCC
+request was used for this slice. A sandboxed process-list read failed because
+sysmond was unavailable; the authorized read confirmed that the owner's
+running app was the separate `task-lifecycle` build, which was left untouched.
+
+Manual tests are parked. Existing live Accessibility, window-gesture and real
+computer-use gates remain unverified. Deadline enforcement is at journal
+transitions; a hung adapter is not asynchronously interrupted by this guard.
+General no-progress detection, goal corrections, atomic checkpoint recovery,
+explicit resume and CLM-driven navigation remain unfinished.
+
 ## Owner voice smoke and target-first Accessibility preflight, 29 September 2026
 
 The owner reported that **Enable Voice** and held **Talk** stayed open and

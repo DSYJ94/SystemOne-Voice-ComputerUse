@@ -728,6 +728,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             statusField?.stringValue = "Verified: INV-105 was found, opened, downloaded and saved in SystemOne-Dev/fixture-output."
         case "portal_paused":
             statusField?.stringValue = "Fixture workflow paused. Inspect the private task record before retrying."
+        case "paused_budget":
+            statusField?.stringValue = "Task paused at its action or time limit. An earlier action may have taken effect. Inspect the result before starting again."
         case "verified_native_fill":
             statusField?.stringValue = "Verified: the native field holds the supplied text."
         case "verified_native_navigation":

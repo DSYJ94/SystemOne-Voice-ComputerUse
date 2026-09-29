@@ -63,7 +63,9 @@ run with a microphone; it does not establish a successful live recording.
 
 The next agent should first inspect `git status`, the latest commit/PR, and
 this handoff. The owner completed one physical voice run, so do not describe
-voice as wholly untested or fully qualified. On a new build, repeat Enable
+voice as wholly untested or fully qualified. **Manual tests are parked at the
+owner's request on 29 September; wait until the owner revisits them.** Then,
+on a new build, repeat Enable
 Voice and held Talk, record whether permission prompts recur, and check that
 release yields a final editable transcript without a crash. Record any new
 `.ips` incident ID here and in `docs/VALIDATION.md`. Do not run an action in a

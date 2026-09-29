@@ -1,5 +1,18 @@
 # Implementation status
 
+## Latest slice: persistent limits and progress guards, 29 September 2026
+
+Manual Mac tests are parked at the owner's request; implementation continues.
+B15/B17 now have shared durable preparation budgets and deadlines, enforced by
+the existing journal across native, managed Chromium and Chrome drivers. Budget
+refusal pauses rather than completes, preserves already-dispatched uncertainty
+and reaches the native status UI. Portal progress cannot skip/repeat stages or
+complete at the wrong outcome, and advancement is single-flight.
+[Details and limits](TASK_EXECUTION_LIMITS.md). Automated suite: 255/255 and
+native development build passed. These tickets remain in progress: a general
+actor, decision/no-progress budgets, reconciled checkpoints, explicit safe
+resume and live compatibility are still required.
+
 Updated 29 September 2026. The owner authorized beginning implementation and setting
 up a repository after the independent GO WITH FIXES review. The original attached
 baseline remains in the ignored local review directory. The proposed corrections
@@ -239,17 +252,18 @@ Chrome extension are still separate work.
 
 ## Next sequence
 
-As of 28 September, the owner-reported Enable Voice crash blocks live voice
-qualification. The faulting stack is in the Speech authorization reply's Swift
-actor-isolation check. The branch has a narrow fix and a synthetic background
-callback check; the real macOS permission flow remains unverified. See
+The 28 September Enable Voice crash has a callback-isolation fix. On
+29 September the owner confirmed one physical held-Talk transcript without a
+crash. Repeated permission/microphone flows remain unverified, and the owner has
+now parked manual testing. See
 [voice crash handoff](VOICE_CRASH_HANDOFF.md).
 
 On 29 September, the chosen intake deepening moved command envelope creation,
 typed start-request construction, send-once behavior and the active writer
 record into `DevTaskIntake`; all UI entry points now use it. Native build and
 synthetic one-writer/provenance checks pass. Controller admission, permits and
-Stop semantics were not broadened. Live panel use and live voice remain open.
+Stop semantics were not broadened. One physical voice-input smoke passed;
+broader live panel actions remain open.
 See [task intake](TASK_INTAKE.md).
 
 1. Move the now-journaled fixture portal task behind one authenticated host
