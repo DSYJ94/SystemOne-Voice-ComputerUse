@@ -1,5 +1,25 @@
 # Initial foundation validation
 
+## Command-window Mission Control behavior, 29 September 2026
+
+The owner reported that the compact SystemOne window was reachable by
+Command–Tab but disappeared from the trackpad window overview. On isolated
+`codex/window-visibility`, `npm run build:native-dev` passed before and after
+the change. The diagnostic-only built-app command
+`'.build/native-dev/SystemOne Dev.app/Contents/MacOS/SystemOneDev' --check-command-window-visibility`
+returned **FAIL** (exit 1) before the window declared `.managed` and **PASS**
+(exit 0) after. It creates the actual command `NSPanel` without running the
+controller, requesting TCC permissions or capturing audio. This checks the
+AppKit property implicated by [Apple's Mission Control window-behavior
+documentation](https://developer.apple.com/documentation/appkit/nswindow/collectionbehavior-swift.struct); it does
+not simulate the owner's gesture. Physical Mission Control/App Exposé behavior,
+including Spaces and Stage Manager, remains owner-unverified.
+The repeatable `npm run test:window-visibility` wrapper passed after its build
+invocation was corrected. `npm run check` passed 243/243; the synthetic
+`npm run test:voice-permission-callback` and `npm run test:dev-task-intake`
+passed. None of these records a live voice permission, transcript, or user
+gesture result.
+
 ## Architecture follow-up, 29 September 2026
 
 In isolated `codex/task-lifecycle`, `npm run typecheck` passed and the authorized

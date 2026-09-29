@@ -88,6 +88,18 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var identityCheckSupport: URL?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if CommandLine.arguments.contains("--check-command-window-visibility") {
+            makeCommandPanel()
+            guard let commandPanel else {
+                fputs("FAIL: command window was not created\n", stderr)
+                exit(1)
+            }
+            let behavior = commandPanel.collectionBehavior
+            let managed = behavior.contains(.managed) && !behavior.contains(.transient)
+            print(managed ? "PASS: command window participates in Mission Control"
+                          : "FAIL: command window does not declare managed Mission Control behavior")
+            exit(managed ? 0 : 1)
+        }
         if CommandLine.arguments.contains("--check-controller-identity") {
             identityCheckSupport = FileManager.default.temporaryDirectory
                 .appendingPathComponent("systemone-controller-id-\(UUID().uuidString)",
@@ -162,6 +174,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.title = "SystemOne"
         window.delegate = self
         window.isFloatingPanel = true
+        // A floating panel defaults to hiding from Mission Control. Keep the
+        // compact command window selectable in macOS window overviews.
+        window.collectionBehavior = [.managed, .participatesInCycle]
         window.isOpaque = false
         window.backgroundColor = .clear
         window.center()

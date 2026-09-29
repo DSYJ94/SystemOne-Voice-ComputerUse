@@ -74,12 +74,14 @@ established by the current fixture-only native or browser tests.
   [#52 scoped read-only native AX coverage](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/52),
   [#53 local computer-use test session](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/53),
   [#54 compact voice/text command alpha](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/54),
-  [#55 controller task slot and voice bundle check](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/55).
+  [#55 controller task slot and voice bundle check](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/55),
+  [#56 compact window Mission Control behavior](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/56).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current architecture branch is `codex/task-lifecycle`, stacked on
-  `codex/voice-command-alpha` (draft PR #54). The preceding checkout's exact
-  development app remains the pending live voice test target; do not replace
-  that running app from this branch.
+- The current UI-fix branch is `codex/window-visibility`, stacked on
+  `codex/task-lifecycle` (draft PR #55), itself stacked on
+  `codex/voice-command-alpha` (draft PR #54). Use the current branch's exact
+  app for the next window/voice test; quit an earlier SystemOne Dev with
+  Command–Q first. The [test guide](VOICE_COMPUTER_USE_TEST.md) has the command.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
@@ -262,6 +264,12 @@ Chrome, with identity-checked release of late completions. Each adapter retains
 its own Stop and unknown-effect fence. A signed development-bundle check now
 rejects missing or empty microphone/Speech purpose strings. These changes do
 not qualify a live TCC prompt, controller release identity or general actions.
+
+The current UI-fix branch addresses a separate owner-reported window problem:
+the compact floating `NSPanel` now declares managed Mission Control behavior.
+The diagnostic check failed on the prior window and passes on this build.
+The trackpad gesture still needs owner verification. The window fix does not
+establish the pending live Enable Voice/Talk result.
 
 ## Shortest path to a testable v1
 

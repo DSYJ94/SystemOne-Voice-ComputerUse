@@ -24,6 +24,12 @@ microphone and Speech purpose strings in the signed app bundle. These changes
 passed 243 TypeScript/Node tests and a local ad-hoc native build; they do not
 qualify physical voice permission, real computer use or a distributable app.
 
+The compact command window now explicitly opts into Mission Control's managed
+window behavior while retaining its floating appearance. A diagnostic mode
+checks the actual built `NSPanel` property and passed after failing on the
+prior build. The owner's trackpad overview and live voice paths still need
+physical verification; see the [test guide](VOICE_COMPUTER_USE_TEST.md).
+
 ## First implementation slice
 
 | Backlog | State | Evidence and remaining work |
