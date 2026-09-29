@@ -28,6 +28,7 @@
     "test:voice-permission-callback": "zsh scripts/check-voice-permission-callback.sh",
     "test:dev-task-intake": "zsh scripts/check-dev-task-intake.sh",
     "test:window-visibility": "zsh scripts/check-command-window-visibility.sh",
+    "test:field-preflight": "zsh scripts/check-command-field-preflight.sh",
     "try:local": "zsh scripts/try-local.sh",
     "run:portal-fixture": "node scripts/run-portal-fixture.ts",
     "fixtures": "node scripts/export-fixtures.ts"

@@ -8,11 +8,17 @@ on-device speech transcript for one bounded native-app or isolated
 managed-Chromium field edit. Synthetic fixture and existing-Chrome paths remain
 separate development checks. There is no general-purpose executor or release
 binary yet. The owner-reported Enable Voice crash has a callback fix and
-synthetic regression checks, but its rebuilt app still needs a live permission
-test; see [crash handoff](docs/VOICE_CRASH_HANDOFF.md). The compact panel now
+synthetic regression checks; the owner confirmed one live held-Talk transcript
+without a crash, while repeated permission and microphone lifecycle checks
+remain. See [crash handoff](docs/VOICE_CRASH_HANDOFF.md). The compact panel now
 declares managed Mission Control behavior after the owner reported that it
 disappeared from the trackpad window overview; physical gesture verification
 remains open.
+
+The command panel now checks for a captured target before it checks or prompts
+for Accessibility. An initial "No target app captured" message means the user
+must focus a target app and reopen the panel; it is not evidence that macOS
+denied Accessibility.
 
 ## Current implementation
 
