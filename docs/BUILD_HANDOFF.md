@@ -75,12 +75,14 @@ established by the current fixture-only native or browser tests.
   [#53 local computer-use test session](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/53),
   [#54 compact voice/text command alpha](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/54),
   [#55 controller task slot and voice bundle check](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/55),
-  [#56 compact window Mission Control behavior](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/56).
+  [#56 compact window Mission Control behavior](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/56),
+  [#57 target-first Accessibility preflight](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/57).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current UI-fix branch is `codex/window-visibility`, stacked on
-  `codex/task-lifecycle` (draft PR #55), itself stacked on
+- The current preflight branch is `codex/ax-preflight`, stacked on
+  `codex/window-visibility` (draft PR #56), then `codex/task-lifecycle`
+  (draft PR #55), itself stacked on
   `codex/voice-command-alpha` (draft PR #54). Use the current branch's exact
-  app for the next window/voice test; quit an earlier SystemOne Dev with
+  app for the next target/Accessibility test; quit an earlier SystemOne Dev with
   Command–Q first. The [test guide](VOICE_COMPUTER_USE_TEST.md) has the command.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
@@ -236,12 +238,15 @@ and external-source mode still lacks code authentication.
 
 ## Next implementation order
 
-**Current owner-reported blocker:** Enable Voice crashed the ad-hoc Dev app on
-28 September. Two crash stacks identify a Speech-permission callback actor
-isolation trap. A narrow callback fix, background-reply smoke and rebuilt app
-are on this branch, but the physical permission flow has **not** been retested.
-Read [voice crash handoff](VOICE_CRASH_HANDOFF.md) before the next voice run.
-Do not describe voice as owner-qualified until that gate is recorded.
+**Current owner-reported blocker:** the owner completed one Enable Voice and
+held-Talk run on 29 September with a final editable transcript and no crash.
+The screenshot also showed **No target app captured**; clicking Show fields
+then prompted for Accessibility although the Settings switch appeared on.
+The prompt was misleading because Show fields checked Accessibility before
+checking whether a target existed. This branch reverses that order and adds
+a built-app diagnostic. A stale ad-hoc TCC grant remains possible only if a
+named target still gets an Accessibility denial. See the
+[voice crash handoff](VOICE_CRASH_HANDOFF.md) and [test guide](VOICE_COMPUTER_USE_TEST.md).
 
 The first selected architecture candidate is implemented in the preceding draft:
 `DevTaskIntake` builds committed commands and typed start requests for the
@@ -249,7 +254,8 @@ compact panel and developer buttons, sends once, and retains one active task
 only after delivery. The UI keeps target preflight; the controller keeps action
 authority, the journal and Stop fences. See [task intake](TASK_INTAKE.md) and
 [task language](../CONTEXT.md). The synthetic intake check and native build
-pass; live panel behavior remains unverified. This is a reversible module
+pass; live voice intake passed once, while action intake remains unverified.
+This is a reversible module
 refactor, not a scope or primary-model change.
 
 The owner-requested `ask-matt` skill routed the crash to `diagnosing-bugs` and
@@ -258,18 +264,18 @@ visual survey is `/private/tmp/architecture-review-20260928-voice.html` on this
 Mac (temporary, not a durable repository artifact). Its strongest candidate is
 to deepen native task intake: the voice/text and developer-panel paths in
 `apps/native-dev/main.swift` repeated command provenance, dispatch and active
-state before this refactor. This branch applies the next candidate narrowly:
+state before this refactor. The next candidate was applied in PR #55:
 one exclusive controller task slot spans native, managed Chromium and existing
 Chrome, with identity-checked release of late completions. Each adapter retains
 its own Stop and unknown-effect fence. A signed development-bundle check now
 rejects missing or empty microphone/Speech purpose strings. These changes do
 not qualify a live TCC prompt, controller release identity or general actions.
 
-The current UI-fix branch addresses a separate owner-reported window problem:
+PR #56 addresses a separate owner-reported window problem:
 the compact floating `NSPanel` now declares managed Mission Control behavior.
 The diagnostic check failed on the prior window and passes on this build.
-The trackpad gesture still needs owner verification. The window fix does not
-establish the pending live Enable Voice/Talk result.
+The trackpad gesture still needs owner verification. The first physical
+Enable Voice/Talk flow succeeded, independently of that window change.
 
 ## Shortest path to a testable v1
 

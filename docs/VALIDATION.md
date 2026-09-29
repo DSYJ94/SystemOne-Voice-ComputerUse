@@ -1,5 +1,26 @@
 # Initial foundation validation
 
+## Owner voice smoke and target-first Accessibility preflight, 29 September 2026
+
+The owner reported that **Enable Voice** and held **Talk** stayed open and
+produced the final editable transcript “Hello system one.” The supplied panel
+screenshot shows **Final transcript ready** and **No target app captured**.
+This is one physical voice-input success, not a field observation or action;
+the permission-prompt sequence, repeated audio lifecycle, trackpad window
+overview and live computer-use paths remain unverified.
+
+The owner also showed an enabled **SystemOne Dev** Accessibility switch, but
+the panel's Show fields action prompted for access. Inspection found that Show
+fields checked TCC before checking for a captured target. In isolated
+`codex/ax-preflight`, a built-app diagnostic substituted spy trust/prompt
+callbacks with no target. It returned **FAIL** (exit 1) before the reorder and
+**PASS** (exit 0) after; the passing check made neither trust query nor prompt.
+`npm run test:field-preflight` passed, as did `npm run build:native-dev`,
+`npm run check` (243/243) and the inherited window-behavior diagnostic.
+No actual TCC prompt or native field read was initiated by these checks.
+Whether the exact running build is trusted after a valid target capture awaits
+the owner's next test; the Settings switch alone cannot settle that question.
+
 ## Command-window Mission Control behavior, 29 September 2026
 
 The owner reported that the compact SystemOne window was reachable by

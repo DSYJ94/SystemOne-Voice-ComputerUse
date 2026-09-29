@@ -51,6 +51,13 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var commandStatus: NSTextField?
     private var commandTarget: NSTextField?
     private var capturedApp: (bundleID: String, pid: pid_t, launchDate: Date)?
+    private var hasAccessibilityAccess: () -> Bool = {
+        AXIsProcessTrustedWithOptions(nil)
+    }
+    private var promptForAccessibility: () -> Void = {
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
+    }
     private var finalSpeechText: String?
     private let speech = OnDeviceSpeech()
     private var urlField: NSTextField?
@@ -88,6 +95,20 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var identityCheckSupport: URL?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if CommandLine.arguments.contains("--check-no-target-field-preview") {
+            makeCommandPanel()
+            var queried = false
+            var prompted = false
+            hasAccessibilityAccess = { queried = true; return false }
+            promptForAccessibility = { prompted = true }
+            showCapturedFields()
+            let clearTargetMessage = commandStatus?.stringValue
+                == "Focus a target app, then reopen SystemOne before showing fields."
+            let passed = clearTargetMessage && !queried && !prompted
+            print(passed ? "PASS: no target avoids Accessibility checks"
+                         : "FAIL: no target queried or prompted for Accessibility")
+            exit(passed ? 0 : 1)
+        }
         if CommandLine.arguments.contains("--check-command-window-visibility") {
             makeCommandPanel()
             guard let commandPanel else {
@@ -816,19 +837,26 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func enableVoice() { speech.requestPermissions() }
 
     @objc private func showCapturedFields() {
-        if !AXIsProcessTrustedWithOptions(nil) {
-            let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
-            _ = AXIsProcessTrustedWithOptions(options)
-            commandStatus?.stringValue = "Grant Accessibility to this build, then choose Show fields again."
+        guard let capturedApp else {
+            commandStatus?.stringValue =
+                "Focus a target app, then reopen SystemOne before showing fields."
             return
         }
-        guard let capturedApp,
-              let app = NSRunningApplication.runningApplications(
+        guard let app = NSRunningApplication.runningApplications(
                 withBundleIdentifier: capturedApp.bundleID).first,
               app.processIdentifier == capturedApp.pid,
               app.launchDate == capturedApp.launchDate,
               let bundleURL = app.bundleURL else {
-            commandStatus?.stringValue = "Capture a running app and grant Accessibility first."
+            self.capturedApp = nil
+            commandStatus?.stringValue =
+                "The target app changed. Focus it and reopen SystemOne."
+            return
+        }
+        if !hasAccessibilityAccess() {
+            promptForAccessibility()
+            commandStatus?.stringValue =
+                "macOS reports Accessibility denied to this running build. "
+                + "If its switch is on, quit and re-add this exact app in Settings."
             return
         }
         let target = AXTarget(pid: capturedApp.pid, bundleID: capturedApp.bundleID,
@@ -878,10 +906,6 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             commandStatus?.stringValue = "Use an exact HTTPS URL (or local 127.0.0.1) for a browser request. No action sent."
             return
         }
-        guard AXIsProcessTrustedWithOptions(nil) else {
-            commandStatus?.stringValue = "Grant Accessibility to this SystemOne Dev build first."
-            return
-        }
         guard let parsed = ScopedNativeFill.parse(text) else {
             commandStatus?.stringValue = "Supported: Fill <field> with <value>, or Fill <field> on <HTTPS URL> with <value>."
             return
@@ -894,6 +918,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
               current.processIdentifier == capturedApp.pid,
               current.launchDate == capturedApp.launchDate else {
             commandStatus?.stringValue = "The captured app changed. Focus it and reopen the panel."
+            return
+        }
+        guard AXIsProcessTrustedWithOptions(nil) else {
+            commandStatus?.stringValue = "macOS reports Accessibility denied to this running build."
             return
         }
         let target = DevTaskIntake.NativeTarget.captured(

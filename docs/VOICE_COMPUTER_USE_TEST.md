@@ -10,11 +10,11 @@ flow testable without a model download. The planned pinned WhisperKit path and
 representative speech evaluation remain open; this does not change CLM as the
 primary decision model.
 
-For the current window-visibility build, first quit any earlier **SystemOne Dev**
+For the current Accessibility-preflight build, first quit any earlier **SystemOne Dev**
 with **Command–Q**. Closing the window can leave the app running. In Terminal:
 
 ```sh
-cd '/Users/daryl/.codex/worktrees/task-lifecycle/SystemOne-Voice-ComputerUse'
+cd '/Users/daryl/.codex/worktrees/ax-preflight/SystemOne-Voice-ComputerUse'
 npm run run:native-dev
 ```
 
@@ -36,13 +36,24 @@ setting, but only the physical gesture verifies the actual desktop behavior.
 "No target app captured" on initial launch is expected: SystemOne itself can be
 frontmost then. Focus the app you want to test, then press Control–Option–Space;
 the panel should name that app. Do not run a native request while no target is
-captured.
+captured. **Show fields** now asks for a target first; it does not check or
+prompt for Accessibility while the target is absent.
 
 For a real native app, open a disposable document or field in an app you choose
 and bring that app to the front. Press Control–Option–Space. Confirm the panel's
 **Target** names that app. Choose **Show fields** to see up to five observed,
 nonsecure editable labels. If macOS asks for Accessibility access, grant it to
-this exact development build and choose **Show fields** again. If coverage is
+this exact development build and choose **Show fields** again. If the switch
+already appears on but this running app still reports denied, quit SystemOne
+Dev with Command–Q and reopen it once. If it remains denied, remove the stale
+**SystemOne Dev** entry from System Settings → Privacy & Security → Accessibility,
+then add the exact app at
+`/Users/daryl/.codex/worktrees/ax-preflight/SystemOne-Voice-ComputerUse/.build/native-dev/SystemOne Dev.app`
+and turn it on. In the file picker, Command–Shift–G accepts that full path.
+Reopen the app and choose
+**Show fields** again. An ad-hoc rebuild can invalidate the previous grant;
+the visible switch alone does not prove trust for the running executable.
+If coverage is
 incomplete or no label appears, do not guess. Enter
 `Fill <exact displayed label> with <disposable value>`. Choose
 **Run request** once. **Verified** means a fresh read found that exact value in
@@ -58,11 +69,12 @@ run. Recognition requires an available on-device recognizer
 for the current Mac language; it never falls back to network speech. Raw audio
 is not saved. If the recognizer is unavailable, type the command instead.
 
-**Crash regression gate (28 September):** the owner saw SystemOne Dev quit
-after Enable Voice. A background-permission-callback fix now compiles and its
-synthetic test passes, but the real click is not yet verified. On the next
-manual run, test Enable Voice alone first. If the app closes, stop there and
-record the new crash-report incident; do not proceed to Talk or Run request.
+**Crash regression gate (28 September):** the owner previously saw SystemOne Dev
+quit after Enable Voice. On 29 September, the owner reported that Enable Voice
+and held Talk produced a final editable transcript without a crash in one run.
+Repeat this after switching builds, but do not confuse a final transcript with
+a verified computer-use action. If the app closes, stop there and record the
+new crash-report incident; do not proceed to Run request.
 See [voice crash handoff](VOICE_CRASH_HANDOFF.md).
 
 For a browser page, enter or speak `Fill <exact field label> on <HTTPS URL> with

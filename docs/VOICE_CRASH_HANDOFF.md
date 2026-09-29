@@ -52,20 +52,22 @@ run with a microphone; it does not establish a successful live recording.
   sandboxed `npm run check` also had loopback `EPERM`; the permitted local run
   passed. Those initial failures are environment restrictions, not product
   regressions.
-- **Unverified:** clicking Enable Voice in the rebuilt app, both permission
-  prompts, actual held speech, transcript completion, and no new crash report.
+- **Owner-verified once on 29 September:** Enable Voice and held Talk produced
+  the final editable transcript “Hello system one” and the app stayed open, as
+  shown in the owner's screenshot. The exact permission-prompt sequence,
+  repeated sessions, cancellation during recording and microphone shutdown
+  remain unverified. No fresh crash-log audit was performed for that run.
 - The final development bundle launched and remained running by exact process
   path (PID 47288 at the check); no newer `.ips` report appeared. This is a
   startup smoke, not a permission-flow or recording result.
 
 The next agent should first inspect `git status`, the latest commit/PR, and
-this handoff. Do not infer live voice success from the smoke. When the owner is
-ready for a manual check, run the exact checkout's `npm run run:native-dev`,
-choose **Enable Voice** once, and record whether the app stays open and whether
-macOS shows Speech and microphone prompts. Then hold Talk for a disposable
-utterance, release it, and verify that only a final editable transcript appears.
-Record the result and any new `.ips` incident ID here and in
-`docs/VALIDATION.md`. Do not run an action in a real app merely to test speech.
+this handoff. The owner completed one physical voice run, so do not describe
+voice as wholly untested or fully qualified. On a new build, repeat Enable
+Voice and held Talk, record whether permission prompts recur, and check that
+release yields a final editable transcript without a crash. Record any new
+`.ips` incident ID here and in `docs/VALIDATION.md`. Do not run an action in a
+real app merely to test speech.
 If permission is denied, the app should stay open and report denial; do not
 reset TCC or alter machine settings automatically.
 
@@ -76,6 +78,6 @@ existing Chrome profile, or meet signed/notarized distribution gates.
 The later window-visibility branch makes the compact command panel explicitly
 participate in Mission Control; this is independent of the permission callback
 fix. Its built-window check passed, but the owner still needs to verify the
-trackpad gesture and then the physical Enable Voice/Talk flow. Follow the
+trackpad gesture; the first physical Enable Voice/Talk flow succeeded. Follow the
 [current test guide](VOICE_COMPUTER_USE_TEST.md) and keep the two outcomes
 separate in this handoff.
