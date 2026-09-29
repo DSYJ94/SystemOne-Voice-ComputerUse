@@ -74,7 +74,8 @@ established by the current fixture-only native or browser tests.
   [#52 scoped read-only native AX coverage](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/52),
   [#53 local computer-use test session](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/53),
   [#54 compact voice/text command alpha](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/54),
-  [#55 controller task slot and voice bundle check](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/55).
+  [#55 controller task slot and voice bundle check](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/55),
+  [#56 compact window Mission Control behavior](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/56).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current UI-fix branch is `codex/window-visibility`, stacked on
   `codex/task-lifecycle` (draft PR #55), itself stacked on
