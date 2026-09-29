@@ -38,8 +38,9 @@ microphone replies from background queues; all expected statuses reach the
 main actor. This closes the adjacent callback test gap without opening either
 system permission prompt. The audio tap block is now formed in a nonisolated
 method so it does not inherit the main-actor executor when AVAudioEngine calls
-it on its audio queue. Compilation is verified, but that tap has **not** been
-run with a microphone; it does not establish a successful live recording.
+it on its audio queue. At fix time only compilation was verified; the later
+owner-run microphone/transcript smoke is recorded below. Repeated recording
+and cancellation remain unqualified.
 
 ## Validation and next agent
 
