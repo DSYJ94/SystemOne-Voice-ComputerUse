@@ -14,6 +14,20 @@ actor NativeInspectionSession {
     private var target: AXTarget?
     private var observation: AXObservation?
 
+    func editableLabels(_ target: AXTarget) throws -> (labels: [String], complete: Bool) {
+        let registry = try NativeAXObservationRegistry(backend: SystemAXBackend(),
+            maxNodes: 80, maxDepth: 5, budget: .seconds(2))
+        let observed = try registry.observe(target)
+        let labels = observed.nodes.compactMap { node -> String? in
+            let detail = node.description
+            guard detail.enabled, !detail.secure,
+                  detail.capabilities.contains("setValue"),
+                  !detail.label.isEmpty else { return nil }
+            return detail.label
+        }
+        return (Array(Set(labels)).sorted(), observed.complete)
+    }
+
     func inspect(_ target: AXTarget) throws -> String {
         cancel()
         let registry = try NativeAXObservationRegistry(backend: SystemAXBackend(),

@@ -140,6 +140,15 @@ final class DevNativeFieldWorker: @unchecked Sendable {
               let bundleURL = app.bundleURL, let launchDate = app.launchDate else {
             return [:]
         }
+        if let targetPID = message["targetPid"] as? Int,
+           let launchMillis = message["targetLaunchMillis"] as? Int64 {
+            guard targetPID == Int(app.processIdentifier),
+                  launchMillis == Int64((launchDate.timeIntervalSince1970
+                      * 1_000).rounded()) else { return [:] }
+        } else if message["targetPid"] != nil
+                    || message["targetLaunchMillis"] != nil {
+            return [:]
+        }
         state?.fence.stop()
         state = nil
         let target = AXTarget(pid: app.processIdentifier, bundleID: bundleID,

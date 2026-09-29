@@ -3,11 +3,20 @@
 A native macOS voice/text computer-use product in early development. The intended
 app is a background/menu-bar agent with a transient command panel, one persistent
 task controller, semantic Accessibility/DOM adapters, and CLM as its primary
-decision model. Two local development bundles exercise one synthetic
-Accessibility field; a separate development panel drives one managed-browser
-field fill. There is no general-purpose executor or release binary yet.
+decision model. A compact development panel now accepts typed text or a final
+on-device speech transcript for one bounded native-app or isolated
+managed-Chromium field edit. Synthetic fixture and existing-Chrome paths remain
+separate development checks. There is no general-purpose executor or release
+binary yet. The owner-reported Enable Voice crash has a callback fix and
+synthetic regression checks, but its rebuilt app still needs a live permission
+test; see [crash handoff](docs/VOICE_CRASH_HANDOFF.md).
 
 ## Current implementation
+
+- [Task intake](docs/TASK_INTAKE.md) now constructs committed commands and typed
+  start requests once for the compact panel and developer actions, retaining a
+  single active request only after send succeeds. Its synthetic check passes;
+  controller-side admission and effect authority remain independent.
 
 - Protocol 2.0 schema and the corrected independent Python conformance oracle.
 - TypeScript strict JSON ingress, schema validation, bounded private-RPC framing,
@@ -203,6 +212,10 @@ Accessibility permission.
 For one local launch command covering the synthetic native target and managed
 Chromium portal, run `npm run try:local` and follow [Try local](docs/TRY_LOCAL.md).
 It does not attach to the existing Chrome profile or qualify v1.
+For the newer compact voice/text panel and one bounded action on a real native
+app or an HTTPS page, follow [Voice computer-use test](docs/VOICE_COMPUTER_USE_TEST.md).
+This is the next user-facing development slice; CLM-driven multi-hop tasks and
+existing-profile Chrome remain open.
 The separate [native inspection test](docs/NATIVE_INSPECTION_TEST.md) exercises
 read-only Accessibility observations and requires a grant to the current Dev build.
 For the current PR stack, open gates and next implementation order, see

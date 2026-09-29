@@ -24,6 +24,9 @@
     "run:native-mock": "scripts/run-native-mock.sh",
     "build:native-dev": "zsh scripts/build-native-dev.sh",
     "run:native-dev": "zsh scripts/run-native-dev.sh",
+    "test:task-command": "zsh scripts/check-task-command.sh",
+    "test:voice-permission-callback": "zsh scripts/check-voice-permission-callback.sh",
+    "test:dev-task-intake": "zsh scripts/check-dev-task-intake.sh",
     "try:local": "zsh scripts/try-local.sh",
     "run:portal-fixture": "node scripts/run-portal-fixture.ts",
     "fixtures": "node scripts/export-fixtures.ts"

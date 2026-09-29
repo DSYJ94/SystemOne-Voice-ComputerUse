@@ -18,11 +18,13 @@ interface WorkerRequest {
   readonly [key: string]: unknown;
 }
 
-function finalCommand(taskId: string): Record<string, unknown> {
+function finalCommand(taskId: string, voice = false): Record<string, unknown> {
   return { type: 'command', protocolVersion: '2.0', messageId: randomUUID(),
-    taskId, taskEpoch: 1, goalRevision: 1, source: 'text', mode: 'command',
+    taskId, taskEpoch: 1, goalRevision: 1,
+    source: voice ? 'voice' : 'text', mode: 'command',
     utteranceId: randomUUID(), utteranceRevision: 1,
-    text: 'Fill Fixture Name in com.aurium.systemone.fixture with text: fixture-123',
+    text: voice ? 'Fill Fixture Name with fixture-123'
+      : 'Fill Fixture Name in com.aurium.systemone.fixture with text: fixture-123',
     isFinal: true, createdAt: new Date().toISOString(),
     originSurface: { adapter: 'native', surfaceId: 'systemone-panel',
       appBundleId: 'com.aurium.systemone.dev', windowId: 'command-panel',
@@ -70,6 +72,10 @@ test('private pipe carries a journaled native task and fences a late result', as
       operations.push(request.operation);
       switch (request.operation) {
       case 'observe':
+        if (request.targetPid !== undefined) {
+          assert.equal(request.targetPid, 501);
+          assert.equal(request.targetLaunchMillis, 1_790_000_000_000);
+        }
         reply(request, { observationId: randomUUID(),
           scopeRef: `native:${randomUUID()}`,
           bundleId: 'com.aurium.systemone.fixture', complete: true,
@@ -119,17 +125,19 @@ test('private pipe carries a journaled native task and fences a late result', as
     }
     throw new Error('private-pipe stage was not reached');
   }
-  function start(taskId: string): void {
+  function start(taskId: string, voice = false): void {
     send({ type: 'start_native_fill', requestId: taskId,
       bundleId: 'com.aurium.systemone.fixture', fieldLabel: 'Fixture Name',
-      value: 'fixture-123', command: finalCommand(taskId) });
+      value: 'fixture-123', command: finalCommand(taskId, voice),
+      ...(voice ? { targetPid: 501,
+        targetLaunchMillis: 1_790_000_000_000 } : {}) });
   }
   try {
     await waitFor(() => statuses.some(s => s.requestId === 'startup'
       && s.phase === 'ready'));
     assert.ok(publicKey);
     const first = randomUUID();
-    start(first);
+    start(first, true);
     await waitFor(() => statuses.some(s => s.requestId === first
       && s.phase === 'verified_native_fill'));
     await waitFor(() => statuses.some(s => s.requestId === first

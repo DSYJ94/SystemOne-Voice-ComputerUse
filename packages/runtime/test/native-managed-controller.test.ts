@@ -45,15 +45,18 @@ test('native private pipe drives an admitted managed-browser fill and stays aliv
     }
     throw new Error(`controller did not report ${phase}`);
   }
-  function start(requestId: string, value: string, invalidCommand = false): void {
+  function start(requestId: string, value: string, invalidCommand = false,
+    voice = false): void {
     const url = `${portal.url}/`;
     const fieldLabel = 'Find invoice';
     const command = {
       type: 'command', protocolVersion: '2.0', messageId: randomUUID(),
       taskId: requestId, taskEpoch: 1, goalRevision: 1,
-      source: 'text', mode: 'command', utteranceId: randomUUID(),
+      source: voice ? 'voice' : 'text', mode: 'command', utteranceId: randomUUID(),
       utteranceRevision: 1,
-      text: invalidCommand ? 'Unbound command' : `Fill ${fieldLabel} on ${url} with text: ${value}`, isFinal: true,
+      text: invalidCommand ? 'Unbound command'
+        : voice ? `Fill ${fieldLabel} on ${url} with ${value}`
+          : `Fill ${fieldLabel} on ${url} with text: ${value}`, isFinal: true,
       createdAt: new Date().toISOString(),
       originSurface: { adapter: 'native', surfaceId: 'systemone-panel',
         appBundleId: 'com.aurium.systemone.dev', windowId: 'command-panel',
@@ -88,6 +91,14 @@ test('native private pipe drives an admitted managed-browser fill and stays aliv
       targetRequestId: second })}\n`);
     await waitStatus(stop, 'stopped');
     await waitStatus(second, 'ready');
+    const spoken = randomUUID();
+    start(spoken, 'spoken-value', false, true);
+    await waitStatus(spoken, 'verified_dom_fill');
+    const voiceStop = randomUUID();
+    child.stdin.write(`${JSON.stringify({ type: 'stop', requestId: voiceStop,
+      targetRequestId: spoken })}\n`);
+    await waitStatus(voiceStop, 'stopped');
+    await waitStatus(spoken, 'ready');
     child.stdin.end();
     const exitCode = await new Promise<number | null>(resolve => child.once('exit', resolve));
     assert.equal(exitCode, 0);
@@ -95,6 +106,7 @@ test('native private pipe drives an admitted managed-browser fill and stays aliv
     try {
       assert.equal(journal.getTaskState(first), 'completed');
       assert.equal(journal.getTaskState(second), 'completed');
+      assert.equal(journal.getTaskState(spoken), 'completed');
       assert.deepEqual(journal.unresolvedAttempts(), []);
     } finally { journal.close(); }
   } finally {

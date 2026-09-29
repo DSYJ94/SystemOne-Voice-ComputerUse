@@ -1113,3 +1113,82 @@ checks found this worktree's Dev (PID 14168) and Fixture (PID 14455), and a
 loopback GET returned the portal title and `Find invoice` control. The portal
 session was left running for the owner's interactive test. These checks do not
 establish that either UI action completed.
+
+## Voice/text command panel and real-target routes, 28 September 2026
+
+`npm run check` typechecked and passed **241/241** tests. This includes a
+child-process run of the persistent controller with a voice-sourced managed
+field command, plus native authority tests that verify a voice-sourced command
+uses the existing journaled permit and rejects a changed field name. The
+Swift-side `npm run test:task-command` passed its native/managed grammar and
+unsafe-origin cases. `npm run build:native-dev` compiled and ad-hoc signed the
+compact panel with the on-device Speech and microphone frameworks. `git diff
+--check` passed. `npm run run:native-dev` reported launch, and an exact-path
+process check found the current app running (PID 21189 before the final status
+copy change). None of these commands requested microphone or Speech permission,
+recorded audio, dispatched a real-app action, or attached to existing Chrome.
+
+After the captured-process guard, `npm run check` still passed **241/241** and
+`npm run build:native-dev` compiled. The final app ran at the exact current
+worktree path (PID 23919). Read-only accessibility inspection bound by that
+path found the compact **SystemOne** window with its task field, Enable Voice,
+Hold Talk, Show fields, Run request and Stop. A prior name-based inspection had
+opened a stale bundled-dev copy; that exact older test process was stopped.
+The native request now carries captured PID and launch time through the
+controller pipe, and a synthetic child-process test checked both fields. The
+worker rejects a different running app instance before AX observation. This
+does not prove the live microphone or a real-app edit works.
+
+The manual gates are a final on-device transcript, held-button microphone
+shutdown, captured-app and editable-label accuracy, one verified edit in a
+real native app, one headed managed-browser edit on an approved public page,
+and Stop during those paths. This development build does not qualify CLM,
+multi-hop open/download commands, existing-profile Chrome, Developer ID
+distribution or clean-Mac permissions.
+
+After adding a Show-fields-triggered Accessibility prompt, the Swift app
+recompiled, was ad-hoc signed and relaunched from the exact native-dev path
+(PID 25001). No permission prompt was invoked during this build or launch.
+
+## Enable Voice crash diagnosis and bounded regression, 28 September 2026
+
+The owner reported a crash after clicking Enable Voice. Local incidents
+`D473FC9D-FD30-46CF-92E5-56D002CDD37B` and
+`B0D1F920-5C81-4681-88D7-C2357E3D8C18` both show `SIGTRAP` in
+`_dispatch_assert_queue_fail` / `_swift_task_checkIsolatedSwift` at
+`OnDeviceSpeech.requestPermissions()`'s Speech authorization reply on a
+background queue. The built app contains the Speech usage-description key.
+
+After marking external callbacks `@Sendable` and adding an injectable Speech
+permission requester, `npm run test:voice-permission-callback` passed: a
+synthetic denial delivered from a background queue reached the main-actor
+status handler. `npm run build:native-dev` compiled and ad-hoc signed the new
+app. `npm run check` passed 241/241 tests. The first sandboxed smoke build
+failed writing the global Clang cache; the test script now uses a private
+temporary cache. The first sandboxed full suite hit loopback `EPERM`; the
+permitted local run passed. No OS permission request, audio capture, or live
+Enable Voice click was run by the agent. The manual gate remains open; see
+[handoff](VOICE_CRASH_HANDOFF.md).
+
+## Task intake and adjacent voice callback, 29 September 2026
+
+`npm run test:dev-task-intake` passed its synthetic one-writer, failed-send,
+stale-status, voice/text provenance, captured PID/launch identity,
+LOCATE-versus-OPEN and Chrome grant checks. `npm run
+test:voice-permission-callback` passed with denied Speech plus denied and
+authorized microphone results injected from background queues. Neither check
+requested macOS permission or audio input. `npm run build:native-dev` compiled
+and ad-hoc signed the refactored app, including a nonisolated audio-tap block.
+The audio tap was not exercised. The first compile needed a Swift `return`
+correction in the new request switch; the second build passed. `npm run check`
+passed 241/241 TypeScript/Node tests. No live Enable Voice click, final
+transcript, real-app edit, headed browser edit or existing-Chrome-profile
+action was run in this session. No SystemOne Dev crash report newer than the
+two 28 September permission incidents was present when checked. These results
+do not certify the app against further live crashes.
+
+After the final build, `npm run run:native-dev` launched the exact worktree
+bundle and an exact executable-path process check found PID 47288 still running.
+The two 28 September incidents remained the newest SystemOne Dev crash reports
+at that check. This is a startup-only observation; Enable Voice, Talk and task
+execution were not invoked.
