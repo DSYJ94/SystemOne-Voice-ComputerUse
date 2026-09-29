@@ -1,5 +1,18 @@
 # Initial foundation validation
 
+## Architecture follow-up, 29 September 2026
+
+In isolated `codex/task-lifecycle`, `npm run typecheck` passed and the authorized
+loopback-capable `npm run check` passed **243/243** tests. An initial sandboxed
+run failed on `listen EPERM` at `127.0.0.1`; it was not a code failure. The new
+cross-surface slot tests reject simultaneous admission, stale release, and
+releasing a settled task before its Stop barrier returns.
+`npm run build:native-dev` compiled, ad-hoc signed and verified the bundle;
+the voice metadata gate passed. A temporary bundle with an empty Speech purpose
+string was rejected by the same gate. No app was launched, no permissions were
+requested, no audio was captured, and no live computer action was run here.
+The owner-run Enable Voice/Talk check on the preceding branch remains open.
+
 26 September 2026; macOS 26.6.2 arm64, Node 26.5.0, npm 11.17.0,
 Python 3.14.6, Swift 6.4 (swiftlang-6.4.0.34.1), command-line-tools SDK MacOSX27.0.
 These are development checks, not production qualification.

@@ -84,6 +84,7 @@ PY
 signing_identity=${SYSTEMONE_CODESIGN_IDENTITY:--}
 codesign --force --sign "$signing_identity" --identifier com.aurium.systemone.dev "$app_dir"
 codesign --verify --deep --strict "$app_dir"
+/usr/bin/python3 "$script_dir/check-voice-bundle-metadata.py" "$app_dir"
 if [[ "$signing_identity" == '-' ]]; then
   print -u2 'Development app uses ad-hoc signing and an external Node path; this is not a distributable build.'
 fi

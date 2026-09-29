@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated 28 September 2026. The owner authorized beginning implementation and setting
+Updated 29 September 2026. The owner authorized beginning implementation and setting
 up a repository after the independent GO WITH FIXES review. The original attached
 baseline remains in the ignored local review directory. The proposed corrections
 are adopted as the starting working specification; no gate is certified by this.
@@ -15,6 +15,14 @@ retains its dependency on B19. The planned extension/native-messaging bridge mus
 qualify scoped user grants, exact browser/profile/tab/frame/document identity,
 navigation invalidation, reconnection and revocation against existing-profile
 fixtures. Supported operations and limitations must be stated explicitly.
+
+The architecture follow-up gives the development controller one exclusive
+active-task slot across native, managed Chromium and existing Chrome. A late
+completion can only release its own slot. Adapter-specific Stop fences and
+recovery decisions remain separate. A native build gate verifies nonempty
+microphone and Speech purpose strings in the signed app bundle. These changes
+passed 243 TypeScript/Node tests and a local ad-hoc native build; they do not
+qualify physical voice permission, real computer use or a distributable app.
 
 ## First implementation slice
 
