@@ -1,5 +1,11 @@
 # Implementation status
 
+Context refresh checkpoint, 30 September 2026: the canonical
+[new-chat handoff](BUILD_HANDOFF.md#new-chat-resume-checkpoint--30-september-2026)
+identifies the current #59 checkout, pending owner signing setup, protected
+checkout state and next B15–B17 work. This documentation update adds no new
+implementation or live-test evidence.
+
 ## Panel visibility and development identity, 30 September 2026
 
 Owner feedback confirms Kimi was captured, but the running app still reports
