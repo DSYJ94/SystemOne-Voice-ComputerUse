@@ -24,7 +24,9 @@ if [[ -n "$other_dev" ]]; then
 fi
 needs_build=0
 if [[ ! -x "$binary" || "$script_dir/build-native-dev.sh" -nt "$binary" ||
-      "$script_dir/native-dev-sources.zsh" -nt "$binary" ]]; then
+      "$script_dir/native-dev-sources.zsh" -nt "$binary" ||
+      "$script_dir/development_signing.py" -nt "$binary" ||
+      "$repository_root/.build/development-signing-identity" -nt "$binary" ]]; then
   needs_build=1
 else
   for source_file in "${native_dev_sources[@]}"; do

@@ -29,6 +29,10 @@
     "test:dev-task-intake": "zsh scripts/check-dev-task-intake.sh",
     "test:window-visibility": "zsh scripts/check-command-window-visibility.sh",
     "test:field-preflight": "zsh scripts/check-command-field-preflight.sh",
+    "configure:dev-signing": "python3 scripts/development_signing.py configure",
+    "test:dev-signing": "python3 -m unittest discover -s scripts -p 'test_development_signing.py'",
+    "test:adhoc-identity": "zsh scripts/check-adhoc-identity.sh",
+    "test:accessibility-recovery": "zsh scripts/check-accessibility-recovery.sh",
     "try:local": "zsh scripts/try-local.sh",
     "run:portal-fixture": "node scripts/run-portal-fixture.ts",
     "fixtures": "node scripts/export-fixtures.ts"

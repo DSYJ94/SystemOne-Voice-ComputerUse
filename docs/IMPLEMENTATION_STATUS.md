@@ -1,8 +1,32 @@
 # Implementation status
 
+Context refresh checkpoint, 30 September 2026: the canonical
+[new-chat handoff](BUILD_HANDOFF.md#new-chat-resume-checkpoint--30-september-2026)
+identifies the current #59 checkout, pending owner signing setup, protected
+checkout state and next B15–B17 work. This documentation update adds no new
+implementation or live-test evidence.
+
+## Panel visibility and development identity, 30 September 2026
+
+Owner feedback confirms Kimi was captured, but the running app still reports
+Accessibility denied with an enabled Settings entry. The inspected build is
+ad-hoc/hash-identified; no valid signing certificate is installed. The new
+build supplies exact-path recovery, explicit request/recheck controls and
+local certificate pinning. The owner has a regular Apple ID and must create
+the Xcode Personal Team certificate before repeatable signing can be verified.
+See [setup](DEVELOPMENT_SIGNING.md). This is not a verified permission fix yet.
+
+The panel's hide-on-deactivation default was reproduced and corrected; the
+floating panel now stays configured above ordinary windows across app switches
+and joins Spaces. Audio cancellation remains unchanged. Native build and
+synthetic panel/recovery diagnostics passed; physical multi-monitor behavior
+remains open. Full Node suite: 255/255; signing unit tests: 4/4. A synthetic
+same-identifier/different-build check rejects the previous ad-hoc requirement.
+
 ## Latest slice: persistent limits and progress guards, 29 September 2026
 
-Manual Mac tests are parked at the owner's request; implementation continues.
+Manual Mac tests were parked on 29 September; the owner requested instructions
+again on 30 September. New results are pending; implementation continues.
 B15/B17 now have shared durable preparation budgets and deadlines, enforced by
 the existing journal across native, managed Chromium and Chrome drivers. Budget
 refusal pauses rather than completes, preserves already-dispatched uncertainty

@@ -10,6 +10,7 @@ fi
 
 script_dir=${0:A:h}
 repository_root=${script_dir:h}
+signing_identity=$(/usr/bin/python3 "$script_dir/development_signing.py" resolve)
 archive=${1:A}
 browser_root=${2:A}
 expected_hash=48231d6204eca6be13e6c5184dfdffa1d64ad88880364cc2cfb198f872cb2b13
@@ -101,9 +102,9 @@ if [[ ! "$node_cdhash" =~ '^[a-f0-9]{40,128}$' ]]; then
 fi
 /usr/libexec/PlistBuddy -c \
   "Add :SystemOneControllerNodeCDHash string $node_cdhash" "$contents/Info.plist"
-codesign --force --sign - --identifier com.aurium.systemone.dev "$app"
+codesign --force --sign "$signing_identity" --identifier com.aurium.systemone.dev "$app"
 codesign --verify --deep --strict "$app"
 /usr/bin/python3 "$script_dir/check-voice-bundle-metadata.py" "$app"
 
-print "Built movable ad-hoc development app: $app"
+print "Built movable development app: $app"
 print 'No Chrome native host is bundled or registered; this is not a notarized release.'

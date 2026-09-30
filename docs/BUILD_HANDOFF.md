@@ -1,11 +1,69 @@
 # Build handoff
 
-Updated 29 September 2026. This is the current implementation handoff, not a
+Updated 30 September 2026. This is the current implementation handoff, not a
 release claim. Read this with [implementation status](IMPLEMENTATION_STATUS.md),
 the [fixture test](FIXTURE_COMPUTER_USE_TEST.md),
 [managed-browser status](MANAGED_BROWSER.md), and the reviewed
 [backlog](specification/BACKLOG.md). Keep this file and the README aligned as
 each implementation slice lands.
+
+## New-chat resume checkpoint — 30 September 2026
+
+Start in `/Users/daryl/.codex/worktrees/task-lifecycle/SystemOne-Voice-ComputerUse`,
+branch `codex/panel-permission-recovery`. The latest implementation is commit
+`a1620d2`; the preceding documentation checkpoint is `e65d70b`.
+[Draft PR #59](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/59)
+targets `codex/durable-task-budgets` (#58). This is a stacked draft, not a merged
+main release. Read this file, `IMPLEMENTATION_STATUS.md`, `DEVELOPMENT_SIGNING.md`,
+`VOICE_COMPUTER_USE_TEST.md`, `VALIDATION.md`, `TASK_EXECUTION_LIMITS.md`,
+`TASK_INTAKE.md` and `CONTEXT.md` before changing source.
+
+- **Latest changes:** shared task intake and exclusive dispatch ownership,
+  durable preparation/deadline limits and portal progress guards; voice callback
+  crash repairs; a floating panel that does not hide on deactivation; exact-build
+  Accessibility recovery and local development certificate pinning.
+- **Owner evidence:** one final editable voice transcript and earlier synthetic
+  fixture fill succeeded. Latest screenshots confirm Kimi target capture, but
+  Show fields still reports denied despite an enabled Settings row. No successful
+  real Kimi field edit has been reported. A stale ad-hoc grant is a hypothesis,
+  not an established diagnosis of the Settings entry.
+- **Outstanding human step:** this Mac had zero valid code-signing identities
+  when inspected. Daryl has only a regular Apple ID. Instructions to create an
+  Apple Development certificate through Xcode Personal Team were provided, but
+  completion is unconfirmed. Follow `DEVELOPMENT_SIGNING.md`; do not create or
+  import certificates, change Keychain trust or reset TCC automatically.
+  After setup, quit the old app with Cmd-Q, configure signing, build and run this
+  checkout, and renew the grant for the exact revealed app if needed. Verify
+  permission across rebuild/relaunch and actual multi-monitor panel behavior.
+- **Existing live build:** last observed, not refreshed for this handoff, was
+  PID 19005 in the `ax-preflight` checkout's `.build/native-dev/SystemOne Dev.app`.
+  Do not replace its executable while running. The new #59 development bundle
+  compiled but was not normally launched by the agent.
+- **Validation already recorded:** 255/255 Node tests, 4/4 signing unit tests,
+  native build and synthetic visibility/recovery/no-target diagnostics passed.
+  Ad-hoc identity counterexample passed; configuring a certificate correctly
+  failed because none was available. These are source/identity checks, not live
+  permission qualification. No new tests ran for this handoff-only update.
+- **Still unverified:** new live Accessibility grant, stable certificate signing,
+  real-app edits, physical Spaces/multi-monitor behavior, general voice reliability,
+  existing-profile Chrome qualification and signed/notarized distribution.
+  G1–G6 remain unverified; this is a bounded development alpha, not almost-certified v1.
+
+Continue source work toward the wider vision while the owner completes setup:
+B15–B17 need a general persistent task actor with admitted goals/bindings,
+reconciled checkpoints and journal recovery, decision/observation/no-progress
+budgets, fresh completion evidence and explicit safe resume after uncertain
+effects. Prove scripted native and managed semantic navigation, dispatch and
+Stop before inserting CLM into task execution. CLM remains primary (B14);
+existing-profile Chrome remains mandatory beta scope (B18/B19). Keep the
+readmes/status/validation evidence updated as each slice lands. Do not resume
+the goal or create a new one merely to continue work.
+
+Preserve other checkout state: the original shared checkout is stale and has
+untracked `EXECUTION_ASSESSMENT.md` and `approval-record.patch`; the `ax-preflight`
+checkout has three manual-test documentation edits already carried into #59.
+Do not reset, broadly clean or treat those review artifacts as instructions.
+Use the latest checkout above; do not infer its branch from its folder name.
 
 ## Product boundary
 
@@ -77,20 +135,39 @@ established by the current fixture-only native or browser tests.
   [#55 controller task slot and voice bundle check](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/55),
   [#56 compact window Mission Control behavior](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/56),
   [#57 target-first Accessibility preflight](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/57),
-  [#58 durable task limits and workflow progress](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/58).
+  [#58 durable task limits and workflow progress](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/58),
+  [#59 panel visibility and exact-build permission recovery](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/59).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current source branch is `codex/durable-task-budgets`, stacked on
+- The current fix branch is `codex/panel-permission-recovery`, in the idle
+  `task-lifecycle` worktree, draft #59, stacked on `codex/durable-task-budgets` (#58).
+  That branch is stacked on
   `codex/ax-preflight` (draft PR #57), which is stacked on
   `codex/window-visibility` (draft PR #56), then `codex/task-lifecycle`
   (draft PR #55), itself stacked on
   `codex/voice-command-alpha` (draft PR #54). Use the current branch's exact
-  app when the owner explicitly revisits manual testing; tests are currently
-  parked. Quit an earlier SystemOne Dev with Command–Q before changing builds.
+  app for the manual test requested again on 30 September; new results are
+  pending. Quit an earlier SystemOne Dev with Command–Q before changing builds.
   The [test guide](VOICE_COMPUTER_USE_TEST.md) preserves the steps.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
 ## Evidence and open gates
+
+On 30 September the owner captured Kimi correctly but Show fields still
+reported denied while Settings showed an enabled SystemOne Dev entry. The
+running `ax-preflight` build was ad-hoc signed with a hash-based requirement;
+the Mac reported zero valid signing identities. A stale grant is likely,
+not proven: no TCC database was read or changed. The owner has a regular
+Apple ID, so the next signing step is Xcode Personal Team certificate setup.
+See [development signing](DEVELOPMENT_SIGNING.md).
+
+The panel visibility diagnostic reproduced `hidesOnDeactivate=true`, despite
+the earlier Mission Control fix. The current build sets it false, explicitly
+uses floating level and joins Spaces/full-screen auxiliary windows. It does
+not reactivate on app switches; audio still cancels on deactivation. Diagnostic
+checks pass, as do 255 Node tests and four signing-selection tests. Physical
+two-monitor/Spaces behavior and real permission recovery remain unverified.
+Your running app was not replaced or relaunched by the agent.
 
 The synthetic protocol, journal, dispatch-gate, loopback portal and managed
 Chromium tests pass. On this Mac, an earlier user-authorized mock changed one
@@ -243,7 +320,8 @@ and external-source mode still lacks code authentication.
 
 ### Owner direction and current source slice, 29 September
 
-Manual Mac tests are parked at the owner's request. Preserve the one successful
+Manual Mac tests were parked on 29 September; the owner requested instructions
+to revisit them on 30 September. New results are pending. Preserve the one successful
 physical voice transcript and prior Fixture fill; captured-target Accessibility,
 trackpad window overview, real-app action and headed-browser qualification
 remain unverified. Do not automatically prompt for permissions, record audio,
