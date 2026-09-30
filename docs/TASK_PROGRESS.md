@@ -1,7 +1,8 @@
 # Observations, checkpoints and bounded progress
 
 This B15–B17 slice adds opt-in progress tracking to `AttemptJournal` and uses
-it in synthetic native NAVIGATE, LOCATE and OPEN. It preserves verified history
+it in synthetic native NAVIGATE/LOCATE/OPEN and the fixed portal workflow.
+It preserves verified history
 while expiring the facts that could authorize an action. It does not implement
 a general task actor, correction or resume.
 
@@ -52,12 +53,13 @@ checkpoint history. Completed/cancelled/paused checkpoints are historical
 input. Checkpoint fields and semantic digests are host-owned; they do not prove
 predicate correctness or authenticate workers by themselves.
 
-The fixed portal still uses `ScriptedPortalStore` alongside the journal and
-does not enable these new progress guards. Single-action native field, managed
-field/link, existing-Chrome fill and older host-gate fixtures retain their
-existing preparation/deadline guards. The next slice must reconcile the
-portal's store and attempts conservatively, add its observation/checkpoint
-tracking, then prove recovery decisions with fresh native/browser observations.
+The fixed portal now uses these guards and [reconciles its progress projection](PORTAL_RECOVERY.md)
+against journal checkpoints before worker startup. It retains historical
+completion only when terminal evidence and completion already committed.
+Single-action native field, managed field/link, existing-Chrome fill and older
+host-gate fixtures retain their existing preparation/deadline guards. The next
+slice must prove explicit recovery decisions with fresh native/browser
+observations and invalidate pending steps on correction.
 No automatic resume or paid inference deployment is introduced here. Hung
 reads still need adapter timeouts and Stop barriers; quotas bound starts of
 reads rather than interrupting an outstanding OS call.

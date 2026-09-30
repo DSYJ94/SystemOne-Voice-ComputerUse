@@ -335,10 +335,30 @@ export class AttemptJournal {
     assertId(taskId, 'task ID');
     return this.#transaction(() => {
       const task = this.#task(taskId);
-      if (!task || task.state !== 'active') throw new ContractError('task is not active');
+      if (!task || !['active', 'paused'].includes(task.state)) throw new ContractError('task is not active or paused');
       this.#db.prepare(`UPDATE tasks SET state = 'cancelled' WHERE task_id = ?`).run(taskId);
       this.#taskEvent(taskId, 'cancelled');
       this.#settlePrepared(taskId, 'cancelled_before_dispatch');
+      this.#progress.expire(taskId);
+      return this.unresolvedAttempts(taskId);
+    });
+  }
+
+  /** Host interruption fence. Pausing expires facts and settles only unsent
+   * preparations; it does not resolve an effect or authorize resume. */
+  pauseTask(taskId: string, reasonRef: string): readonly JournalAttempt[] {
+    assertId(taskId, 'task ID');
+    assertId(reasonRef, 'pause reason');
+    return this.#transaction(() => {
+      const task = this.#task(taskId);
+      if (!task || !['active', 'paused'].includes(task.state)) {
+        throw new ContractError('task is not active or paused');
+      }
+      if (task.state === 'active') {
+        this.#db.prepare("UPDATE tasks SET state = 'paused' WHERE task_id = ?").run(taskId);
+        this.#taskEvent(taskId, `paused_host:${reasonRef}`);
+      }
+      this.#settlePrepared(taskId, 'paused_before_dispatch');
       this.#progress.expire(taskId);
       return this.unresolvedAttempts(taskId);
     });

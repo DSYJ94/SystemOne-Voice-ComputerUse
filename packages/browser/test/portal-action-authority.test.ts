@@ -60,3 +60,12 @@ test('portal permit expires and Stop revokes an unconsumed permit', () => {
   assert.throws(() => authority.consume(next, task, 'search', home), /missing/);
   assert.throws(() => authority.issue(task, 'search', home), /closed/);
 });
+
+test('a host read reference binds the permit without weakening observation revalidation', () => {
+  const authority = new PortalActionAuthority(admission);
+  assert.throws(() => authority.issue(task, 'search', home, 'bad reference'), /observation ID/);
+  const permit = authority.issue(task, 'search', home, 'fresh-host-read');
+  assert.equal(permit.observationId, 'fresh-host-read');
+  assert.throws(() => authority.consume(permit, task, 'search', { ...home, revision: 2 }), /changed/);
+  authority.consume(permit, task, 'search', home);
+});

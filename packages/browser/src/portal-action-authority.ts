@@ -45,11 +45,14 @@ export class PortalActionAuthority {
   }
 
   issue(task: ScriptedPortalRecord, action: PortalAction,
-    observed: PortalObservation): PortalActionPermit {
+    observed: PortalObservation, observationId?: string): PortalActionPermit {
     if (this.#closed || this.#pending) throw new ContractError('portal authority closed or permit outstanding');
     this.#validate(task, action, observed);
     const now = this.#now();
     const observation = observationRecord(observed);
+    if (observationId !== undefined && !ID.test(observationId)) {
+      throw new ContractError('invalid host observation ID');
+    }
     const actionValue = actionRecord(task, action, observation);
     const executionId = this.#newId();
     const permitRef = this.#newId();
@@ -65,7 +68,7 @@ export class PortalActionAuthority {
       taskEpoch: this.#admission.taskEpoch,
       goalRevision: this.#admission.goalRevision,
       scopeRef: this.#admission.scopeRef,
-      observationId: `portal-${digest(observation).slice(0, 32)}`,
+      observationId: observationId ?? `portal-${digest(observation).slice(0, 32)}`,
       candidateId: `scripted-${action}`,
       candidateSetDigest: digest([actionValue]),
       actionDigest: digest(actionValue),

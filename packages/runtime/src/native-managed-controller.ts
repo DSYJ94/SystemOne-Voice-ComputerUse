@@ -948,7 +948,7 @@ async function main(): Promise<void> {
   const journal = new AttemptJournal(journalPath);
   const outputRoot = join(dirname(journalPath), 'fixture-output');
   mkdirSync(outputRoot, { recursive: true, mode: 0o700 });
-  const portalStore = new ScriptedPortalStore(journalPath, outputRoot);
+  const portalStore = new ScriptedPortalStore(journalPath, outputRoot, journal);
   const write = (requestId: string, phase: Phase) => {
     process.stdout.write(`${JSON.stringify({ type: 'status', requestId, phase })}\n`);
   };

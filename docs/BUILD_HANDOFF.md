@@ -10,9 +10,8 @@ each implementation slice lands.
 ## New-chat resume checkpoint — 30 September 2026
 
 **Cloud source continuation:** use `/workspace/SystemOne-Voice-ComputerUse`,
-branch `codex/task-checkpoint-recovery`, based on #60 at `387b61c`.
-Implementation commit: `653c022`.
-[Draft PR #61](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/61)
+branch `codex/portal-checkpoint-reconciliation`, based on #61 at `93259b7`.
+The preceding [draft PR #61](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/61)
 targets `codex/durable-task-contracts` (#60).
 The preceding [draft PR #60](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/60)
 targets `codex/panel-permission-recovery` (#59). The local Mac path below
@@ -20,12 +19,16 @@ remains the owner checkout; cloud changes
 do not update that worktree or its running app. Read
 [durable task records](DURABLE_TASK_RECORD.md) and
 [progress tracking](TASK_PROGRESS.md): synthetic native NAVIGATE/LOCATE/OPEN
-now persist verified checkpoints, expire current facts, and enforce durable
-observation/decision/equivalent-state limits. Restart retains history and pauses;
-it does not authorize resume. Linux checks and the saved cloud configuration
-are recorded in `VALIDATION.md`. Next, reconcile the portal's separate progress
-store and journal, extend browser progress guards, then implement explicit
-recovery intent with fresh observations. Keep the goal stopped. Mac signing,
+and the fixed portal persist verified checkpoints, expire facts and enforce
+observation/decision/equivalent-state limits. [Portal recovery](PORTAL_RECOVERY.md)
+now reconciles its separate progress projection against journal admission,
+checkpoints and effect history without replay. Restart retains history and
+pauses; only already-committed terminal evidence and completion can restore
+completed history. Legacy/unbound or inconsistent records require review.
+Linux checks and the saved cloud configuration are recorded in `VALIDATION.md`.
+Next, implement explicit recovery intent bound to checkpoints and fresh
+native/browser observations, then correction invalidation and the general actor.
+Keep the goal stopped. Mac signing,
 Accessibility, voice and real-app gates below remain open.
 
 **CLM preparation:** the owner reports a 14-inch M5 MacBook Pro (2026), 32 GB
