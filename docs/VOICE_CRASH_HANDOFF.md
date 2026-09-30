@@ -38,8 +38,9 @@ microphone replies from background queues; all expected statuses reach the
 main actor. This closes the adjacent callback test gap without opening either
 system permission prompt. The audio tap block is now formed in a nonisolated
 method so it does not inherit the main-actor executor when AVAudioEngine calls
-it on its audio queue. Compilation is verified, but that tap has **not** been
-run with a microphone; it does not establish a successful live recording.
+it on its audio queue. At fix time only compilation was verified; the later
+owner-run microphone/transcript smoke is recorded below. Repeated recording
+and cancellation remain unqualified.
 
 ## Validation and next agent
 
@@ -63,7 +64,9 @@ run with a microphone; it does not establish a successful live recording.
 
 The next agent should first inspect `git status`, the latest commit/PR, and
 this handoff. The owner completed one physical voice run, so do not describe
-voice as wholly untested or fully qualified. On a new build, repeat Enable
+voice as wholly untested or fully qualified. **Manual tests are parked at the
+owner's request on 29 September; wait until the owner revisits them.** Then,
+on a new build, repeat Enable
 Voice and held Talk, record whether permission prompts recur, and check that
 release yields a final editable transcript without a crash. Record any new
 `.ips` incident ID here and in `docs/VALIDATION.md`. Do not run an action in a

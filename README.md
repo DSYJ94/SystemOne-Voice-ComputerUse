@@ -22,6 +22,11 @@ denied Accessibility.
 
 ## Current implementation
 
+- [Durable task limits](docs/TASK_EXECUTION_LIMITS.md) now enforce host-owned
+  action budgets and deadlines at journal transitions across all three drivers.
+  The scripted multi-step workflow rejects skipped/repeated progress and
+  concurrent advancement. Manual Mac testing is parked at the owner's request;
+  source development continues toward the general task loop and CLM integration.
 - [Task intake](docs/TASK_INTAKE.md) now constructs committed commands and typed
   start requests once for the compact panel and developer actions, retaining a
   single active request only after send succeeds. Its synthetic check passes;

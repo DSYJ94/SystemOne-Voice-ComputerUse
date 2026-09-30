@@ -1,5 +1,9 @@
 # Try the voice/text computer-use command panel
 
+Manual testing is parked at the owner's request on 29 September 2026. Keep
+these steps for when the owner asks to revisit testing; current source work and
+open evidence are tracked in [build handoff](BUILD_HANDOFF.md).
+
 This development build can act on one labeled, editable field in a real native
 app or on an approved HTTPS page in a fresh managed Chromium profile. It is a
 bounded first agent workflow, not general computer control or v1 certification.

@@ -4,6 +4,40 @@ import { ContractError } from '../../protocol/src/json.ts';
 const ID = /^[A-Za-z0-9_.:-]{1,160}$/;
 const DIGEST = /^[a-f0-9]{64}$/;
 
+export interface TaskBudgetLimits {
+  readonly maxSteps: number;
+  readonly timeoutMs: number;
+}
+
+export interface TaskBudget extends TaskBudgetLimits {
+  readonly stepsUsed: number;
+  readonly deadlineMillis: number;
+  readonly pauseReason: 'steps' | 'time' | 'clock' | 'missing' | null;
+}
+
+/** Host policy only: never take these limits from a model proposal. */
+export const DEFAULT_TASK_BUDGET: TaskBudgetLimits = Object.freeze({
+  maxSteps: 30, timeoutMs: 300_000,
+});
+
+export class TaskBudgetExceeded extends ContractError {
+  readonly reason: NonNullable<TaskBudget['pauseReason']>;
+  constructor(reason: NonNullable<TaskBudget['pauseReason']>) {
+    super(reason === 'steps' ? 'task step budget exhausted'
+      : reason === 'time' ? 'task time budget exhausted'
+        : reason === 'clock' ? 'task budget clock invalid' : 'task budget missing');
+    this.reason = reason;
+  }
+}
+
+interface BudgetRow {
+  max_steps: number;
+  timeout_ms: number;
+  deadline_ms: number;
+  last_checked_ms: number;
+  pause_reason: TaskBudget['pauseReason'];
+}
+
 export interface PreparedAttempt {
   readonly executionId: string;
   readonly permitRef: string;
@@ -66,8 +100,10 @@ interface AttemptRow {
  */
 export class AttemptJournal {
   readonly #db: DatabaseSync;
+  readonly #clock: () => number;
 
-  constructor(path: string) {
+  constructor(path: string, clock: () => number = Date.now) {
+    this.#clock = clock;
     this.#db = new DatabaseSync(path);
     this.#db.exec(`
       PRAGMA journal_mode = WAL;
@@ -82,6 +118,14 @@ export class AttemptJournal {
         task_epoch INTEGER NOT NULL,
         goal_revision INTEGER NOT NULL,
         state TEXT NOT NULL CHECK(state IN ('active', 'cancelled', 'paused', 'completed'))
+      );
+      CREATE TABLE IF NOT EXISTS task_budgets (
+        task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
+        max_steps INTEGER NOT NULL CHECK(max_steps BETWEEN 1 AND 1000),
+        timeout_ms INTEGER NOT NULL CHECK(timeout_ms BETWEEN 1 AND 3600000),
+        deadline_ms INTEGER NOT NULL,
+        last_checked_ms INTEGER NOT NULL,
+        pause_reason TEXT CHECK(pause_reason IN ('steps', 'time', 'clock', 'missing'))
       );
       CREATE TABLE IF NOT EXISTS attempts (
         execution_id TEXT PRIMARY KEY,
@@ -123,10 +167,18 @@ export class AttemptJournal {
 
   close(): void { this.#db.close(); }
 
-  startTask(taskId: string, taskEpoch: number, goalRevision: number): void {
+  startTask(taskId: string, taskEpoch: number, goalRevision: number,
+    limits: TaskBudgetLimits = DEFAULT_TASK_BUDGET): void {
     assertId(taskId, 'task ID');
     assertCounter(taskEpoch, 'task epoch');
     assertCounter(goalRevision, 'goal revision');
+    const now = this.#clock();
+    if (!Number.isSafeInteger(limits.maxSteps) || limits.maxSteps < 1 || limits.maxSteps > 1000
+      || !Number.isSafeInteger(limits.timeoutMs) || limits.timeoutMs < 1
+      || limits.timeoutMs > 3_600_000 || !Number.isSafeInteger(now) || now < 0
+      || !Number.isSafeInteger(now + limits.timeoutMs)) {
+      throw new ContractError('invalid host task budget');
+    }
     this.#transaction(() => {
       if (this.#db.prepare('SELECT 1 FROM tasks WHERE state = ?').get('active')) {
         throw new ContractError('another task is active');
@@ -138,14 +190,18 @@ export class AttemptJournal {
       }
       this.#db.prepare('INSERT INTO tasks VALUES (?, ?, ?, ?)')
         .run(taskId, taskEpoch, goalRevision, 'active');
+      this.#db.prepare('INSERT INTO task_budgets VALUES (?, ?, ?, ?, ?, NULL)')
+        .run(taskId, limits.maxSteps, limits.timeoutMs, now + limits.timeoutMs, now);
       this.#taskEvent(taskId, 'started');
     });
   }
 
   prepare(attempt: PreparedAttempt): JournalAttempt {
     validatePrepared(attempt);
-    return this.#transaction(() => {
-      this.#assertActive(attempt);
+    return this.#budgeted(attempt, true, () => {
+      if (this.unresolvedAttempts().length) {
+        throw new ContractError('an earlier effect is unresolved or unknown');
+      }
       this.#db.prepare(`INSERT INTO attempts
         (execution_id, permit_ref, task_id, task_epoch, goal_revision, scope_ref,
          observation_id, candidate_id, candidate_set_digest, action_digest,
@@ -163,10 +219,12 @@ export class AttemptJournal {
   /** Persist immediately before the adapter's actual dispatch boundary. */
   markDispatchBoundary(executionId: string): JournalAttempt {
     assertId(executionId, 'execution ID');
-    return this.#transaction(() => {
-      const attempt = this.#requiredAttempt(executionId);
-      if (attempt.phase !== 'prepared') throw new ContractError('attempt is not prepared');
-      this.#assertActive(attempt);
+    const attempt = this.#requiredAttempt(executionId);
+    if (attempt.phase !== 'prepared') throw new ContractError('attempt is not prepared');
+    return this.#budgeted(attempt, false, () => {
+      if (this.#requiredAttempt(executionId).phase !== 'prepared') {
+        throw new ContractError('attempt is not prepared');
+      }
       this.#db.prepare(`UPDATE attempts SET phase = 'at_dispatch_boundary'
         WHERE execution_id = ?`).run(executionId);
       this.#event(executionId, 'dispatch_boundary');
@@ -221,9 +279,10 @@ export class AttemptJournal {
   completeTask(taskId: string, completionEvidenceRef: string): void {
     assertId(taskId, 'task ID');
     assertId(completionEvidenceRef, 'completion evidence reference');
-    this.#transaction(() => {
-      const task = this.#task(taskId);
-      if (!task || task.state !== 'active') throw new ContractError('task is not active');
+    const task = this.#task(taskId);
+    if (!task || task.state !== 'active') throw new ContractError('task is not active');
+    this.#budgeted({ taskId, taskEpoch: task.task_epoch,
+      goalRevision: task.goal_revision }, false, () => {
       if (this.#db.prepare(`SELECT 1 FROM attempts WHERE task_id = ?
         AND (phase != 'settled' OR delivery_status = 'unknown'
           OR effect_status = 'unknown')`).get(taskId)) {
@@ -252,6 +311,18 @@ export class AttemptJournal {
   getTaskState(taskId: string): TaskRow['state'] | undefined {
     assertId(taskId, 'task ID');
     return this.#task(taskId)?.state;
+  }
+
+  /** Private host diagnostics. Attempts include failed preflights: minting a
+   * fresh execution ID cannot reset retry cost or extend the deadline. */
+  getTaskBudget(taskId: string): TaskBudget | undefined {
+    assertId(taskId, 'task ID');
+    const row = this.#db.prepare('SELECT * FROM task_budgets WHERE task_id = ?')
+      .get(taskId) as BudgetRow | undefined;
+    if (!row) return undefined;
+    return Object.freeze({ maxSteps: row.max_steps, timeoutMs: row.timeout_ms,
+      deadlineMillis: row.deadline_ms, stepsUsed: this.#stepsUsed(taskId),
+      pauseReason: row.pause_reason });
   }
 
   getAttempt(executionId: string): JournalAttempt | undefined {
@@ -335,6 +406,41 @@ export class AttemptJournal {
       || task.goal_revision !== attempt.goalRevision) {
       throw new ContractError('task revision is not active');
     }
+  }
+
+  #stepsUsed(taskId: string): number {
+    return (this.#db.prepare('SELECT COUNT(*) AS count FROM attempts WHERE task_id = ?')
+      .get(taskId) as { count: number }).count;
+  }
+
+  #budgeted<T>(revision: Pick<PreparedAttempt, 'taskId' | 'taskEpoch' | 'goalRevision'>,
+    newStep: boolean, body: () => T): T {
+    const result = this.#transaction((): { value: T } | { failure: TaskBudgetExceeded } => {
+      this.#assertActive(revision);
+      const row = this.#db.prepare('SELECT * FROM task_budgets WHERE task_id = ?')
+        .get(revision.taskId) as BudgetRow | undefined;
+      const now = this.#clock();
+      const reason: TaskBudget['pauseReason'] = !row ? 'missing'
+        : !Number.isSafeInteger(now) || now < row.last_checked_ms ? 'clock'
+          : now >= row.deadline_ms ? 'time'
+            : newStep && this.#stepsUsed(revision.taskId) >= row.max_steps ? 'steps' : null;
+      if (reason) {
+        this.#db.prepare("UPDATE tasks SET state = 'paused' WHERE task_id = ?")
+          .run(revision.taskId);
+        this.#db.prepare('UPDATE task_budgets SET pause_reason = ? WHERE task_id = ?')
+          .run(reason, revision.taskId);
+        this.#taskEvent(revision.taskId, `paused_budget:${reason}`);
+        this.#settlePrepared(revision.taskId, 'budget_before_dispatch');
+        // Commit the pause before throwing. Unknown/dispatched effects stay
+        // untouched; a budget is not an OS cancellation barrier or an undo.
+        return { failure: new TaskBudgetExceeded(reason) };
+      }
+      this.#db.prepare('UPDATE task_budgets SET last_checked_ms = ? WHERE task_id = ?')
+        .run(now, revision.taskId);
+      return { value: body() };
+    });
+    if ('failure' in result) throw result.failure;
+    return result.value;
   }
 
   #requiredAttempt(executionId: string): JournalAttempt {

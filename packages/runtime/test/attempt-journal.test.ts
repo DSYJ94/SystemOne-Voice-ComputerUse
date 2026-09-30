@@ -21,6 +21,108 @@ function withDatabase(run: (path: string) => void): void {
   finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
+test('host action budget survives reopening and refuses a fresh attempt ID', () => withDatabase(path => {
+  const first = new AttemptJournal(path);
+  first.startTask('task-1', 1, 1, { maxSteps: 1, timeoutMs: 60_000 });
+  first.prepare(attempt);
+  first.recordNotDispatched(attempt.executionId);
+  first.close();
+  const reopened = new AttemptJournal(path);
+  assert.throws(() => reopened.prepare({ ...attempt, executionId: 'execution-2',
+    permitRef: 'permit-2' }), /step budget/);
+  assert.equal(reopened.getTaskState('task-1'), 'paused');
+  assert.equal(reopened.attemptsForTask('task-1').length, 1);
+  assert.equal(reopened.getTaskBudget('task-1')?.stepsUsed, 1);
+  assert.equal(reopened.getTaskBudget('task-1')?.pauseReason, 'steps');
+  reopened.close();
+}));
+
+test('expiry between prepare and dispatch settles only the unsent preparation', () => withDatabase(path => {
+  let now = 1000;
+  const journal = new AttemptJournal(path, () => now);
+  journal.startTask('task-1', 1, 1, { maxSteps: 2, timeoutMs: 100 });
+  journal.prepare(attempt);
+  now = 1100;
+  assert.throws(() => journal.markDispatchBoundary(attempt.executionId), /time budget/);
+  assert.equal(journal.getTaskState('task-1'), 'paused');
+  assert.equal(journal.getAttempt(attempt.executionId)?.outcome?.deliveryStatus, 'not_dispatched');
+  assert.deepEqual(journal.unresolvedAttempts(), []);
+  journal.close();
+}));
+
+test('late verified effect after deadline stays history and cannot complete the task', () => withDatabase(path => {
+  let now = 1000;
+  const journal = new AttemptJournal(path, () => now);
+  journal.startTask('task-1', 1, 1, { maxSteps: 1, timeoutMs: 100 });
+  journal.prepare(attempt);
+  journal.markDispatchBoundary(attempt.executionId);
+  now = 1100;
+  journal.recordOutcome(attempt.executionId, { deliveryStatus: 'dispatched',
+    effectStatus: 'applied', verification: 'matched', evidenceRef: 'late-match' });
+  assert.throws(() => journal.completeTask('task-1', 'late-match'), /time budget/);
+  assert.equal(journal.getTaskState('task-1'), 'paused');
+  assert.equal(journal.getAttempt(attempt.executionId)?.outcome?.effectStatus, 'applied');
+  assert.throws(() => journal.markDispatchBoundary(attempt.executionId), /not prepared/);
+  journal.close();
+}));
+
+test('budget refusal preserves an unknown earlier effect rather than making it retryable', () => withDatabase(path => {
+  const journal = new AttemptJournal(path);
+  journal.startTask('task-1', 1, 1, { maxSteps: 1, timeoutMs: 60_000 });
+  journal.prepare(attempt);
+  journal.markDispatchBoundary(attempt.executionId);
+  journal.recordOutcome(attempt.executionId, { deliveryStatus: 'unknown',
+    effectStatus: 'unknown', verification: 'unavailable' });
+  assert.throws(() => journal.prepare({ ...attempt, executionId: 'execution-2',
+    permitRef: 'permit-2' }), /step budget/);
+  assert.equal(journal.unresolvedAttempts().length, 1);
+  assert.throws(() => journal.startTask('task-2', 1, 1), /unknown/);
+  journal.close();
+}));
+
+test('backwards clock and invalid host limits fail closed', () => withDatabase(path => {
+  let now = 1000;
+  const journal = new AttemptJournal(path, () => now);
+  for (const maxSteps of [0, 1001, NaN, 1.5]) {
+    assert.throws(() => journal.startTask('task-1', 1, 1,
+      { maxSteps, timeoutMs: 100 }), /budget/);
+  }
+  journal.startTask('task-1', 1, 1, { maxSteps: 2, timeoutMs: 100 });
+  journal.prepare(attempt);
+  now = 999;
+  assert.throws(() => journal.markDispatchBoundary(attempt.executionId), /clock/);
+  assert.equal(journal.getTaskBudget('task-1')?.pauseReason, 'clock');
+  journal.close();
+}));
+
+test('remaining budget never authorizes retrying an unknown effect', () => withDatabase(path => {
+  const journal = new AttemptJournal(path);
+  journal.startTask('task-1', 1, 1);
+  journal.prepare(attempt);
+  journal.markDispatchBoundary(attempt.executionId);
+  journal.recordOutcome(attempt.executionId, { deliveryStatus: 'unknown',
+    effectStatus: 'unknown', verification: 'unavailable' });
+  assert.throws(() => journal.prepare({ ...attempt, executionId: 'execution-2',
+    permitRef: 'permit-2' }), /unresolved or unknown/);
+  assert.equal(journal.getTaskBudget('task-1')?.stepsUsed, 1);
+  journal.close();
+}));
+
+test('the last permitted step can complete and read-only verification spends no step', () => withDatabase(path => {
+  const journal = new AttemptJournal(path);
+  journal.startTask('task-1', 1, 1, { maxSteps: 1, timeoutMs: 60_000 });
+  journal.prepare(attempt);
+  journal.markDispatchBoundary(attempt.executionId);
+  journal.recordOutcome(attempt.executionId, { deliveryStatus: 'dispatched',
+    effectStatus: 'applied', verification: 'matched', evidenceRef: 'final-match' });
+  journal.completeTask('task-1', 'final-match');
+  assert.equal(journal.getTaskState('task-1'), 'completed');
+  journal.startTask('task-2', 1, 1, { maxSteps: 1, timeoutMs: 60_000 });
+  journal.completeTask('task-2', 'read-only-match');
+  assert.equal(journal.getTaskBudget('task-2')?.stepsUsed, 0);
+  journal.close();
+}));
+
 test('restart makes a prepared action definitely not dispatched', () => withDatabase(path => {
   const first = new AttemptJournal(path);
   first.startTask('task-1', 1, 1);
