@@ -1,5 +1,57 @@
 # Initial foundation validation
 
+## Captured-target denial and panel deactivation, 30 September 2026
+
+Owner screenshots show Target: Kimi (`com.moonshot.kimichat`), actual runtime
+Accessibility denial, and an enabled SystemOne Dev Settings entry. This advances
+the earlier no-target case: correct capture is now observed, but no field read
+or edit was verified. The owner also reports the panel disappears when clicking
+another app on another monitor. The owner has a regular Apple ID.
+
+Read-only `pgrep -fl SystemOneDev` identified the running `ax-preflight` app;
+`codesign -d -r- '.build/native-dev/SystemOne Dev.app'` showed a hash-based
+designated requirement, and `security find-identity -v -p codesigning` returned
+zero valid identities. A stale ad-hoc grant is a supported hypothesis, not a
+verified reading of TCC state. Neither TCC data nor machine settings changed.
+
+In the idle `task-lifecycle` worktree, branch `codex/panel-permission-recovery`:
+
+- Expanded the built-window diagnostic to assert no hide on deactivation and
+  level above ordinary windows. `npm run test:window-visibility` first failed:
+  `hides=true, level=3, managed=true`. After `hidesOnDeactivate=false` and an
+  explicit floating level it passed. The final built app's direct
+  `--check-command-window-visibility` diagnostic also passed.
+- `npm run test:accessibility-recovery` compiled the app and passed a synthetic
+  denied→granted transition, exact bundle-path message and no-prompt check.
+  It did not request real OS permissions, inspect Kimi or operate a live field.
+- `npm run test:dev-signing`: 4/4 Python selection/pin tests passed. A missing
+  configured certificate refuses signing rather than falling back.
+- `npm run configure:dev-signing` failed as expected with no certificate and
+  printed Xcode setup steps; it wrote no pin and changed no Keychain state.
+- `npm run test:adhoc-identity` passed: two tiny temporary C binaries with the
+  same signing identifier have different hash-based requirements. The second
+  fails validation against the first's requirement. This is code-identity
+  evidence, not a live TCC grant test. The initial invocation omitted codesign's
+  inline-requirement `=` prefix and failed syntax validation; correcting the
+  invocation did not alter the identity expectation.
+- `npm run check`: TypeScript and 255/255 Node tests passed with isolated
+  loopback/headless fixtures. The native build also passed. Initial Security
+  compilation used an unavailable C constant; the SDK's Swift
+  `SecCodeSignatureFlags.adhoc` spelling fixed it.
+
+Node 26.5.0 and locked npm dependencies unchanged. The signing selector also
+uses system Python 3.9.6; Python unit tests passed on both 3.14.6 and 3.9.6. The movable bundle's
+final signing path was updated to honor the pin but was not rebuilt here.
+No normal UI launch, certificate creation, audio recording, TCC request/reset,
+or live computer-control action occurred. The owner's running build remains
+untouched. Certificate signing, grant persistence across a rebuild and physical
+multi-monitor/full-screen behavior await owner setup/testing.
+
+Primary references: [AppKit panel deactivation](https://developer.apple.com/documentation/appkit/nswindow/hidesondeactivate),
+[Apple signing requirements](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements),
+[Personal Team development](https://developer.apple.com/support/compare-memberships/),
+[certificate setup](https://help.apple.com/xcode/mac/current/en.lproj/dev154b28f09.html).
+
 ## Durable task budgets and workflow progress, 29 September 2026
 
 Branch `codex/durable-task-budgets`, based on draft #57. Five new journal

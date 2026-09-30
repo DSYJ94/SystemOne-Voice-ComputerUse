@@ -79,18 +79,36 @@ established by the current fixture-only native or browser tests.
   [#57 target-first Accessibility preflight](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/57),
   [#58 durable task limits and workflow progress](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/58).
   These are stacked drafts; evaluate or merge in dependency order.
-- The current source branch is `codex/durable-task-budgets`, stacked on
+- The current fix branch is `codex/panel-permission-recovery`, in the idle
+  `task-lifecycle` worktree and stacked on `codex/durable-task-budgets` (#58).
+  That branch is stacked on
   `codex/ax-preflight` (draft PR #57), which is stacked on
   `codex/window-visibility` (draft PR #56), then `codex/task-lifecycle`
   (draft PR #55), itself stacked on
   `codex/voice-command-alpha` (draft PR #54). Use the current branch's exact
-  app when the owner explicitly revisits manual testing; tests are currently
-  parked. Quit an earlier SystemOne Dev with Command–Q before changing builds.
+  app for the manual test requested again on 30 September; new results are
+  pending. Quit an earlier SystemOne Dev with Command–Q before changing builds.
   The [test guide](VOICE_COMPUTER_USE_TEST.md) preserves the steps.
   Preserve the existing untracked local review files `EXECUTION_ASSESSMENT.md`
   and `approval-record.patch`; they are not implementation inputs.
 
 ## Evidence and open gates
+
+On 30 September the owner captured Kimi correctly but Show fields still
+reported denied while Settings showed an enabled SystemOne Dev entry. The
+running `ax-preflight` build was ad-hoc signed with a hash-based requirement;
+the Mac reported zero valid signing identities. A stale grant is likely,
+not proven: no TCC database was read or changed. The owner has a regular
+Apple ID, so the next signing step is Xcode Personal Team certificate setup.
+See [development signing](DEVELOPMENT_SIGNING.md).
+
+The panel visibility diagnostic reproduced `hidesOnDeactivate=true`, despite
+the earlier Mission Control fix. The current build sets it false, explicitly
+uses floating level and joins Spaces/full-screen auxiliary windows. It does
+not reactivate on app switches; audio still cancels on deactivation. Diagnostic
+checks pass, as do 255 Node tests and four signing-selection tests. Physical
+two-monitor/Spaces behavior and real permission recovery remain unverified.
+Your running app was not replaced or relaunched by the agent.
 
 The synthetic protocol, journal, dispatch-gate, loopback portal and managed
 Chromium tests pass. On this Mac, an earlier user-authorized mock changed one
@@ -243,7 +261,8 @@ and external-source mode still lacks code authentication.
 
 ### Owner direction and current source slice, 29 September
 
-Manual Mac tests are parked at the owner's request. Preserve the one successful
+Manual Mac tests were parked on 29 September; the owner requested instructions
+to revisit them on 30 September. New results are pending. Preserve the one successful
 physical voice transcript and prior Fixture fill; captured-target Accessibility,
 trackpad window overview, real-app action and headed-browser qualification
 remain unverified. Do not automatically prompt for permissions, record audio,

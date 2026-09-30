@@ -1,8 +1,9 @@
 # Try the voice/text computer-use command panel
 
-Manual testing is parked at the owner's request on 29 September 2026. Keep
-these steps for when the owner asks to revisit testing; current source work and
-open evidence are tracked in [build handoff](BUILD_HANDOFF.md).
+The owner requested these manual tests again on 30 September 2026, after
+parking them on 29 September. New results are pending; the earlier single
+voice-input success remains recorded. Current source work and open evidence
+are tracked in [build handoff](BUILD_HANDOFF.md).
 
 This development build can act on one labeled, editable field in a real native
 app or on an approved HTTPS page in a fresh managed Chromium profile. It is a
@@ -14,24 +15,29 @@ flow testable without a model download. The planned pinned WhisperKit path and
 representative speech evaluation remain open; this does not change CLM as the
 primary decision model.
 
-For the current Accessibility-preflight build, first quit any earlier **SystemOne Dev**
+For the current panel/permission-recovery build, first quit any earlier **SystemOne Dev**
 with **Command–Q**. Closing the window can leave the app running. In Terminal:
 
 ```sh
-cd '/Users/daryl/.codex/worktrees/ax-preflight/SystemOne-Voice-ComputerUse'
+cd '/Users/daryl/.codex/worktrees/task-lifecycle/SystemOne-Voice-ComputerUse'
 npm run run:native-dev
 ```
 
 The compact translucent **SystemOne** window opens on launch; Control–Option–Space
 reopens it. The menu-bar or Dock item also opens it. Control–Option–Escape is
-Stop. A rebuild is ad-hoc signed and may need a fresh Accessibility grant for
+Stop. An unconfigured rebuild is ad-hoc signed and may need a fresh Accessibility grant for
 native actions. If the launcher reports another exact SystemOne Dev path, quit
 that app with Command–Q and run the command again; do not use a force-quit script.
 
 First check the reported window problem: with **SystemOne** visible, use your
 trackpad's Mission Control gesture (normally swipe up with three or four fingers)
 and, if applicable, App Exposé (normally swipe down). The SystemOne window should
-remain in the window overview and be selectable. Command–Tab alone is not the
+remain in the window overview and be selectable. Also click an ordinary app
+on the other monitor: the open command panel should remain visible above
+normal windows without reclaiming keyboard focus. It joins Spaces and can be
+auxiliary to full-screen windows; those physical arrangements remain unverified.
+Closing the panel still hides it, and switching apps still cancels recording.
+Command–Tab alone is not the
 acceptance check. If it still disappears, report which gesture you used and
 whether Stage Manager or multiple Spaces are enabled. The built-window
 `npm run test:window-visibility` check verifies the explicit AppKit `.managed`
@@ -46,13 +52,16 @@ prompt for Accessibility while the target is absent.
 For a real native app, open a disposable document or field in an app you choose
 and bring that app to the front. Press Control–Option–Space. Confirm the panel's
 **Target** names that app. Choose **Show fields** to see up to five observed,
-nonsecure editable labels. If macOS asks for Accessibility access, grant it to
-this exact development build and choose **Show fields** again. If the switch
+nonsecure editable labels. If access is denied, choose **Accessibility…** for
+this running build's exact path/signing mode, **Reveal This App** or an explicit
+**Request Access**, and **Recheck**. For repeatable development signing with a
+regular Apple ID, follow [development signing](DEVELOPMENT_SIGNING.md).
+If the switch
 already appears on but this running app still reports denied, quit SystemOne
 Dev with Command–Q and reopen it once. If it remains denied, remove the stale
 **SystemOne Dev** entry from System Settings → Privacy & Security → Accessibility,
 then add the exact app at
-`/Users/daryl/.codex/worktrees/ax-preflight/SystemOne-Voice-ComputerUse/.build/native-dev/SystemOne Dev.app`
+`/Users/daryl/.codex/worktrees/task-lifecycle/SystemOne-Voice-ComputerUse/.build/native-dev/SystemOne Dev.app`
 and turn it on. In the file picker, Command–Shift–G accepts that full path.
 Reopen the app and choose
 **Show fields** again. An ad-hoc rebuild can invalidate the previous grant;

@@ -20,6 +20,13 @@ for Accessibility. An initial "No target app captured" message means the user
 must focus a target app and reopen the panel; it is not evidence that macOS
 denied Accessibility.
 
+The latest panel fix keeps the open command window floating when you switch
+apps, including on another monitor; recording still stops on deactivation.
+An **Accessibility…** recovery action shows the exact running bundle and
+signing mode. [Development signing](docs/DEVELOPMENT_SIGNING.md) now supports
+a pinned local certificate instead of repeated ad-hoc identities. Certificate
+setup, live permission recovery and physical multi-monitor use remain pending.
+
 ## Current implementation
 
 - [Durable task limits](docs/TASK_EXECUTION_LIMITS.md) now enforce host-owned

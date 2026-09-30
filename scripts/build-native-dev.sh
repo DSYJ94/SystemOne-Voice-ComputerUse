@@ -17,6 +17,10 @@ if [[ -n "$running_pids" ]]; then
   exit 1
 fi
 
+# Resolve before compiling: a revoked/missing configured certificate must not
+# replace a working app with a newly ad-hoc-signed binary.
+signing_identity=$(/usr/bin/python3 "$script_dir/development_signing.py" resolve)
+
 node_path=$(node -p 'process.execPath')
 controller_path="$repository_root/packages/runtime/src/native-managed-controller.ts"
 if [[ ! -x "$node_path" || ! -f "$controller_path" ]]; then
@@ -81,7 +85,6 @@ PY
 # Disposable local output can inherit Finder/file-provider xattrs from the
 # cloud-synced checkout; clear them before signing this development bundle.
 /usr/bin/xattr -cr "$app_dir"
-signing_identity=${SYSTEMONE_CODESIGN_IDENTITY:--}
 codesign --force --sign "$signing_identity" --identifier com.aurium.systemone.dev "$app_dir"
 codesign --verify --deep --strict "$app_dir"
 /usr/bin/python3 "$script_dir/check-voice-bundle-metadata.py" "$app_dir"

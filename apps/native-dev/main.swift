@@ -50,6 +50,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var taskField: NSTextField?
     private var commandStatus: NSTextField?
     private var commandTarget: NSTextField?
+    private var accessibilityRecoveryButton: NSButton?
     private var capturedApp: (bundleID: String, pid: pid_t, launchDate: Date)?
     private var hasAccessibilityAccess: () -> Bool = {
         AXIsProcessTrustedWithOptions(nil)
@@ -95,6 +96,29 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var identityCheckSupport: URL?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if CommandLine.arguments.contains("--check-accessibility-recovery") {
+            makeCommandPanel()
+            var trusted = false
+            var prompted = false
+            hasAccessibilityAccess = { trusted }
+            promptForAccessibility = { prompted = true }
+            showAccessibilityDenied()
+            let identity = DevAccessibilityIdentity.current()
+            let details = identity.recoveryText(trusted: false)
+            let denied = accessibilityRecoveryButton?.isHidden == false
+                && details.contains(Bundle.main.bundleURL.path)
+                && details.contains("denied") && !prompted
+            trusted = true
+            recheckAccessibility()
+            let granted = accessibilityRecoveryButton?.isHidden == true
+                && commandStatus?.stringValue.hasPrefix("Accessibility is granted") == true
+                && !prompted
+            let signingAvailable = !identity.signingDescription.hasPrefix("Signing identity unavailable")
+            print(denied && granted && signingAvailable
+                ? "PASS: exact-build recovery (\(identity.isAdHoc ? "ad-hoc" : "certificate")) and fresh permission recheck, no OS prompt"
+                : "FAIL: Accessibility recovery identity or recheck")
+            exit(denied && granted && signingAvailable ? 0 : 1)
+        }
         if CommandLine.arguments.contains("--check-no-target-field-preview") {
             makeCommandPanel()
             var queried = false
@@ -117,9 +141,12 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
             let behavior = commandPanel.collectionBehavior
             let managed = behavior.contains(.managed) && !behavior.contains(.transient)
-            print(managed ? "PASS: command window participates in Mission Control"
-                          : "FAIL: command window does not declare managed Mission Control behavior")
-            exit(managed ? 0 : 1)
+            let staysVisible = !commandPanel.hidesOnDeactivate
+                && commandPanel.level.rawValue > NSWindow.Level.normal.rawValue
+            print(managed && staysVisible
+                ? "PASS: command window participates in Mission Control and stays above apps on deactivation"
+                : "FAIL: command window hides or loses floating visibility on deactivation (hides=\(commandPanel.hidesOnDeactivate), level=\(commandPanel.level.rawValue), managed=\(managed))")
+            exit(managed && staysVisible ? 0 : 1)
         }
         if CommandLine.arguments.contains("--check-controller-identity") {
             identityCheckSupport = FileManager.default.temporaryDirectory
@@ -195,9 +222,12 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.title = "SystemOne"
         window.delegate = self
         window.isFloatingPanel = true
+        window.level = .floating
+        window.hidesOnDeactivate = false
         // A floating panel defaults to hiding from Mission Control. Keep the
         // compact command window selectable in macOS window overviews.
-        window.collectionBehavior = [.managed, .participatesInCycle]
+        window.collectionBehavior = [.managed, .participatesInCycle,
+                                     .canJoinAllSpaces, .fullScreenAuxiliary]
         window.isOpaque = false
         window.backgroundColor = .clear
         window.center()
@@ -224,6 +254,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let stop = NSButton(title: "Stop", target: self, action: #selector(stop))
         let fields = NSButton(title: "Show fields", target: self,
                               action: #selector(showCapturedFields))
+        let permissions = NSButton(title: "Accessibility…", target: self,
+                                   action: #selector(openAccessibilityRecovery))
+        permissions.isHidden = true
+        accessibilityRecoveryButton = permissions
         let actions = NSStackView(views: [enableVoice, talk, fields, run, stop])
         actions.orientation = .horizontal
         actions.spacing = 8
@@ -232,7 +266,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         status.textColor = .secondaryLabelColor
         status.setAccessibilityLabel("Task status")
         commandStatus = status
-        let stack = NSStackView(views: [target, field, actions, status])
+        let stack = NSStackView(views: [target, field, actions, permissions, status])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
@@ -855,12 +889,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         if !hasAccessibilityAccess() {
-            promptForAccessibility()
-            commandStatus?.stringValue =
-                "macOS reports Accessibility denied to this running build. "
-                + "If its switch is on, quit and re-add this exact app in Settings."
+            showAccessibilityDenied()
             return
         }
+        accessibilityRecoveryButton?.isHidden = true
         let target = AXTarget(pid: capturedApp.pid, bundleID: capturedApp.bundleID,
             bundleURL: bundleURL, launchDate: capturedApp.launchDate,
             scopeRef: "command-preview:\(UUID().uuidString)")
@@ -922,10 +954,11 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             commandStatus?.stringValue = "The captured app changed. Focus it and reopen the panel."
             return
         }
-        guard AXIsProcessTrustedWithOptions(nil) else {
-            commandStatus?.stringValue = "macOS reports Accessibility denied to this running build."
+        guard hasAccessibilityAccess() else {
+            showAccessibilityDenied()
             return
         }
+        accessibilityRecoveryButton?.isHidden = true
         let target = DevTaskIntake.NativeTarget.captured(
             bundleID: capturedApp.bundleID, pid: Int(capturedApp.pid),
             launchMillis: Int64((capturedApp.launchDate.timeIntervalSince1970
@@ -947,6 +980,38 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case stopHotkeyID: stop()
         default: break
         }
+    }
+
+    private func showAccessibilityDenied() {
+        accessibilityRecoveryButton?.isHidden = false
+        commandStatus?.stringValue = "This running build is not authorized. Choose Accessibility… to locate the exact app and recheck its grant."
+    }
+
+    @objc private func openAccessibilityRecovery() {
+        let identity = DevAccessibilityIdentity.current()
+        let alert = NSAlert()
+        alert.messageText = "Accessibility for this SystemOne build"
+        alert.informativeText = identity.recoveryText(trusted: hasAccessibilityAccess())
+        alert.addButton(withTitle: "Reveal This App")
+        alert.addButton(withTitle: "Request Access")
+        alert.addButton(withTitle: "Recheck")
+        alert.addButton(withTitle: "Cancel")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            NSWorkspace.shared.activateFileViewerSelecting([identity.bundleURL])
+        case .alertSecondButtonReturn:
+            promptForAccessibility()
+        case .alertThirdButtonReturn:
+            recheckAccessibility()
+        default: break
+        }
+    }
+
+    private func recheckAccessibility() {
+        if hasAccessibilityAccess() {
+            accessibilityRecoveryButton?.isHidden = true
+            commandStatus?.stringValue = "Accessibility is granted to this running build. Choose Show fields to observe the captured target."
+        } else { showAccessibilityDenied() }
     }
 
     private func registerGlobalHotkeys() {
