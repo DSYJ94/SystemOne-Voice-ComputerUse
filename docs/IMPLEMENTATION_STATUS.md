@@ -3,7 +3,9 @@
 ## Durable admitted task records, 30 September 2026
 
 Cloud source continuation is on `codex/durable-task-contracts`, based on
-`codex/panel-permission-recovery` at `f70f6e5`. The shared journal now persists
+`codex/panel-permission-recovery` at `f70f6e5`, implementation `4dea594`,
+[draft #60](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/60).
+The shared journal now persists
 the exact admitted goal, command binding, parameters, effects, policy and
 completion verifier atomically with task admission and budget. Native field,
 synthetic native navigation/LOCATE/OPEN, managed field/link and existing-Chrome

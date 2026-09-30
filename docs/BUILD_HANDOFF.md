@@ -11,7 +11,10 @@ each implementation slice lands.
 
 **Cloud source continuation:** use `/workspace/SystemOne-Voice-ComputerUse`,
 branch `codex/durable-task-contracts`, based on the fetched #59 branch at
-`f70f6e5`. The local Mac path below remains the owner checkout; cloud changes
+`f70f6e5`. Implementation commit: `4dea594`.
+[Draft PR #60](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/60)
+targets `codex/panel-permission-recovery` (#59). The local Mac path below
+remains the owner checkout; cloud changes
 do not update that worktree or its running app. Read
 [durable task records](DURABLE_TASK_RECORD.md) for this slice: admitted goals
 and their bindings now persist in the shared journal for native and browser
@@ -150,7 +153,8 @@ established by the current fixture-only native or browser tests.
   [#56 compact window Mission Control behavior](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/56),
   [#57 target-first Accessibility preflight](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/57),
   [#58 durable task limits and workflow progress](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/58),
-  [#59 panel visibility and exact-build permission recovery](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/59).
+  [#59 panel visibility and exact-build permission recovery](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/59),
+  [#60 durable admitted task contracts](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/60).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current fix branch is `codex/panel-permission-recovery`, in the idle
   `task-lifecycle` worktree, draft #59, stacked on `codex/durable-task-budgets` (#58).
