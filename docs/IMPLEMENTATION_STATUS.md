@@ -1,5 +1,24 @@
 # Implementation status
 
+## Durable native checkpoints and bounded observations, 30 September 2026
+
+Cloud continuation: `codex/task-checkpoint-recovery`, based on #60 at `387b61c`.
+The journal now stores observation reservations, current fact references and
+verified checkpoint history in its lifecycle transactions. Synthetic native
+NAVIGATE/LOCATE/OPEN spend read/decision quotas, detect equivalent-state visits,
+expire facts on dispatch/Stop/restart and require a current terminal predicate
+for completion. Unknown effects remain unresolved; restart never resumes.
+See [progress](TASK_PROGRESS.md) for scope and engineering defaults.
+
+Portal progress/journal reconciliation and browser progress integration are
+next, followed by explicit recovery/correction and CLM decisions. The general
+actor and B15–B17 release gates remain incomplete. The owner has an M5/32 GB
+Mac and cloud-provider access; [CLM preparation](CLM_DEPLOYMENT_PLAN.md) proposes
+a private GPU reference API before local feasibility. No paid deployment or
+live inference occurred. Linux typecheck and **281 passed, zero failed, two
+Mac-only skips (283 total)** are recorded in [validation](VALIDATION.md).
+The user goal remains stopped; the Mac checkout/app has not changed.
+
 ## Durable admitted task records, 30 September 2026
 
 Cloud source continuation is on `codex/durable-task-contracts`, based on

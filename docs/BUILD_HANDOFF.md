@@ -10,19 +10,27 @@ each implementation slice lands.
 ## New-chat resume checkpoint — 30 September 2026
 
 **Cloud source continuation:** use `/workspace/SystemOne-Voice-ComputerUse`,
-branch `codex/durable-task-contracts`, based on the fetched #59 branch at
-`f70f6e5`. Implementation commit: `4dea594`.
-[Draft PR #60](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/60)
+branch `codex/task-checkpoint-recovery`, based on #60 at `387b61c`.
+The preceding [draft PR #60](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/60)
 targets `codex/panel-permission-recovery` (#59). The local Mac path below
 remains the owner checkout; cloud changes
 do not update that worktree or its running app. Read
-[durable task records](DURABLE_TASK_RECORD.md) for this slice: admitted goals
-and their bindings now persist in the shared journal for native and browser
-action paths, and structured terminal evidence commits with completion. Linux
-checks and environment configuration are recorded in `VALIDATION.md`. Continue
-with reconciled intermediate checkpoints, current-fact expiration and bounded
-observation/decision/no-progress work. Keep the goal stopped. Mac signing,
+[durable task records](DURABLE_TASK_RECORD.md) and
+[progress tracking](TASK_PROGRESS.md): synthetic native NAVIGATE/LOCATE/OPEN
+now persist verified checkpoints, expire current facts, and enforce durable
+observation/decision/equivalent-state limits. Restart retains history and pauses;
+it does not authorize resume. Linux checks and the saved cloud configuration
+are recorded in `VALIDATION.md`. Next, reconcile the portal's separate progress
+store and journal, extend browser progress guards, then implement explicit
+recovery intent with fresh observations. Keep the goal stopped. Mac signing,
 Accessibility, voice and real-app gates below remain open.
+
+**CLM preparation:** the owner reports a 14-inch M5 MacBook Pro (2026), 32 GB
+memory, no owned Linux/NVIDIA machine, and access to AWS/GCP/Modal/Runpod.
+[Serving plan](CLM_DEPLOYMENT_PLAN.md): owned private `/v1/systemone` HTTP API,
+Linux/NVIDIA reference experiment first, Mac feasibility separately. No owner
+setup is needed now. Prepare pinned artifacts and a costed deployment before
+requesting approval for paid provisioning; no model or GPU has run here.
 
 **Preserved Mac checkpoint:**
 

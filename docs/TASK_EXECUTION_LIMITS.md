@@ -36,8 +36,10 @@ and this slice does not introduce a resume path.
 These checks run at journal transitions. They do **not** interrupt a hung
 observation, stop an already dispatched effect at the exact deadline, or undo
 an edit. Adapter timeouts and Stop barriers remain necessary. Preparation
-counts also do not bound pure observation/model/wait loops: the general actor
-still needs total decision/observation budgets and equivalent-state detection.
+counts alone do not bound pure observation/model/wait loops. Synthetic native
+NAVIGATE/LOCATE/OPEN now opt into durable observation/decision quotas and
+equivalent-state detection; see [progress tracking](TASK_PROGRESS.md).
+Other drivers and the general actor still need that integration.
 
 The scripted portal now admits only its legal stage transitions:
 `admitted -> located -> opened -> downloaded_temporary -> saved`.
@@ -50,8 +52,9 @@ permits remain with the existing restricted adapter.
 The portal progress and attempt journal still use separate transactions.
 The shared journal now retains [admitted task records](DURABLE_TASK_RECORD.md)
 for native and browser action paths and commits structured terminal evidence
-with completion. Intermediate checkpoint reconciliation, goal correction,
-current-fact expiration, safe explicit resume, general native/browser navigation
+with completion. Synthetic native tasks now retain intermediate verified
+checkpoints and expire current facts. Portal checkpoint reconciliation, browser
+progress integration, goal correction, safe explicit resume, general navigation
 and CLM decisions remain unfinished.
 See [build handoff](BUILD_HANDOFF.md) for the next implementation slice and
 [validation](VALIDATION.md) for source evidence versus manual evidence.

@@ -1,5 +1,36 @@
 # Initial foundation validation
 
+## Native progress and checkpoint guards in the cloud, 30 September 2026
+
+Branch `codex/task-checkpoint-recovery`, based on #60 at `387b61c`. Same Linux,
+Node 26.5.0 and official Playwright 1.63.0 browser assets as the prior cloud
+record. Manifests, lockfiles, fixtures and environment settings remain unchanged.
+
+- `npm run check`: typecheck passed; **281 passed, zero failed, two skipped,
+  283 total**. The skips remain the two macOS Chrome-host registration tests.
+- Fifteen added tests cover observation fencing/cost, decision exhaustion,
+  equivalent-state cycles, stage-refresh budget bypass, dispatch fact expiry,
+  predicate-only reads, terminal verifier/evidence/current-fact binding, Stop,
+  restart, unknown effects, transactional checkpoint failure, deadline expiry,
+  admission-bound progress policy and native read/decision quota integration.
+- Existing native LOCATE assertions now check checkpoint stages, spent reads
+  and decisions, completion and expired facts. Stop between steps retains only
+  historical progress. All included managed-browser, portal, extension and
+  controller-child regressions executed with disposable loopback fixtures.
+- `git diff --check`: passed. The first full run had one misplaced assertion
+  expecting a verified folder checkpoint after Stop during its unverified first
+  dispatch. Corrected it to expect no checkpoint and asserted historical folder
+  progress in the Stop-between-verified-steps case. The final full run passed.
+
+This is native fixture/controller source evidence. The portal's separate store
+does not yet enable the new progress tracking or reconcile its transactions
+with journal checkpoints. No native Mac build/live permission test, normal
+AppKit launch, TCC/Keychain change, audio capture, owner-profile browser action,
+model call, paid GPU or user-goal resume occurred. CLM hosting is documented
+as a [preparation plan](CLM_DEPLOYMENT_PLAN.md), not a qualified deployment.
+Earlier Python/signing counts below are prior evidence and were not rerun for
+this TypeScript/documentation slice. See [progress scope](TASK_PROGRESS.md).
+
 ## Durable admitted task records in the cloud, 30 September 2026
 
 Branch `codex/durable-task-contracts`, based on #59 at `f70f6e5`. Runtime:

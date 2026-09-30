@@ -31,7 +31,9 @@ cannot reactivate or complete the task. A read-only already-matched task can
 still complete through the host's fresh verifier without dispatching an action.
 
 `getTaskRecord` returns one frozen, transactionally consistent diagnostic
-snapshot containing the admission, state, budget, attempts and terminal evidence.
+snapshot containing the admission, state, budget, attempts, opt-in progress and
+terminal evidence. [Progress tracking](TASK_PROGRESS.md) now persists verified
+native checkpoints and expires current references separately from their history.
 This contains private goal text and must not enter provider projections or
 general logs. A deserialized contract has no registry object-identity authority.
 It is historical evidence, not a current UI fact, a permit or a safe-resume
@@ -44,8 +46,8 @@ portal still persists its fixture contract in `ScriptedPortalStore` and starts
 a revision-only journal task; its progress and attempt tables still need atomic
 reconciliation. The older synthetic `HostDispatchGate` also retains that API.
 
-Next: reconcile intermediate verified checkpoints and expire current facts on
-re-observation, bound observation/decision/no-progress loops, invalidate pending
-proposals on correction, and connect explicit recovery intent to revalidation.
+Next: reconcile portal progress with the journal, extend observation/checkpoint
+tracking to browser tasks, invalidate pending proposals on correction, and
+connect explicit recovery intent to revalidation.
 No automatic retry or resume is introduced by this slice. See
 [validation](VALIDATION.md) and the [build handoff](BUILD_HANDOFF.md).
