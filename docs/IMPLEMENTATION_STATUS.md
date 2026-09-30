@@ -1,5 +1,24 @@
 # Implementation status
 
+## Durable admitted task records, 30 September 2026
+
+Cloud source continuation is on `codex/durable-task-contracts`, based on
+`codex/panel-permission-recovery` at `f70f6e5`. The shared journal now persists
+the exact admitted goal, command binding, parameters, effects, policy and
+completion verifier atomically with task admission and budget. Native field,
+synthetic native navigation/LOCATE/OPEN, managed field/link and existing-Chrome
+fixture fill use this path. Scope/policy changes are refused before preparation
+or dispatch, and terminal evidence commits with completed state.
+
+[Task records](DURABLE_TASK_RECORD.md) provide a frozen diagnostic snapshot;
+restart still pauses tasks and unknown effects block another admission. This
+is a B15 foundation, not a general actor or resume procedure. Portal progress
+reconciliation, current-fact expiry, decision/no-progress budgets and correction
+remain open. Linux validation uses the pinned Playwright browsers; Mac native
+build/live permission tests remain unrun in this continuation. See
+[validation](VALIDATION.md) for exact counts and remaining gates. No user goal
+was created or resumed and no normal AppKit UI or owner browser was launched.
+
 Context refresh checkpoint, 30 September 2026: the canonical
 [new-chat handoff](BUILD_HANDOFF.md#new-chat-resume-checkpoint--30-september-2026)
 identifies the current #59 checkout, pending owner signing setup, protected

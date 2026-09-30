@@ -76,6 +76,10 @@ test('an admitted managed-browser fill uses one permit and records observed fiel
     assert.equal(attempt.outcome?.effectStatus, 'applied');
     assert.equal(attempt.outcome?.verification, 'matched');
     assert.equal(local.journal.getTaskState(admission.taskId), 'completed');
+    const record = local.journal.getTaskRecord(admission.taskId)!;
+    assert.deepEqual(record.admission, admission);
+    assert.equal(record.completion?.completionVerifierRef, admission.completionVerifierRef);
+    assert.equal(record.completion?.evidenceRef, attempt.outcome?.evidenceRef);
     assert.deepEqual(local.journal.eventKinds(permit.executionId),
       ['prepared', 'dispatch_boundary', 'outcome']);
     await assert.rejects(task.execute(permit), /replayed/);

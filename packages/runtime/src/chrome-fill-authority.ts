@@ -156,8 +156,7 @@ export class ChromeFillAuthority {
         approvedEffects: ['READ', 'LOCAL_EDIT', 'EXTERNAL_WRITE'],
         parameters: [fillParameter],
       });
-      registry.claimForTask(admission);
-      this.#journal.startTask(request.requestId, 1, 1);
+      this.#journal.startAdmittedTask(registry, admission);
       active.journalStarted = true;
       if (active.stopped) return 'stopped';
       const action = { taskId: request.requestId, scopeRef,

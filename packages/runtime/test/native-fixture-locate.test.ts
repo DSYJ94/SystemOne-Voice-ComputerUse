@@ -183,6 +183,12 @@ test('one admitted task navigates and selects exact file without opening', async
   const attempts = journal.attemptsForTask(input.requestId);
   assert.equal(attempts.length, 2);
   assert.ok(attempts.every(attempt => attempt.outcome?.verification === 'matched'));
+  const record = journal.getTaskRecord(input.requestId)!;
+  assert.equal(record.admission?.goal, input.command.text);
+  assert.equal(record.admission?.outcomeKind, 'LOCATE');
+  assert.equal(record.admission?.parameters[0]?.parameterRef, 'synthetic-file-path');
+  assert.equal(record.completion?.completionVerifierRef, 'native-fixture-selected-title-v1');
+  assert.equal(record.completion?.evidenceRef, attempts.at(-1)?.outcome?.evidenceRef);
   assert.equal(await authority.startLocate(input), 'error');
 });
 

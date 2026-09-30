@@ -119,6 +119,11 @@ test('native host admits exact candidate and journaled setter once', async t => 
     ['prepared', 'dispatch_boundary', 'outcome']);
   assert.equal(worker.commitCalls.length, 1);
   assert.equal(worker.commitCalls[0]?.executionId, attempts[0]?.executionId);
+  const record = journal.getTaskRecord(input.requestId)!;
+  assert.equal(record.admission?.goal, input.command.text);
+  assert.equal(record.admission?.commandMessageId, input.command.messageId);
+  assert.equal(record.admission?.outcomeKind, 'FILL');
+  assert.equal(record.completion?.completionVerifierRef, record.admission?.completionVerifierRef);
   assert.equal(await authority.start(input), 'error', 'task request cannot replay');
 });
 

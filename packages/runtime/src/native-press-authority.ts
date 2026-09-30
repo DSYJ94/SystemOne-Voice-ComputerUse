@@ -282,8 +282,7 @@ export class NativePressAuthority {
         policyRevision: POLICY, approvedEffects: ['READ', 'NAVIGATE'],
         parameters: [folder],
       });
-      registry.claimForTask(admission);
-      this.#journal.startTask(request.requestId, 1, 1);
+      this.#journal.startAdmittedTask(registry, admission);
       active.journalStarted = true;
       if (active.stopped) return 'stopped';
       if (observation.windowTitles[0] === EXPECTED_TITLE) {
@@ -433,8 +432,7 @@ export class NativePressAuthority {
         policyRevision: POLICY, approvedEffects: ['READ', 'NAVIGATE'],
         parameters: [path],
       });
-      registry.claimForTask(admission);
-      this.#journal.startTask(request.requestId, 1, 1);
+      this.#journal.startAdmittedTask(registry, admission);
       active.journalStarted = true;
       if (active.stopped) return 'stopped';
       if (initialTitle === request.expectedWindowTitle) {
