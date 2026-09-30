@@ -3,6 +3,8 @@
 ## Durable native checkpoints and bounded observations, 30 September 2026
 
 Cloud continuation: `codex/task-checkpoint-recovery`, based on #60 at `387b61c`.
+Implementation `653c022`, [draft #61](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/61)
+stacked on `codex/durable-task-contracts`.
 The journal now stores observation reservations, current fact references and
 verified checkpoint history in its lifecycle transactions. Synthetic native
 NAVIGATE/LOCATE/OPEN spend read/decision quotas, detect equivalent-state visits,

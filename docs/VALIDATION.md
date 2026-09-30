@@ -2,7 +2,8 @@
 
 ## Native progress and checkpoint guards in the cloud, 30 September 2026
 
-Branch `codex/task-checkpoint-recovery`, based on #60 at `387b61c`. Same Linux,
+Branch `codex/task-checkpoint-recovery`, based on #60 at `387b61c`, implementation
+`653c022`, [draft #61](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/61). Same Linux,
 Node 26.5.0 and official Playwright 1.63.0 browser assets as the prior cloud
 record. Manifests, lockfiles, fixtures and environment settings remain unchanged.
 
