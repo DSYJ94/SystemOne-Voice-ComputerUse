@@ -11,6 +11,9 @@ each implementation slice lands.
 
 **Cloud source continuation:** use `/workspace/SystemOne-Voice-ComputerUse`,
 branch `codex/portal-checkpoint-reconciliation`, based on #61 at `93259b7`.
+Implementation commit: `7381f03`.
+[Draft PR #62](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/62)
+targets `codex/task-checkpoint-recovery` (#61).
 The preceding [draft PR #61](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/61)
 targets `codex/durable-task-contracts` (#60).
 The preceding [draft PR #60](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/60)
@@ -169,7 +172,8 @@ established by the current fixture-only native or browser tests.
   [#58 durable task limits and workflow progress](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/58),
   [#59 panel visibility and exact-build permission recovery](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/59),
   [#60 durable admitted task contracts](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/60),
-  [#61 native checkpoints and progress limits](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/61).
+  [#61 native checkpoints and progress limits](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/61),
+  [#62 portal checkpoint reconciliation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/62).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current fix branch is `codex/panel-permission-recovery`, in the idle
   `task-lifecycle` worktree, draft #59, stacked on `codex/durable-task-budgets` (#58).

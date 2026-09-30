@@ -3,6 +3,7 @@
 ## Portal reconciliation and shared progress guards, 30 September 2026
 
 Branch `codex/portal-checkpoint-reconciliation`, based on #61 at `93259b7`.
+Implementation `7381f03`, [draft #62](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/62).
 Same Linux, Node 26.5.0 and official Playwright 1.63.0 browser assets as the
 prior cloud records. Dependency locks, fixture data and environment settings
 remain unchanged.

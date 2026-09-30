@@ -3,7 +3,9 @@
 ## Portal checkpoints and conservative reconciliation, 30 September 2026
 
 Cloud continuation: `codex/portal-checkpoint-reconciliation`, based on #61 at
-`93259b7`. The fixed portal now stores the exact admission in `AttemptJournal`,
+`93259b7`, implementation `7381f03`,
+[draft #62](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/62) stacked
+on `codex/task-checkpoint-recovery`. The fixed portal now stores the exact admission in `AttemptJournal`,
 uses shared observation/decision/equivalent-state limits and records independently
 verified stages. Interference expires journal facts; Stop also cancels paused
 tasks. Restart validates contract bindings and checkpoint/effect linkage, catches
