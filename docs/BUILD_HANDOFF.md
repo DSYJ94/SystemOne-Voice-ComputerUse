@@ -77,10 +77,11 @@ established by the current fixture-only native or browser tests.
   [#55 controller task slot and voice bundle check](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/55),
   [#56 compact window Mission Control behavior](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/56),
   [#57 target-first Accessibility preflight](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/57),
-  [#58 durable task limits and workflow progress](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/58).
+  [#58 durable task limits and workflow progress](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/58),
+  [#59 panel visibility and exact-build permission recovery](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/59).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current fix branch is `codex/panel-permission-recovery`, in the idle
-  `task-lifecycle` worktree and stacked on `codex/durable-task-budgets` (#58).
+  `task-lifecycle` worktree, draft #59, stacked on `codex/durable-task-budgets` (#58).
   That branch is stacked on
   `codex/ax-preflight` (draft PR #57), which is stacked on
   `codex/window-visibility` (draft PR #56), then `codex/task-lifecycle`
