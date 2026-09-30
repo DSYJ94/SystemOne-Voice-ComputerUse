@@ -48,7 +48,10 @@ silently continue the loop. Fresh observations, admission and per-action
 permits remain with the existing restricted adapter.
 
 The portal progress and attempt journal still use separate transactions.
-Crash reconciliation, goal correction, current-fact expiration, safe explicit
-resume, general native/browser navigation and CLM decisions remain unfinished.
+The shared journal now retains [admitted task records](DURABLE_TASK_RECORD.md)
+for native and browser action paths and commits structured terminal evidence
+with completion. Intermediate checkpoint reconciliation, goal correction,
+current-fact expiration, safe explicit resume, general native/browser navigation
+and CLM decisions remain unfinished.
 See [build handoff](BUILD_HANDOFF.md) for the next implementation slice and
 [validation](VALIDATION.md) for source evidence versus manual evidence.

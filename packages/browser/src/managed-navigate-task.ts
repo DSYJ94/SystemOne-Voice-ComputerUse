@@ -59,8 +59,7 @@ export class ManagedNavigateTask {
       destinationDigest: parameter.valueDigest, parameterRef,
       sourceRef: parameter.sourceRef, scopeRef: admission.scopeRef,
       policyRevision: admission.policyRevision };
-    registry.claimForTask(admission);
-    journal.startTask(admission.taskId, admission.taskEpoch, admission.goalRevision);
+    journal.startAdmittedTask(registry, admission);
     this.#journal = journal;
     this.#admission = admission;
     this.#session = session;

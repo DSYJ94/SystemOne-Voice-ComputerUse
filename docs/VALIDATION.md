@@ -1,5 +1,58 @@
 # Initial foundation validation
 
+## Durable admitted task records in the cloud, 30 September 2026
+
+Branch `codex/durable-task-contracts`, based on #59 at `f70f6e5`. Runtime:
+Linux x86_64, Node 26.5.0, Python 3.14.6, Playwright 1.63.0 and its official
+Chrome for Testing/Headless Shell 153.0.8010.12 (revision 1243). Locked
+dependencies and fixtures were preserved.
+
+- `npm run check`: typecheck passed; **266 passed, zero failed, two skipped,
+  268 total**. The two existing Chrome-host registration tests require macOS
+  signing and skip on Linux. All other included browser, controller, native
+  synthetic-worker, journal and extension tests executed.
+- The full suite includes 13 new journal checks covering restart persistence,
+  copied/foreign/consumed admissions, transactional start failures, stored
+  scope/policy, atomic completion evidence, cancelled late receipts, unknown
+  effects, changed/missing contracts and legacy rows. Existing native field,
+  multi-step LOCATE, managed field and Chrome fill tests also assert their
+  persisted contracts and verifier-bound terminal evidence.
+- `.venv/bin/python packages/protocol/validate_contract.py`: **115/115**.
+- `.venv/bin/python -m unittest discover -s scripts -p
+  'test_development_signing.py'`: **4/4**, synthetic certificate selection only.
+- `git diff --check`: passed. The reusable install script was rerun successfully
+  with frozen npm installation, pinned Python requirements and retained browser
+  assets; installation changed no manifests, lockfiles or fixtures.
+
+The cloud instance initially failed to start, then recovered. Its main-branch
+snapshot lacked this newer branch and Playwright browsers. Native Git fetched
+the #59 source without requesting a token. The first suite reached 255 tests
+but browser cases failed because the executables were absent. Official browser
+downloads initially received a proxy `Domain forbidden` response; adding
+`cdn.playwright.dev`, `storage.googleapis.com` and
+`playwright.download.prss.microsoft.com` to the saved network draft restored
+the download. TLS verification stayed enabled. `api.github.com` was also added
+for draft-PR access; existing injected GitHub authentication was reused.
+
+Before the policy propagated, a temporary Playwright `executablePath` override
+checked the image's Debian Chromium 151.0.7922.173: 252 passed, one extension
+service-worker timeout, two Mac-only skips. This compatibility run was not
+used as final validation. The override was removed and the final run used the
+official pinned browser artifacts without it. The earliest new record tests
+failed before the journal APIs were implemented; an intermediate typecheck
+also caught an optional task-row access, which was corrected.
+
+Saved cloud configuration now includes browser installation and activation in
+`install_script`/`start_skill`, plus the required network destinations. A saved
+draft is separate from environment publication. No new snapshot/publication or
+future-task restore has been tested here.
+
+No native AppKit build, Swift/macOS test, certificate creation, Keychain/TCC
+change, microphone capture, model call, owner-profile browser action or user
+goal resume occurred. Disposable headless/loopback fixtures remain synthetic
+evidence. Live permission, multi-monitor, voice reliability and v1 release
+gates remain open. See [task records](DURABLE_TASK_RECORD.md).
+
 ## Captured-target denial and panel deactivation, 30 September 2026
 
 Owner screenshots show Target: Kimi (`com.moonshot.kimichat`), actual runtime

@@ -1,5 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
-import { ContractError } from '../../protocol/src/json.ts';
+import { ContractError, digest, parseJSON } from '../../protocol/src/json.ts';
+import type { JSONValue } from '../../protocol/src/json.ts';
+import type { TaskAdmission, TaskAdmissionRegistry } from './task-authority.ts';
 
 const ID = /^[A-Za-z0-9_.:-]{1,160}$/;
 const DIGEST = /^[a-f0-9]{64}$/;
@@ -66,10 +68,30 @@ export interface JournalAttempt extends PreparedAttempt {
   readonly outcome?: AttemptOutcome;
 }
 
+export interface TaskCompletion {
+  readonly evidenceRef: string;
+  /** Null for the legacy revision-only journal API. */
+  readonly completionVerifierRef: string | null;
+}
+
+/** Private diagnostic history, never an admission, resume intent or permit.
+ * The stored contract cannot be transferred through TaskAdmissionRegistry. */
+export interface JournalTaskRecord {
+  readonly taskId: string;
+  readonly taskEpoch: number;
+  readonly goalRevision: number;
+  readonly state: TaskRow['state'];
+  readonly admission: TaskAdmission | null;
+  readonly budget: TaskBudget | undefined;
+  readonly attempts: readonly JournalAttempt[];
+  readonly completion: TaskCompletion | null;
+}
+
 interface TaskRow {
   task_epoch: number;
   goal_revision: number;
   state: 'active' | 'cancelled' | 'paused' | 'completed';
+  admission_digest: string | null;
 }
 
 interface AttemptRow {
@@ -127,6 +149,16 @@ export class AttemptJournal {
         last_checked_ms INTEGER NOT NULL,
         pause_reason TEXT CHECK(pause_reason IN ('steps', 'time', 'clock', 'missing'))
       );
+      CREATE TABLE IF NOT EXISTS task_admissions (
+        task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
+        contract_json TEXT NOT NULL,
+        contract_digest TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS task_completions (
+        task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
+        evidence_ref TEXT NOT NULL,
+        completion_verifier_ref TEXT
+      );
       CREATE TABLE IF NOT EXISTS attempts (
         execution_id TEXT PRIMARY KEY,
         permit_ref TEXT NOT NULL UNIQUE,
@@ -161,6 +193,10 @@ export class AttemptJournal {
         recorded_at TEXT NOT NULL
       );
     `);
+    const taskColumns = this.#db.prepare('PRAGMA table_info(tasks)').all() as { name: string }[];
+    if (!taskColumns.some(column => column.name === 'admission_digest')) {
+      this.#db.exec('ALTER TABLE tasks ADD COLUMN admission_digest TEXT');
+    }
     const broken = this.#db.prepare('PRAGMA foreign_key_check').get();
     if (broken) throw new ContractError('journal foreign-key check failed');
   }
@@ -169,6 +205,29 @@ export class AttemptJournal {
 
   startTask(taskId: string, taskEpoch: number, goalRevision: number,
     limits: TaskBudgetLimits = DEFAULT_TASK_BUDGET): void {
+    this.#startTask(taskId, taskEpoch, goalRevision, limits);
+  }
+
+  /** Transfer the exact in-process admission and durably bind it to the task
+   * and budget in one transaction. A failed SQL commit may consume the
+   * admission, but can never leave an active task without its contract. */
+  startAdmittedTask(registry: TaskAdmissionRegistry, admission: TaskAdmission,
+    limits: TaskBudgetLimits = DEFAULT_TASK_BUDGET): void {
+    const serialized = JSON.stringify(admission);
+    const contractDigest = digest(parseJSON(Buffer.from(serialized)));
+    this.#startTask(admission.taskId, admission.taskEpoch, admission.goalRevision, limits, () => {
+      this.#db.prepare('INSERT INTO task_admissions VALUES (?, ?, ?)')
+        .run(admission.taskId, serialized, contractDigest);
+      this.#db.prepare('UPDATE tasks SET admission_digest = ? WHERE task_id = ?')
+        .run(contractDigest, admission.taskId);
+      // Claim last: normal validation/SQL failures do not consume a genuine
+      // admission. A copied or foreign admission rolls back all inserted rows.
+      registry.claimForTask(admission);
+    });
+  }
+
+  #startTask(taskId: string, taskEpoch: number, goalRevision: number,
+    limits: TaskBudgetLimits, persistAdmission?: () => void): void {
     assertId(taskId, 'task ID');
     assertCounter(taskEpoch, 'task epoch');
     assertCounter(goalRevision, 'goal revision');
@@ -188,17 +247,19 @@ export class AttemptJournal {
           OR delivery_status = 'unknown' OR effect_status = 'unknown'`).get()) {
         throw new ContractError('an earlier attempt is unresolved or unknown');
       }
-      this.#db.prepare('INSERT INTO tasks VALUES (?, ?, ?, ?)')
+      this.#db.prepare('INSERT INTO tasks (task_id, task_epoch, goal_revision, state) VALUES (?, ?, ?, ?)')
         .run(taskId, taskEpoch, goalRevision, 'active');
       this.#db.prepare('INSERT INTO task_budgets VALUES (?, ?, ?, ?, ?, NULL)')
         .run(taskId, limits.maxSteps, limits.timeoutMs, now + limits.timeoutMs, now);
       this.#taskEvent(taskId, 'started');
+      persistAdmission?.();
     });
   }
 
   prepare(attempt: PreparedAttempt): JournalAttempt {
     validatePrepared(attempt);
     return this.#budgeted(attempt, true, () => {
+      this.#assertAdmittedAttempt(attempt);
       if (this.unresolvedAttempts().length) {
         throw new ContractError('an earlier effect is unresolved or unknown');
       }
@@ -222,6 +283,7 @@ export class AttemptJournal {
     const attempt = this.#requiredAttempt(executionId);
     if (attempt.phase !== 'prepared') throw new ContractError('attempt is not prepared');
     return this.#budgeted(attempt, false, () => {
+      this.#assertAdmittedAttempt(attempt);
       if (this.#requiredAttempt(executionId).phase !== 'prepared') {
         throw new ContractError('attempt is not prepared');
       }
@@ -288,6 +350,9 @@ export class AttemptJournal {
           OR effect_status = 'unknown')`).get(taskId)) {
         throw new ContractError('task has unsettled or unknown attempts');
       }
+      const admission = this.#storedAdmission(taskId);
+      this.#db.prepare('INSERT INTO task_completions VALUES (?, ?, ?)')
+        .run(taskId, completionEvidenceRef, admission?.completionVerifierRef ?? null);
       this.#db.prepare(`UPDATE tasks SET state = 'completed' WHERE task_id = ?`)
         .run(taskId);
       this.#taskEvent(taskId, `completed:${completionEvidenceRef}`);
@@ -311,6 +376,24 @@ export class AttemptJournal {
   getTaskState(taskId: string): TaskRow['state'] | undefined {
     assertId(taskId, 'task ID');
     return this.#task(taskId)?.state;
+  }
+
+  /** One consistent snapshot of the contract, lifecycle and effect history.
+   * A paused record is not a safe-to-retry or safe-to-resume decision. */
+  getTaskRecord(taskId: string): JournalTaskRecord | undefined {
+    assertId(taskId, 'task ID');
+    return this.#transaction(() => {
+      const task = this.#task(taskId);
+      if (!task) return undefined;
+      const row = this.#db.prepare('SELECT * FROM task_completions WHERE task_id = ?')
+        .get(taskId) as { evidence_ref: string; completion_verifier_ref: string | null } | undefined;
+      return Object.freeze({ taskId, taskEpoch: task.task_epoch,
+        goalRevision: task.goal_revision, state: task.state,
+        admission: this.#storedAdmission(taskId), budget: this.getTaskBudget(taskId),
+        attempts: this.attemptsForTask(taskId),
+        completion: row ? Object.freeze({ evidenceRef: row.evidence_ref,
+          completionVerifierRef: row.completion_verifier_ref }) : null });
+    });
   }
 
   /** Private host diagnostics. Attempts include failed preflights: minting a
@@ -367,6 +450,34 @@ export class AttemptJournal {
   #task(taskId: string): TaskRow | undefined {
     return this.#db.prepare('SELECT * FROM tasks WHERE task_id = ?')
       .get(taskId) as TaskRow | undefined;
+  }
+
+  #storedAdmission(taskId: string): TaskAdmission | null {
+    const task = this.#task(taskId);
+    const row = this.#db.prepare('SELECT * FROM task_admissions WHERE task_id = ?')
+      .get(taskId) as { contract_json: string; contract_digest: string } | undefined;
+    if (!row) {
+      if (task?.admission_digest) throw new ContractError('stored task admission integrity mismatch');
+      return null; // Legacy rows remain explicitly unbound.
+    }
+    const value = parseJSON(Buffer.from(row.contract_json));
+    if (!task || !value || typeof value !== 'object' || Array.isArray(value)
+      || digest(value) !== row.contract_digest || row.contract_digest !== task.admission_digest
+      || value.taskId !== taskId || value.taskEpoch !== task.task_epoch
+      || value.goalRevision !== task.goal_revision) {
+      throw new ContractError('stored task admission integrity mismatch');
+    }
+    // Only registry-issued admissions enter this table. Freeze a new diagnostic
+    // copy; reading JSON cannot recreate the registry's object-identity authority.
+    return freezeJSON(value) as unknown as TaskAdmission;
+  }
+
+  #assertAdmittedAttempt(attempt: PreparedAttempt): void {
+    const admission = this.#storedAdmission(attempt.taskId);
+    if (admission && (admission.scopeRef !== attempt.scopeRef
+      || admission.policyRevision !== attempt.policyRevision)) {
+      throw new ContractError('attempt scope or policy differs from admitted task');
+    }
   }
 
   #migrateLegacyTasks(): void {
@@ -526,6 +637,14 @@ function fromRow(row: AttemptRow): JournalAttempt {
 
 function assertId(value: string, label: string): void {
   if (!ID.test(value)) throw new ContractError(`invalid ${label}`);
+}
+
+function freezeJSON(value: JSONValue): JSONValue {
+  if (value !== null && typeof value === 'object') {
+    for (const child of Object.values(value)) freezeJSON(child);
+    Object.freeze(value);
+  }
+  return value;
 }
 
 function assertCounter(value: number, label: string): void {

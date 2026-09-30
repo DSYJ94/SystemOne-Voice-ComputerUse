@@ -9,6 +9,23 @@ each implementation slice lands.
 
 ## New-chat resume checkpoint — 30 September 2026
 
+**Cloud source continuation:** use `/workspace/SystemOne-Voice-ComputerUse`,
+branch `codex/durable-task-contracts`, based on the fetched #59 branch at
+`f70f6e5`. Implementation commit: `4dea594`.
+[Draft PR #60](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/60)
+targets `codex/panel-permission-recovery` (#59). The local Mac path below
+remains the owner checkout; cloud changes
+do not update that worktree or its running app. Read
+[durable task records](DURABLE_TASK_RECORD.md) for this slice: admitted goals
+and their bindings now persist in the shared journal for native and browser
+action paths, and structured terminal evidence commits with completion. Linux
+checks and environment configuration are recorded in `VALIDATION.md`. Continue
+with reconciled intermediate checkpoints, current-fact expiration and bounded
+observation/decision/no-progress work. Keep the goal stopped. Mac signing,
+Accessibility, voice and real-app gates below remain open.
+
+**Preserved Mac checkpoint:**
+
 Start in `/Users/daryl/.codex/worktrees/task-lifecycle/SystemOne-Voice-ComputerUse`,
 branch `codex/panel-permission-recovery`. The latest implementation is commit
 `a1620d2`; the preceding documentation checkpoint is `e65d70b`.
@@ -136,7 +153,8 @@ established by the current fixture-only native or browser tests.
   [#56 compact window Mission Control behavior](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/56),
   [#57 target-first Accessibility preflight](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/57),
   [#58 durable task limits and workflow progress](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/58),
-  [#59 panel visibility and exact-build permission recovery](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/59).
+  [#59 panel visibility and exact-build permission recovery](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/59),
+  [#60 durable admitted task contracts](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/60).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current fix branch is `codex/panel-permission-recovery`, in the idle
   `task-lifecycle` worktree, draft #59, stacked on `codex/durable-task-budgets` (#58).
@@ -335,8 +353,9 @@ advancement at a time. See [task limits](TASK_EXECUTION_LIMITS.md).
 Automated checks pass (255/255 at the latest run) and the native bundle
 compiles; this does not establish new live action coverage.
 
-Next source priority is the general task actor: persist an admitted goal and
-verified checkpoints in one reconciled lifecycle, expire current facts after
+The cloud continuation now persists admitted goals for the native and browser
+action paths. Next source priority is the general task actor: reconcile
+intermediate verified checkpoints in that lifecycle, expire current facts after
 re-observation, apply decision/no-progress budgets, and invalidate proposals on
 correction. Replace fixed workflow choices with legal semantic next-action
 candidates for native and managed navigation. Prove scripted dispatch, Stop,

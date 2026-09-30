@@ -29,6 +29,11 @@ setup, live permission recovery and physical multi-monitor use remain pending.
 
 ## Current implementation
 
+- [Durable admitted task records](docs/DURABLE_TASK_RECORD.md) now retain the
+  admitted goal, parameter bindings and completion verifier beside the journal's
+  lifecycle and effect history for native and browser action paths. Terminal
+  evidence and completion commit together. Restart still pauses tasks; stored
+  history does not authorize resume or establish current UI facts.
 - [Durable task limits](docs/TASK_EXECUTION_LIMITS.md) now enforce host-owned
   action budgets and deadlines at journal transitions across all three drivers.
   The scripted multi-step workflow rejects skipped/repeated progress and

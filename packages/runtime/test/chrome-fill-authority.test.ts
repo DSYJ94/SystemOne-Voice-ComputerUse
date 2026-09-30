@@ -86,6 +86,11 @@ test('exact fresh Chrome field receives one journaled permit and DOM receipt', a
     status: 'matched' });
   assert.equal(await done, 'verified');
   assert.equal(journal.getTaskState(input.requestId), 'completed');
+  const record = journal.getTaskRecord(input.requestId)!;
+  assert.equal(record.admission?.goal, input.command.text);
+  assert.equal(record.admission?.outcomeKind, 'FILL');
+  assert.equal(record.admission?.scopeRef, attempt.scopeRef);
+  assert.equal(record.completion?.completionVerifierRef, record.admission?.completionVerifierRef);
   assert.equal(journal.unresolvedAttempts().length, 0);
   assert.equal(await authority.start(input), 'error');
 });
