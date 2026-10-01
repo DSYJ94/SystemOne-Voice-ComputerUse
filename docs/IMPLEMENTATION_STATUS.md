@@ -3,6 +3,8 @@
 ## Native fixture controller actor, 1 October 2026
 
 `codex/native-controller-actor`, based on #67 at `076c241`.
+Implementation `54c3f0d`, [draft PR #68](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/68),
+targeting `codex/release-dependency-inventory` (#67).
 The [native controller integration](NATIVE_CONTROLLER_ACTOR.md) replaces the
 controller's fixed fixture NAVIGATE/LOCATE/OPEN execution loop with its persistent
 actor. Exact final-command admission, distinct title predicates, separately

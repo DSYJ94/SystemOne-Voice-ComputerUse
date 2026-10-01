@@ -3,6 +3,8 @@
 ## Native fixture controller actor, 1 October 2026
 
 `codex/native-controller-actor`, based on #67 at `076c241`.
+Implementation `54c3f0d`, [draft PR #68](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/68),
+targeting `codex/release-dependency-inventory` (#67).
 Pinned Linux Node 26.5.0 and official Playwright 1.63.0 Chromium/headless-shell
 revision 1243, using ignored `.build/playwright` as `PLAYWRIGHT_BROWSERS_PATH`.
 

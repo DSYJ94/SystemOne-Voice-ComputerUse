@@ -11,6 +11,8 @@ each implementation slice lands.
 
 **Native controller continuation:** branch `codex/native-controller-actor`,
 stacked on `codex/release-dependency-inventory` (#67) at `076c241`.
+Implementation `54c3f0d`, [draft PR #68](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/68)
+targets `codex/release-dependency-inventory` (#67).
 The [native fixture controller](NATIVE_CONTROLLER_ACTOR.md) now executes its
 existing NAVIGATE/LOCATE/OPEN commands through the persistent actor rather than
 the legacy fixed loop. Paused actors retain ownership; explicit Stop targets
