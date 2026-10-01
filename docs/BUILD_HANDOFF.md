@@ -10,9 +10,11 @@ each implementation slice lands.
 ## New-chat resume checkpoint — 1 October 2026
 
 **Cloud source continuation:** use `/workspace/SystemOne-Voice-ComputerUse`,
-branch `codex/explicit-task-recovery`, based on #62 at `76e28dc`.
-Implementation commit: `08abcaa`.
-[Draft PR #63](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/63)
+branch `codex/persistent-scripted-actor`, based on #63 at `d18e6b3`.
+Implementation commit: `cdc641c`.
+[Draft PR #64](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/64)
+targets `codex/explicit-task-recovery` (#63).
+The preceding [draft PR #63](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/63)
 targets `codex/portal-checkpoint-reconciliation` (#62).
 The preceding [draft PR #62](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/62)
 targets `codex/task-checkpoint-recovery` (#61).
@@ -37,12 +39,16 @@ intent, retains deadlines/quotas, and expires facts before further execution.
 Restart invalidates recovery reads for already-paused tasks too. Unknown effects
 and applied receipts without checkpoints still block recovery. Corrections cancel
 the old revision without changing its admission or implying undo.
-Latest Linux check: **325 passed, zero failed, two Mac-only skips (327 total)**;
-46 focused recovery/prompt/progress checks passed after final normalization.
-Next, build the persistent native/browser actor around these APIs, including
-workflow-specific recovery predicates, adapter barriers, task slots, portal
-projection, replacement admission and UI/voice intent. The current fixed task
-constructors/controller do not expose Resume. Prove scripted recovery before CLM.
+A [persistent scripted actor](PERSISTENT_TASK_ACTOR.md) now owns bounded operations,
+pause/recovery, correction and Stop. Native fixtures resume from Documents;
+a real headless portal resumes DOWNLOAD from verified detail without repeating
+search/open. The controller runs its fixed portal workflow through the actor.
+Latest Linux check: **341 passed, zero failed, two Mac-only skips (343 total)**.
+The owner requested continued work toward v1; [readiness](V1_READINESS.md) tracks
+unfinished general execution, replacement admission, native/controller/panel
+recovery, existing-profile Chrome, model calibration, Mac and release gates.
+Continue with qualified semantic decision/CLM boundary and reproducible serving
+preparation. Scripted fixture evidence does not establish live model or Mac gates.
 Keep the goal stopped. Mac signing,
 Accessibility, voice and real-app gates below remain open.
 
@@ -186,7 +192,8 @@ established by the current fixture-only native or browser tests.
   [#60 durable admitted task contracts](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/60),
   [#61 native checkpoints and progress limits](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/61),
   [#62 portal checkpoint reconciliation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/62),
-  [#63 explicit host recovery and correction fences](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/63).
+  [#63 explicit host recovery and correction fences](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/63),
+  [#64 persistent scripted actors](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/64).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current fix branch is `codex/panel-permission-recovery`, in the idle
   `task-lifecycle` worktree, draft #59, stacked on `codex/durable-task-budgets` (#58).
