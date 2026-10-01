@@ -10,7 +10,9 @@ each implementation slice lands.
 ## New-chat resume checkpoint — 1 October 2026
 
 **Latest continuation:** branch `codex/native-field-actor`, based on
-`codex/native-task-replacement` (#70) at `e6ba315`. The
+`codex/native-task-replacement` (#70) at `e6ba315`. Implementation `f153fe0`,
+[draft PR #71](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/71)
+targets `codex/native-task-replacement`. The
 [native field actor milestone](NATIVE_FIELD_ACTOR.md) adds bounded persistent
 field execution, independent terminal value verification, retained controller
 recovery/Resume, Stop and settled shutdown. Linux typecheck and **417 passed,
