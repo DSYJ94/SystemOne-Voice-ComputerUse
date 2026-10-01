@@ -4,7 +4,8 @@ The development controller now routes its existing synthetic Documents,
 LOCATE and OPEN requests through `NativeFixtureAuthority`, `NativeFixtureTask`
 and `PersistentTaskActor`. The earlier fixed `NativePressAuthority` remains a
 legacy isolated test implementation; the development controller no longer
-executes through it. Native field fills retain their separate authority path.
+executes through it. Native field fills now use their own [persistent workflow](NATIVE_FIELD_ACTOR.md)
+through the shared actor and controller.
 
 The intake wrapper accepts the same exact developer-panel commands, Fixture
 bundle, folder/file parameters, terminal title and final text provenance as
@@ -56,8 +57,8 @@ The [controller/panel recovery path](NATIVE_CONTROLLER_RECOVERY.md) now exposes
 fresh scoped recovery reads and exact user Resume for a retained fixture actor.
 The [bounded replacement path](NATIVE_TASK_REPLACEMENT.md) now connects explicit
 changed fixture goals to fresh child admission after cancellation and fencing.
-Extend persistent execution to native field fills next. General
-native/browser actions, native field task actors, browser reconstruction,
+General
+native/browser actions, browser reconstruction,
 unknown-effect reconciliation, sleep/lock, qualified primary CLM and authenticated
 release workers remain open. Older paused non-fixture records also block new
 controller intake; no generic UI recovery or automatic cancellation is invented

@@ -40,12 +40,15 @@ class FakeWorker implements NativeFieldWorker {
   prepareResult: 'ready' | 'matched_at_preflight' | 'unsupported' = 'ready';
   commitThrows = false;
   verifyResult = true;
+  verifyCalls = 0;
+  verifyGate: Deferred<boolean> | undefined;
 
   async observe(input: { taskId: string; bundleId: string;
     targetPid?: number }): Promise<NativeFieldObservation> {
     assert.equal(input.bundleId, bundleId);
     assert.match(input.taskId, /^[a-f0-9-]{36}$/);
     this.observeCalls++;
+    this.observation = { ...this.observation, observationId: randomUUID() };
     this.capturedPID = input.targetPid;
     return this.observation;
   }
@@ -71,7 +74,7 @@ class FakeWorker implements NativeFieldWorker {
     if (this.commitThrows) throw new Error('setter reply lost');
     return this.commitGate ? this.commitGate.promise : this.commitResult;
   }
-  async verify(): Promise<boolean> { return this.verifyResult; }
+  async verify(): Promise<boolean> { this.verifyCalls++; return this.verifyGate ? this.verifyGate.promise : this.verifyResult; }
   async stop(): Promise<boolean> { this.stopCalls++; return this.stopFenced; }
 }
 
@@ -218,7 +221,7 @@ test('lost setter reply stays unknown and blocks another task', async t => {
   worker.commitThrows = true;
   const input = request();
   assert.equal(await authority.start(input), 'uncertain');
-  assert.equal(journal.getTaskState(input.requestId), 'cancelled');
+  assert.equal(journal.getTaskState(input.requestId), 'paused');
   assert.equal(journal.unresolvedAttempts(input.requestId).length, 1);
   assert.equal(await authority.start(request()), 'uncertain');
 });
@@ -233,5 +236,93 @@ test('unconfirmed worker Stop fences future native starts', async t => {
   assert.equal(stop.workerFenced, false);
   worker.prepareGate.resolve({ kind: 'ready', preparationRef: randomUUID() });
   assert.equal(await pending, 'stopped');
+  assert.equal(await authority.start(request()), 'uncertain');
+});
+
+function resumeReply(prompt: Awaited<ReturnType<NativeFillAuthority['prepareRecovery']>>, extra = {}) {
+  return Buffer.from(JSON.stringify({ protocolVersion: '2.0', type: 'resume_request', messageId: randomUUID(),
+    taskId: prompt.taskId, taskEpoch: prompt.taskEpoch, goalRevision: prompt.goalRevision,
+    issuer: 'native_ui', actorRef: prompt.actorRef, uiSessionRef: prompt.uiSessionRef, promptId: prompt.promptId,
+    presentationDigest: prompt.presentationDigest, checkpointRef: prompt.checkpointRef,
+    checkpointDigest: prompt.checkpointDigest, recoveryObservationId: prompt.recoveryObservationId,
+    createdAt: new Date().toISOString(), ...extra }));
+}
+test('field actor persists eligibility and terminal evidence with bounded observations and decisions', async t => {
+  const { worker, journal, authority } = harness(t); const input = request();
+  assert.equal(await authority.start(input), 'verified');
+  const record = journal.getTaskRecord(input.requestId)!;
+  assert.equal(record.progress!.observationsUsed, 2); assert.equal(record.progress!.decisionsUsed, 1);
+  assert.deepEqual(record.progress!.checkpoints.map(c => c.stageRef), ['field_ready', 'field_filled']);
+  assert.equal(record.progress!.checkpoints[1]!.executionId, worker.commitCalls[0]!.executionId);
+  assert.equal(record.progress!.checkpoints[1]!.evidenceRef, record.completion!.evidenceRef);
+  assert.equal(record.admission!.parameters.find(p => p.parameterRef === 'fill-field')!.sourceStart, 5);
+});
+test('a verified setter receipt without a matching fresh value read cannot complete or recover', async t => {
+  const { worker, journal, authority } = harness(t); worker.verifyResult = false;
+  const input = request(); assert.equal(await authority.start(input), 'paused');
+  assert.equal(journal.getTaskRecord(input.requestId)!.completion, null);
+  assert.equal(journal.attemptsForTask(input.requestId)[0]!.outcome!.effectStatus, 'applied');
+  await assert.rejects(authority.prepareRecovery(input.requestId, 'panel-session'));
+  await authority.stop(); assert.equal(await authority.start(request()), 'uncertain');
+});
+test('undispatched field pause resumes only after scoped eligibility checks and a displayed exact reply', async t => {
+  const { worker, journal, authority } = harness(t); worker.prepareResult = 'unsupported';
+  const input = request(); assert.equal(await authority.start(input), 'paused');
+  const admission = journal.getTaskRecord(input.requestId)!.admission;
+  const deadline = journal.getTaskBudget(input.requestId)!.deadlineMillis;
+  worker.prepareResult = 'ready';
+  const prompt = await authority.prepareRecovery(input.requestId, 'panel-session');
+  await assert.rejects(authority.resume(input.requestId, resumeReply(prompt)), /displayed/);
+  authority.presented(input.requestId, prompt.promptId, prompt.presentationDigest, prompt.uiSessionRef);
+  await assert.rejects(authority.resume(input.requestId, resumeReply(prompt, { uiSessionRef: 'other-session' })));
+  assert.equal(await authority.resume(input.requestId, resumeReply(prompt)), 'verified');
+  assert.deepEqual(journal.getTaskRecord(input.requestId)!.admission, admission);
+  assert.equal(journal.getTaskBudget(input.requestId)!.deadlineMillis, deadline);
+  assert.equal(journal.getTaskProgress(input.requestId)!.decisionsUsed, 2);
+  assert.equal(worker.commitCalls.length, 1);
+  await assert.rejects(authority.resume(input.requestId, resumeReply(prompt)));
+});
+test('field recovery rejects replacement scope, secure controls and changed labels without dispatch', async t => {
+  const { worker, journal, authority } = harness(t); worker.prepareResult = 'unsupported';
+  const input = request(); assert.equal(await authority.start(input), 'paused');
+  const original = worker.observation;
+  for (const altered of [{ ...original, scopeRef: 'replacement-process' },
+    { ...original, controls: [{ ...original.controls[0]!, secure: true }] },
+    { ...original, controls: [{ ...original.controls[0]!, label: 'Other field' }] }]) {
+    worker.observation = altered;
+    await assert.rejects(authority.prepareRecovery(input.requestId, 'panel-session'));
+  }
+  assert.equal(journal.getTaskState(input.requestId), 'paused'); assert.equal(worker.commitCalls.length, 0);
+});
+test('field actor enforces original decision and observation limits before more dispatch', async t => {
+  const { worker, journal } = harness(t);
+  const authority = new NativeFillAuthority(journal, worker, { maxDecisions: 1, maxObservations: 1, maxStateVisits: 3 });
+  const input = request(); assert.equal(await authority.start(input), 'paused');
+  assert.equal(worker.commitCalls.length, 1); assert.equal(journal.getTaskRecord(input.requestId)!.completion, null);
+  const before = worker.observeCalls;
+  await assert.rejects(authority.prepareRecovery(input.requestId, 'panel-session'));
+  assert.equal(worker.observeCalls, before);
+  assert.equal(journal.getTaskProgress(input.requestId)!.pauseReason, 'observations');
+});
+test('field timeout retains pending preparation, accepts independent Stop and waits before journal shutdown', async t => {
+  const { worker, journal, authority } = harness(t); worker.prepareGate = new Deferred();
+  const input = request(); assert.equal(await authority.start(input), 'paused');
+  assert.equal(authority.needsRecovery, true);
+  await assert.rejects(authority.prepareRecovery(input.requestId, 'panel-session'));
+  assert.equal((await authority.stop()).workerFenced, true);
+  let settled = false; const closing = authority.settleBeforeClose().then(() => { settled = true; });
+  await Promise.resolve(); assert.equal(settled, false);
+  worker.prepareGate.resolve({ kind: 'ready', preparationRef: randomUUID() }); await closing;
+  assert.equal(journal.getTaskState(input.requestId), 'cancelled'); assert.equal(worker.commitCalls.length, 0);
+});
+
+test('Stop during independent terminal value read rejects late completion evidence', async t => {
+  const { worker, journal, authority } = harness(t); worker.verifyGate = new Deferred();
+  const input = request(); const pending = authority.start(input);
+  await waitFor(() => worker.verifyCalls === 1);
+  assert.equal(journal.getTaskRecord(input.requestId)!.completion, null);
+  await authority.stop(); worker.verifyGate.resolve(true);
+  assert.equal(await pending, 'stopped'); assert.equal(journal.getTaskRecord(input.requestId)!.completion, null);
+  assert.deepEqual(journal.getTaskProgress(input.requestId)!.checkpoints.map(c => c.stageRef), ['field_ready']);
   assert.equal(await authority.start(request()), 'uncertain');
 });

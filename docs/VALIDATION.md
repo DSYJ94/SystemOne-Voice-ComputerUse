@@ -1,5 +1,25 @@
 # Initial foundation validation
 
+## Native field persistent actor, 1 October 2026
+
+`codex/native-field-actor`, based on `codex/native-task-replacement` (#70)
+at `e6ba315`. [Native field execution](NATIVE_FIELD_ACTOR.md) now uses the
+persistent actor, budgeted eligibility checkpoints and a separate fresh value
+read before terminal completion. Controller Check recovery / explicit Resume
+supports retained paused field actors without resetting admission or limits.
+Stop and shutdown retain ownership until actual worker settlement. Swift
+process-scope and independent eligibility checks are source changes only.
+
+`npm run check`: typecheck and **417 passed, zero failed, two Mac-only skips
+(419 total)**. Ten added synthetic regressions cover checkpoints, fresh terminal
+verification, recovery identity/visibility, exhausted budgets, timeout ownership,
+Stop and controller shutdown. Signed child-pipe execution now asserts the
+independent verify operation. Release inventory consistency and six checks pass;
+`git diff --check` passes. No Swift/AppKit compilation or live qualification ran.
+General/active correction, restart reconstruction, sleep/lock, primary CLM,
+existing-profile Chrome and release gates remain open. The previous owner goal
+remains dropped.
+
 ## Native fixture replacement admission, 1 October 2026
 
 `codex/native-task-replacement`, based on #69 at `4bcab66`.

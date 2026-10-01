@@ -9,7 +9,20 @@ each implementation slice lands.
 
 ## New-chat resume checkpoint — 1 October 2026
 
-**Latest continuation:** branch `codex/native-task-replacement`, based on
+**Latest continuation:** branch `codex/native-field-actor`, based on
+`codex/native-task-replacement` (#70) at `e6ba315`. The
+[native field actor milestone](NATIVE_FIELD_ACTOR.md) adds bounded persistent
+field execution, independent terminal value verification, retained controller
+recovery/Resume, Stop and settled shutdown. Linux typecheck and **417 passed,
+zero failed, two Mac-only skips (419 total)**; ten added regressions and six
+release inventory checks pass. Swift scope/eligibility changes remain uncompiled.
+Next: hardened owned CLM serving and lifecycle support; general correction,
+restart reconstruction, Mac/Chrome/model and release qualification remain open.
+No owned GPU or Mac host is bound. Hugging Face metadata remains proxy-blocked;
+an additive network draft save failed with a conflict and is unconfirmed.
+The previous owner goal stays dropped.
+
+**Previous continuation:** branch `codex/native-task-replacement`, based on
 `codex/native-controller-recovery` (#69) at `4bcab66`. Implementation `244441d`,
 [draft PR #70](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/70)
 targets `codex/native-controller-recovery` (#69). The

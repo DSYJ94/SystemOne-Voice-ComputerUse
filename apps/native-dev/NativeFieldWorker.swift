@@ -50,7 +50,7 @@ final class DevNativeFieldWorker: @unchecked Sendable {
     private var stoppedTaskIDs = Set<String>()
     private var activeFence: (taskID: String, fence: NativeValueFence)?
     private var state: State? // Accessed only on queue.
-    private var fixtureTargets: [String: AXTarget] = [:] // Stable task/process scope, on queue.
+    private var taskTargets: [String: AXTarget] = [:] // Stable task/process scope, on queue.
     private var permitLedger: NativeWorkerPermitLedger? // Accessed only on queue.
     private var hostPublicKey: Curve25519.Signing.PublicKey? // Accessed only on queue.
 
@@ -61,7 +61,7 @@ final class DevNativeFieldWorker: @unchecked Sendable {
     func invalidateHostPublicKey() {
         queue.async { [self] in
             hostPublicKey = nil
-            fixtureTargets.removeAll()
+            taskTargets.removeAll()
             state?.fence.stop()
             state = nil
         }
@@ -154,16 +154,16 @@ final class DevNativeFieldWorker: @unchecked Sendable {
         state?.fence.stop()
         state = nil
         let target: AXTarget
-        if press, let retained = fixtureTargets[taskID] {
+        if let retained = taskTargets[taskID] {
             guard retained.pid == app.processIdentifier, retained.bundleID == bundleID,
                   retained.bundleURL == bundleURL, retained.launchDate == launchDate else { return [:] }
             target = retained
         } else {
-            guard !press || fixtureTargets.count < 1_000 else { return [:] }
+            guard taskTargets.count < 1_000 else { return [:] }
             target = AXTarget(pid: app.processIdentifier, bundleID: bundleID,
                 bundleURL: bundleURL, launchDate: launchDate,
                 scopeRef: "native:\(UUID().uuidString)")
-            if press { fixtureTargets[taskID] = target }
+            taskTargets[taskID] = target
         }
         do {
             let backend = SystemAXBackend()
@@ -253,6 +253,7 @@ final class DevNativeFieldWorker: @unchecked Sendable {
                 state.actionDigest = actionDigest
                 state.candidateSetDigest = candidateSetDigest
                 state.preparedCandidateID = candidateID
+                state.verifyValue = value
                 return ["kind": "ready", "preparationRef": state.preparationRef!]
             }
         } catch { return ["kind": "unsupported"] }
@@ -377,7 +378,9 @@ final class DevNativeFieldWorker: @unchecked Sendable {
                 }
             }
         }) {
-        case .verified: return "verified"
+        case .verified:
+            state.verifyCandidateID = candidateID
+            return "verified"
         case .notDispatched: return "not_dispatched"
         case .unknown: return "unknown"
         }
@@ -456,6 +459,12 @@ final class DevNativeFieldWorker: @unchecked Sendable {
         do {
             let handle = try state.registry.resolve(observationID: observationID,
                 nodeID: candidateID, target: state.target)
+            let detail = try state.backend.describe(handle)
+            guard let projected = state.projectedControls.first(where: { $0["id"] as? String == candidateID }),
+                  detail.label == (projected["label"] as? String),
+                  !detail.secure, detail.enabled,
+                  [kAXTextFieldRole as String, kAXTextAreaRole as String].contains(detail.role),
+                  detail.capabilities.contains("setValue") else { return false }
             return try state.backend.value(of: handle) == value && !isStopped(taskID)
         } catch { return false }
     }
