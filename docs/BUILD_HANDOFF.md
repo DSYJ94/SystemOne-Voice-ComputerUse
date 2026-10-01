@@ -9,7 +9,25 @@ each implementation slice lands.
 
 ## New-chat resume checkpoint — 1 October 2026
 
-**Latest continuation:** branch `codex/native-field-actor`, based on
+**Latest continuation:** branch `codex/clm-serving-boundary`, based on
+`codex/native-field-actor` (#71) at `7727da0`. The
+[owned CLM serving boundary](CLM_SERVING_BOUNDARY.md) now enforces authentication,
+exact bounded requests, overflow rejection before ranking, redacted validated
+replies and outstanding backend ownership. Production startup verifies local
+bytes before opening a loopback listener. Linux typecheck and **432 passed,
+zero failed, two Mac-only skips (434 total)**; fifteen new boundary tests and six
+release inventory checks pass. No model loaded, endpoint deployed or Mac test ran.
+Next: concrete exact-tokenizer/ranking adapter and verified immutable runtime,
+lifecycle/general execution, and actual Mac/CLM/Chrome/release qualification.
+The owner selected on-premise or AWS/GCP testing; no actual GPU host/account/region
+or Mac SSH/CI runner is bound, and required credential variable names are absent.
+Hugging Face metadata remains blocked. Additive network save failed with a
+configuration conflict; a reread confirmed revision 3 unchanged. Required new
+hosts: `huggingface.co`, `registry-1.docker.io`, `auth.docker.io`, preserving the
+existing hosts and package-manager preset; additions are not saved/applied here.
+V1 remains not ready. The previous owner goal stays dropped.
+
+**Previous continuation:** branch `codex/native-field-actor`, based on
 `codex/native-task-replacement` (#70) at `e6ba315`. Implementation `f153fe0`,
 [draft PR #71](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/71)
 targets `codex/native-task-replacement`. The

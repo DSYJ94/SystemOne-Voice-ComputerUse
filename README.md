@@ -29,6 +29,11 @@ setup, live permission recovery and physical multi-monitor use remain pending.
 
 ## Current implementation
 
+- An [owned CLM serving boundary](docs/CLM_SERVING_BOUNDARY.md) now enforces
+  authentication, bounded exact requests, token-overflow rejection and validated
+  redacted replies. Startup verifies local bytes before opening a loopback
+  listener. A pinned tokenizer/ranking adapter and live qualification remain.
+
 - [Native field fills](docs/NATIVE_FIELD_ACTOR.md) now use the persistent actor,
   budgeted eligibility checkpoints and independent terminal value verification.
   Retained field actors support fresh Check recovery / explicit Resume and Stop.
@@ -70,7 +75,8 @@ setup, live permission recovery and physical multi-monitor use remain pending.
   limits pause the task. [Portal restart reconciliation](docs/PORTAL_RECOVERY.md)
   projects verified history without replay; recovery into its actor remains.
 - [CLM serving preparation](docs/CLM_DEPLOYMENT_PLAN.md) describes the private
-  API and GPU reference experiment; no paid deployment or owner setup is needed yet.
+  API and GPU reference experiment; a usable on-premise or AWS/GCP host and
+  Mac qualification runner are still needed.
 - [Durable admitted task records](docs/DURABLE_TASK_RECORD.md) now retain the
   admitted goal, parameter bindings and completion verifier beside the journal's
   lifecycle and effect history for native and browser action paths. Terminal

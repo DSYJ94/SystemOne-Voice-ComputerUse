@@ -1,5 +1,33 @@
 # Implementation status
 
+## Owned CLM serving boundary, 1 October 2026
+
+`codex/clm-serving-boundary`, based on native field actor #71 at `7727da0`.
+[Owned serving ingress](CLM_SERVING_BOUNDARY.md) requires constant-time bearer
+checks, exact SystemOne request shape, bounded body/deadline/concurrency,
+pre-ranking exact-tokenizer counts and overflow rejection, validated redacted
+replies, and actual backend settlement before capacity release. Production
+startup verifies local artifact bytes before opening a loopback-only listener.
+It performs no model download, tensor loading, cloud deployment or inference.
+The manifest header identifies declarations, not loaded GPU attestation.
+
+`npm run check`: typecheck and **432 passed, zero failed, two Mac-only skips
+(434 total)**. Fifteen new ingress/transport regressions cover identity/auth,
+startup refusal, exact reference text formatting, schema/body/token bounds,
+redaction, timeout/disconnect and stalled/chunked bodies. Release inventory
+consistency and six checks pass; no dependency declarations changed.
+`git diff --check` passes. The first test run caught unsupported Node strip-only
+parameter-property syntax; corrected. A raw duplicate-header test needed Host;
+the chunked-body regression exposed early iterator destruction, corrected with
+`destroyOnReturn: false` before the passing full run.
+
+A concrete pinned tokenizer/ranking adapter, verified artifacts/runtime/licenses,
+owned GPU and live reference/calibration evidence remain open. No Mac runner or
+provider credential binding is available; Hugging Face metadata is blocked.
+Saving added network hosts failed with a conflict; reread confirmed the draft
+unchanged. General/lifecycle, Mac/Chrome/voice and release gates stay open.
+V1 remains not ready; the previous owner goal remains dropped.
+
 ## Native field persistent actor, 1 October 2026
 
 `codex/native-field-actor`, based on `codex/native-task-replacement` (#70)
