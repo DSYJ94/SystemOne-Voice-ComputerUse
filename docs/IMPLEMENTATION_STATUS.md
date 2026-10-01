@@ -3,6 +3,8 @@
 ## Native fixture replacement admission, 1 October 2026
 
 `codex/native-task-replacement`, based on #69 at `4bcab66`.
+Implementation `244441d`, [draft PR #70](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/70),
+targeting `codex/native-controller-recovery` (#69).
 [Replacement admission](NATIVE_TASK_REPLACEMENT.md) now transfers one exact final
 correction from a retained paused fixture actor into a fresh child task only
 after cancellation and a settled successful worker fence. Source correction

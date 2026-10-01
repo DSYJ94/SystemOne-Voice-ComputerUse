@@ -10,7 +10,9 @@ each implementation slice lands.
 ## New-chat resume checkpoint — 1 October 2026
 
 **Latest continuation:** branch `codex/native-task-replacement`, based on
-`codex/native-controller-recovery` (#69) at `4bcab66`. The
+`codex/native-controller-recovery` (#69) at `4bcab66`. Implementation `244441d`,
+[draft PR #70](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/70)
+targets `codex/native-controller-recovery` (#69). The
 [replacement admission milestone](NATIVE_TASK_REPLACEMENT.md) now transfers an
 exact correction command once after cancelling the retained paused fixture
 actor and confirming its settled worker fence. Fresh child admission and unique

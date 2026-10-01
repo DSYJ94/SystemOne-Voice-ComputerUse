@@ -3,6 +3,8 @@
 ## Native fixture replacement admission, 1 October 2026
 
 `codex/native-task-replacement`, based on #69 at `4bcab66`.
+Implementation `244441d`, [draft PR #70](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/70),
+targeting `codex/native-controller-recovery` (#69).
 Pinned Linux Node 26.5.0 and official Playwright 1.63.0 revision 1243.
 
 - `npm run check`: typecheck passed; **407 passed, zero failed, two Mac-only
