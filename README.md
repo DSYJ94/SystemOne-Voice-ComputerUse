@@ -29,6 +29,10 @@ setup, live permission recovery and physical multi-monitor use remain pending.
 
 ## Current implementation
 
+- A [CLM decision boundary](docs/CLM_DECISION_BOUNDARY.md) now validates approved
+  semantic choices, host confidence thresholds and bounded owned-API replies.
+  Synthetic native tasks exercise proposals through existing dispatch/verifiers;
+  live inference, calibration and owner-app integration remain open.
 - A [persistent scripted actor](docs/PERSISTENT_TASK_ACTOR.md) now coordinates
   repeated steps, pause/recovery, correction and Stop. Synthetic native tasks
   and a real headless portal resume from verified progress without repeating
@@ -73,13 +77,15 @@ setup, live permission recovery and physical multi-monitor use remain pending.
   and the restricted canonical digest format.
 - A pre-I/O provider policy boundary with spy-transport tests. A separate
   [fixture-only CLM probe](docs/CLM_REFERENCE_PROBE.md) can explicitly call an
-  owned reference service; no model transport is connected to task execution.
+  owned reference service; the opt-in native fixture selector uses synthetic
+  responses in tests and is not configured in the owner app.
   Host disclosure review is still required before approving real task input.
 - A [shared candidate foundation](docs/ACTION_CANDIDATES.md) now constructs
   bounded, complete field-fill and observed-link actions for the current native,
   managed and existing-Chrome drivers. It keeps target/parameter refs private
   in the provider projection and requires a disclosure check for every
-  candidate description. This does not enable CLM decisions or broader actions.
+  candidate description. The CLM fixture path uses these choices; broader
+  semantic actions remain open.
 - Structured panel fills and navigation bind the exact user-entered value to
   UTF-8 byte offsets in the final private command; task admission rechecks the
   bytes and digest. General utterance parsing and selected-value bindings remain.

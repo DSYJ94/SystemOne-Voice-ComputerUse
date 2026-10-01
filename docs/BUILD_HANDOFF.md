@@ -10,8 +10,8 @@ each implementation slice lands.
 ## New-chat resume checkpoint — 1 October 2026
 
 **Cloud source continuation:** use `/workspace/SystemOne-Voice-ComputerUse`,
-branch `codex/persistent-scripted-actor`, based on #63 at `d18e6b3`.
-Implementation commit: `cdc641c`.
+branch `codex/clm-decision-boundary`, based on #64 at `e64f59b`.
+The preceding actor implementation is `cdc641c`.
 [Draft PR #64](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/64)
 targets `codex/explicit-task-recovery` (#63).
 The preceding [draft PR #63](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/63)
@@ -43,12 +43,19 @@ A [persistent scripted actor](PERSISTENT_TASK_ACTOR.md) now owns bounded operati
 pause/recovery, correction and Stop. Native fixtures resume from Documents;
 a real headless portal resumes DOWNLOAD from verified detail without repeating
 search/open. The controller runs its fixed portal workflow through the actor.
-Latest Linux check: **341 passed, zero failed, two Mac-only skips (343 total)**.
+The [CLM decision boundary](CLM_DECISION_BOUNDARY.md) now produces observation/
+candidate/provider/calibration-bound proposals from approved semantic choices.
+An opt-in native fixture selector tests synthetic closed-loop execution through
+existing dispatch and verifiers; cancellation and invalid proposals cannot
+prepare effects. No real CLM or owner-app model configuration has run.
+Latest Linux check: **355 passed, zero failed, two Mac-only skips (357 total)**.
 The owner requested continued work toward v1; [readiness](V1_READINESS.md) tracks
 unfinished general execution, replacement admission, native/controller/panel
 recovery, existing-profile Chrome, model calibration, Mac and release gates.
-Continue with qualified semantic decision/CLM boundary and reproducible serving
-preparation. Scripted fixture evidence does not establish live model or Mac gates.
+Continue with artifact preflight, reproducible serving preparation and qualified
+controller integration. The current cloud network returns 403 for Hugging Face
+metadata and has no owned endpoint/provider credentials. Synthetic proposal
+evidence does not establish live model or Mac gates.
 Keep the goal stopped. Mac signing,
 Accessibility, voice and real-app gates below remain open.
 

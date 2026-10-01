@@ -14,7 +14,7 @@ until their actual acceptance evidence exists.
 | Requirement | Current evidence | Remaining gate |
 |---|---|---|
 | Persistent execution and Stop | Durable admission/effect/checkpoint journals; bounded actor; synthetic native and real headless portal continuation | General semantic actions, replacement admission, native/controller/UI recovery, unknown-effect and sleep/lock integration |
-| Primary CLM | Owned API probe and egress boundary; reference source inspected | Immutable verified encoder/head artifacts, actual inference, calibration, at least 50 task-disjoint cases and closed-loop model decisions |
+| Primary CLM | Bounded decision client/transport; synthetic closed-loop native proposals; reference source inspected | Immutable verified encoder/head artifacts, owned inference, calibration, at least 50 task-disjoint cases and supported controller integration |
 | Voice and input | One owner-reported editable held-Talk transcript; typed/final-input source guards | Representative speech corpus, on-device/offline assets, repeated capture/permission lifecycle, voice through the qualified task actor |
 | Native Mac execution | Previous fixture action and build evidence | Stable signing/TCC attribution, physical AX actions, permission revocation/rebuild, focus/Spaces/multi-monitor, actual supported applications |
 | Existing Chrome | Isolated extension/native-host fixture checks | Owner-profile tabs/data continuity, authentication/grants, Stop, routing and live qualification |

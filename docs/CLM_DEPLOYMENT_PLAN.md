@@ -1,8 +1,9 @@
 # CLM serving and preparation
 
 No owner setup is needed yet. CLM will be served through an owned private HTTP
-API; the repository currently has a fixture-only client probe, not a deployed
-server or a CLM-backed executor. Having AWS, GCP, Modal or Runpod access is
+API; the repository has a [bounded decision client](CLM_DECISION_BOUNDARY.md),
+an opt-in synthetic native selector and a separate fixture probe. It has no
+deployed server or live CLM-backed owner-app executor. Having AWS, GCP, Modal or Runpod access is
 sufficient for later deployment planning. Do not put credentials in chat or
 tracked files. No GPU, weights or paid service was provisioned for this slice.
 
@@ -48,12 +49,14 @@ container/launch configuration covering these requirements:
    licenses and safe checkpoint loading. No immutable encoder/tokenizer pin or
    downloaded artifact verification has been completed yet.
 2. Reproduce the reference embedding and head computation, including the
-   2048-token per-text behavior, normalization and cache identity. Serve the
+   2048-token per-text budget, normalization and cache identity. The upstream
+   embedder silently truncates; the owned deployment must reject overflow
+   before truncation and verify it with the exact tokenizer. Serve the
    pinned `/v1/systemone` schema rather than translating it into a chat API.
    The probe's `clm-latest` alias is not model identity; save artifact attestation
    alongside benchmark results.
 3. Put remote access behind TLS and authentication. The probe sends
-   `Authorization: Bearer ...` from `CLM_PROBE_API_KEY` when configured; the
+   `Authorization: Bearer ...` from `CLM_PROBE_API_KEY` (required remotely); the
    deployment must enforce it. Keep an internal encoder endpoint private and
    disable request-body/access-token logging. Start with synthetic fixtures.
 4. Record provider, GPU, region, hourly/storage costs, maximum experiment spend,
@@ -83,6 +86,12 @@ creates the private report once with mode 0600. No report was generated against
 a live service here. See [probe details](CLM_REFERENCE_PROBE.md).
 
 Source development can continue before this experiment. Portal reconciliation,
-scripted native/browser recovery and completion checks must pass before B14
-connects CLM choices to execution. Mac signing/Accessibility setup remains a
+scripted native/browser recovery and completion checks pass in Linux fixtures.
+The decision boundary is exercised with synthetic CLM replies; B14 still needs
+qualified inference and controller integration. Mac signing/Accessibility setup remains a
 separate owner step; it is not a CLM prerequisite.
+
+On 1 October, this task had no owned endpoint or provider credential binding.
+The cloud network policy returned HTTP 403 for Hugging Face model metadata, so
+immutable encoder/tokenizer resolution and artifact verification remain pending.
+The package-manager network preset was preserved; no GPU or paid deployment ran.

@@ -3,8 +3,8 @@
 For hosting choices, the owner's M5/32 GB Mac and advance preparation, see
 [CLM serving and preparation](CLM_DEPLOYMENT_PLAN.md). No service is deployed yet.
 
-This is a fixture-only measurement tool for backlog B02, not a decision provider
-connected to the computer-use controller. It cannot issue execution permits or
+This is a fixture-only measurement tool for backlog B02, separate from the
+[decision client](CLM_DECISION_BOUNDARY.md). It cannot issue execution permits or
 operate macOS/Chrome. The three committed synthetic cases exercise native
 navigation, exact browser identity and missing-target abstention. They are a
 starting point, not the required 50 task-disjoint cases or a quality claim.
@@ -22,7 +22,7 @@ but never treated as a valid choice.
 To run against a privately owned CLM reference service, first verify the
 encoder/tokenizer and head artifacts and review the fixture text for disclosure.
 Use an explicitly selected HTTPS endpoint (loopback HTTP is allowed for local
-development), and supply an API key through `CLM_PROBE_API_KEY` if configured:
+development), and supply the required remote API key through `CLM_PROBE_API_KEY`:
 
 ```sh
 mkdir -p private-traces

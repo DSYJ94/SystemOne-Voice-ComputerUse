@@ -1,5 +1,22 @@
 # Implementation status
 
+## CLM proposals and bounded owned transport, 1 October 2026
+
+`codex/clm-decision-boundary`, based on #64 at `e64f59b`. The client validates
+approved semantic choices before I/O and returns observation/digest/provider/
+calibration-bound proposals. Host thresholds, ties, malformed output, cancellation
+and transport errors prevent effect selection. Owned transport requires remote
+HTTPS/authentication, rejects redirects and bounds/strictly parses replies.
+The probe shares its wire codec and transport. See [boundary](CLM_DECISION_BOUNDARY.md).
+
+An opt-in native fixture selector exercises synthetic proposals through existing
+admission, worker preparation, journal dispatch and independent verification.
+No live CLM or owner-app model configuration exists. Linux typecheck and
+**355 passed, zero failed, two Mac-only skips (357 total)**, including 14 new
+tests. B02/B14 remain open. Hugging Face metadata access returned 403; immutable
+encoder/tokenizer pins and verified weights remain pending. No paid resource,
+owner-goal resume or Mac checkout change occurred.
+
 ## Persistent scripted actors and continuation, 1 October 2026
 
 `codex/persistent-scripted-actor`, based on #63 at `d18e6b3`, implementation
