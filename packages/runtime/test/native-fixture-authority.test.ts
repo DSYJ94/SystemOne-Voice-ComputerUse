@@ -183,3 +183,101 @@ test('actor timeout retains a late preparation and prevents journal close callba
   assert.deepEqual(journal.attemptsForTask(input.requestId), []);
   assert.equal(authority.needsRecovery, false);
 });
+
+function reply(prompt: Awaited<ReturnType<NativeFixtureAuthority['prepareRecovery']>>) {
+  return Buffer.from(JSON.stringify({ type: 'resume_request', protocolVersion: '2.0',
+    messageId: randomUUID(), taskId: prompt.taskId, taskEpoch: prompt.taskEpoch,
+    goalRevision: prompt.goalRevision, issuer: 'native_ui', actorRef: prompt.actorRef,
+    uiSessionRef: prompt.uiSessionRef, promptId: prompt.promptId, presentationDigest: prompt.presentationDigest,
+    checkpointRef: prompt.checkpointRef, checkpointDigest: prompt.checkpointDigest,
+    recoveryObservationId: prompt.recoveryObservationId, createdAt: new Date().toISOString() }));
+}
+async function pausedHarness(t: TestContext) {
+  const h = harness(t); const input = request();
+  h.worker.onObserve = () => { h.worker.duplicate = h.worker.title === DOCS; };
+  assert.equal(await h.authority.startOpen(input), 'paused');
+  h.worker.onObserve = undefined; h.worker.duplicate = false;
+  return { ...h, input };
+}
+test('fresh recovery plus displayed exact Resume continues original task without repeating Documents', async t => {
+  const { worker, journal, authority, input } = await pausedHarness(t);
+  const before = journal.getTaskRecord(input.requestId)!;
+  const deadline = journal.getTaskBudget(input.requestId)!.deadlineMillis;
+  const prompt = await authority.prepareRecovery(input.requestId, 'panel-session');
+  assert.equal(journal.getTaskState(input.requestId), 'paused'); assert.deepEqual(worker.commits, ['Documents']);
+  assert.equal(prompt.checkpointRef, before.progress!.checkpoints[0]!.checkpointId);
+  assert.match(prompt.presentation.text, /Open synthetic fixture/);
+  await assert.rejects(authority.resume(input.requestId, reply(prompt)), /displayed/);
+  authority.presented(input.requestId, prompt.promptId, prompt.presentationDigest, prompt.uiSessionRef);
+  assert.equal(await authority.resume(input.requestId, reply(prompt)), 'verified_open');
+  assert.deepEqual(worker.commits, ['Documents', 'Budget.xlsx', 'Open selected file']);
+  assert.equal(journal.getTaskRecord(input.requestId)!.admission!.admissionId, before.admission!.admissionId);
+  assert.equal(journal.getTaskBudget(input.requestId)!.deadlineMillis, deadline);
+  assert.equal(journal.getTaskProgress(input.requestId)!.decisionsUsed, before.progress!.decisionsUsed + 2);
+  assert.deepEqual(worker.stops, []);
+  await assert.rejects(authority.resume(input.requestId, reply(prompt)));
+});
+test('presentation acknowledgment and reply cannot change session, checkpoint or task revision', async t => {
+  const { worker, journal, authority, input } = await pausedHarness(t);
+  const prompt = await authority.prepareRecovery(input.requestId, 'panel-session');
+  assert.throws(() => authority.presented(input.requestId, prompt.promptId, prompt.presentationDigest, 'other-session'));
+  assert.throws(() => authority.presented(input.requestId, prompt.promptId, '0'.repeat(64), prompt.uiSessionRef));
+  authority.presented(input.requestId, prompt.promptId, prompt.presentationDigest, prompt.uiSessionRef);
+  for (const update of [{ uiSessionRef: 'other-session' }, { checkpointRef: 'other-checkpoint' },
+    { goalRevision: 2 }, { presentationDigest: '0'.repeat(64) }, { recoveryObservationId: 'other-observation' }]) {
+    const altered = { ...JSON.parse(reply(prompt).toString()), ...update };
+    await assert.rejects(authority.resume(input.requestId, Buffer.from(JSON.stringify(altered))));
+  }
+  assert.equal(journal.getTaskState(input.requestId), 'paused'); assert.deepEqual(worker.commits, ['Documents']);
+  assert.equal(await authority.resume(input.requestId, reply(prompt)), 'verified_open');
+});
+test('dismissal and a new recovery read revoke the earlier prompt', async t => {
+  const { worker, authority, input } = await pausedHarness(t);
+  const first = await authority.prepareRecovery(input.requestId, 'panel-session');
+  authority.presented(input.requestId, first.promptId, first.presentationDigest, first.uiSessionRef);
+  authority.dismiss(input.requestId, first.promptId, first.uiSessionRef);
+  await assert.rejects(authority.resume(input.requestId, reply(first)));
+  const second = await authority.prepareRecovery(input.requestId, 'panel-session');
+  assert.throws(() => authority.presented(input.requestId, first.promptId, first.presentationDigest, first.uiSessionRef));
+  authority.presented(input.requestId, second.promptId, second.presentationDigest, second.uiSessionRef);
+  const third = await authority.prepareRecovery(input.requestId, 'panel-session');
+  await assert.rejects(authority.resume(input.requestId, reply(second)));
+  assert.notEqual(third.recoveryObservationId, second.recoveryObservationId);
+  assert.deepEqual(worker.commits, ['Documents']);
+});
+test('changed checkpoint title or scope cannot produce a recovery prompt', async t => {
+  const { worker, journal, authority, input } = await pausedHarness(t);
+  worker.title = HOME;
+  await assert.rejects(authority.prepareRecovery(input.requestId, 'panel-session'));
+  worker.title = DOCS; worker.scope = 'replacement-process';
+  await assert.rejects(authority.prepareRecovery(input.requestId, 'panel-session'));
+  assert.equal(journal.getTaskState(input.requestId), 'paused'); assert.deepEqual(worker.commits, ['Documents']);
+});
+test('Stop during a recovery read cancels the actor and rejects its late prompt', async t => {
+  const { worker, journal, authority, input } = await pausedHarness(t);
+  worker.observeGate = new Deferred(); const observations = worker.observations;
+  const read = authority.prepareRecovery(input.requestId, 'panel-session');
+  const rejected = assert.rejects(read);
+  await waitFor(() => worker.observations > observations);
+  await assert.rejects(authority.prepareRecovery(input.requestId, 'other-session'));
+  assert.equal((await authority.stop()).workerFenced, true);
+  worker.observeGate.resolve(); await rejected;
+  assert.equal(journal.getTaskState(input.requestId), 'cancelled');
+  assert.deepEqual(worker.commits, ['Documents']);
+});
+test('Stop after presentation invalidates even an otherwise exact Resume reply', async t => {
+  const { worker, journal, authority, input } = await pausedHarness(t);
+  const prompt = await authority.prepareRecovery(input.requestId, 'panel-session');
+  authority.presented(input.requestId, prompt.promptId, prompt.presentationDigest, prompt.uiSessionRef);
+  await authority.stop(); await assert.rejects(authority.resume(input.requestId, reply(prompt)));
+  assert.equal(journal.getTaskState(input.requestId), 'cancelled'); assert.deepEqual(worker.commits, ['Documents']);
+});
+test('exhausted decision budget cannot be reset by preparing recovery', async t => {
+  const { worker, journal } = harness(t);
+  const authority = new NativeFixtureAuthority(journal, worker,
+    { maxObservations: 10, maxDecisions: 1, maxStateVisits: 3 });
+  const input = request(); assert.equal(await authority.startOpen(input), 'paused');
+  const observations = worker.observations;
+  await assert.rejects(authority.prepareRecovery(input.requestId, 'panel-session'));
+  assert.equal(worker.observations, observations); assert.equal(journal.getTaskProgress(input.requestId)!.decisionsUsed, 1);
+});

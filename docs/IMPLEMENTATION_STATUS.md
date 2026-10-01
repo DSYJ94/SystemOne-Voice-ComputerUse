@@ -1,5 +1,25 @@
 # Implementation status
 
+## Native fixture recovery controller and panel, 1 October 2026
+
+`codex/native-controller-recovery`, based on #68 at `d0482bc`.
+The [recovery integration](NATIVE_CONTROLLER_RECOVERY.md) adds explicit
+Check recovery / Resume for the retained same-process fixture actor. The host
+rechecks scoped checkpoint state, and accepts a session/presentation/checkpoint/
+revision-bound one-use reply only after the parent confirms its sheet is visible.
+Dismissal, superseding reads and Stop revoke old prompts. Resume keeps original
+admission, deadlines, quotas and checkpoint history; no completed step is replayed.
+Fixture worker scope now stays bound to the exact app PID, bundle URL and launch
+identity across fresh observations; a replacement process fails closed.
+
+Linux typecheck and **388 passed, zero failed, two Mac-only skips (390 total)**;
+11 added authority/controller recovery tests. Source inventory consistency and
+six release checks pass. Swift/AppKit compilation, actual sheet behavior and live
+AX process-scope checks remain unrun. Restart recovery, replacement admission,
+general execution and model/Mac/Chrome/release qualification remain open.
+The owner dropped the previous goal; it is removed from the working plan.
+
+
 ## Native fixture controller actor, 1 October 2026
 
 `codex/native-controller-actor`, based on #67 at `076c241`.

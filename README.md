@@ -32,7 +32,9 @@ setup, live permission recovery and physical multi-monitor use remain pending.
 - The [native fixture controller](docs/NATIVE_CONTROLLER_ACTOR.md) now runs
   NAVIGATE/LOCATE/OPEN through the persistent actor. Paused history blocks new
   controller intake across restart; explicit Stop fences a retained native
-  fixture actor. Live Mac execution and UI Resume remain unqualified.
+  fixture actor. [Check recovery / explicit Resume](docs/NATIVE_CONTROLLER_RECOVERY.md)
+  continues a retained fixture actor after fresh checkpoint verification. Mac
+  compilation and live behavior remain unqualified.
 - A [pending release dependency inventory](docs/RELEASE_DEPENDENCY_INVENTORY.md)
   records locked runtime/build/test packages and non-npm release gaps, with
   repeatable generation and drift checks. Artifact SBOM and license clearance

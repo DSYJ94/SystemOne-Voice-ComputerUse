@@ -110,7 +110,17 @@ interface StartPortalWorkflow {
   readonly command: Record<string, JSONValue>;
 }
 
-type NativeRequest = StartFill | StartNavigate | StartNativeFill | StartNativePress
+interface NativeRecoveryControl {
+  readonly type: 'prepare_native_recovery' | 'native_recovery_presented' | 'resume_native_task' | 'cancel_native_recovery';
+  readonly requestId: string;
+  readonly targetRequestId: string;
+  readonly uiSessionRef: string;
+  readonly promptId?: string;
+  readonly presentationDigest?: string;
+  readonly intent?: Record<string, JSONValue>;
+}
+
+type NativeRequest = NativeRecoveryControl | StartFill | StartNavigate | StartNativeFill | StartNativePress
   | StartNativeLocate | StartNativeOpen
   | StartChromeFill | StartPortalWorkflow | Stop;
 type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
@@ -122,7 +132,7 @@ type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
   | 'observing_native_open' | 'verified_native_open'
   | 'observing_chrome' | 'verified_chrome_dom_fill' | 'verified_navigation'
   | 'portal_located' | 'portal_opened' | 'portal_downloaded'
-  | 'verified_portal_download' | 'portal_paused' | 'native_paused';
+  | 'verified_portal_download' | 'portal_paused' | 'native_paused' | 'checking_native_recovery';
 
 function isRecord(value: JSONValue): value is Record<string, JSONValue> {
   return value !== null && !Array.isArray(value) && typeof value === 'object';
@@ -133,6 +143,21 @@ function requestFromLine(line: Uint8Array): NativeRequest {
   const value = parseJSON(line);
   if (!isRecord(value) || !ID.test(String(value.requestId ?? ''))) {
     throw new ContractError('invalid native request');
+  }
+  if (['prepare_native_recovery', 'native_recovery_presented', 'resume_native_task', 'cancel_native_recovery'].includes(String(value.type))) {
+    const keys = value.type === 'prepare_native_recovery' ? 'requestId,targetRequestId,type,uiSessionRef'
+      : value.type === 'resume_native_task' ? 'intent,requestId,targetRequestId,type,uiSessionRef'
+      : value.type === 'native_recovery_presented' ? 'presentationDigest,promptId,requestId,targetRequestId,type,uiSessionRef'
+      : 'promptId,requestId,targetRequestId,type,uiSessionRef';
+    if (Object.keys(value).sort().join(',') !== keys
+      || typeof value.targetRequestId !== 'string' || !ID.test(value.targetRequestId)
+      || typeof value.uiSessionRef !== 'string' || !ID.test(value.uiSessionRef)
+      || (value.promptId !== undefined && (typeof value.promptId !== 'string' || !ID.test(value.promptId)))
+      || (value.type === 'native_recovery_presented' && (typeof value.presentationDigest !== 'string'
+        || !/^[a-f0-9]{64}$/.test(value.presentationDigest)))
+      || (value.type === 'resume_native_task' && (!value.intent || !isRecord(value.intent)
+        || value.intent.uiSessionRef !== value.uiSessionRef))) throw new ContractError('invalid native recovery control');
+    return value as unknown as NativeRecoveryControl;
   }
   if (value.type === 'stop') {
     if (Object.keys(value).sort().join(',') !== 'requestId,targetRequestId,type'
@@ -395,6 +420,9 @@ export class NativeManagedController {
       void this.#stop(request);
       return;
     }
+    if ('targetRequestId' in request) {
+      this.#recoverNative(request); return;
+    }
     if (this.#runs.active) {
       this.#send(request.requestId, 'busy'); return;
     }
@@ -501,6 +529,39 @@ export class NativeManagedController {
             ? 'blocked_recovery' : 'ready');
       }
     });
+  }
+
+  #recoverNative(request: NativeRecoveryControl): void {
+    const authority = this.#pressAuthority;
+    const taskId = request.targetRequestId;
+    if (this.#runs.active) { this.#send(taskId, 'busy'); return; }
+    if (!authority || !this.#chromeOutput || this.#workerFenceFailed
+      || authority.taskId !== taskId || this.#journal.getTaskState(taskId) !== 'paused') {
+      this.#send(taskId, 'blocked_recovery'); return;
+    }
+    if (request.type === 'native_recovery_presented' || request.type === 'cancel_native_recovery') {
+      try {
+        if (request.type === 'native_recovery_presented') authority.presented(taskId,
+          request.promptId!, request.presentationDigest!, request.uiSessionRef);
+        else authority.dismiss(taskId, request.promptId!, request.uiSessionRef);
+      } catch { this.#send(taskId, 'error'); }
+      return;
+    }
+    const active: NativeActiveTask = { requestId: taskId, authority, done: Promise.resolve() };
+    const run: ControllerRun = { requestId: taskId, surface: 'native', task: active };
+    this.#runs.claim(run);
+    this.#send(taskId, 'checking_native_recovery');
+    active.done = (request.type === 'prepare_native_recovery'
+      ? authority.prepareRecovery(taskId, request.uiSessionRef).then(prompt => {
+        this.#chromeOutput!({ type: 'native_recovery_prompt', requestId: request.requestId,
+          targetRequestId: taskId, ...prompt });
+      })
+      : authority.resume(taskId, Buffer.from(JSON.stringify(request.intent))).then(result => {
+        if (result !== 'stopped') this.#send(taskId, result === 'verified_navigation' ? 'verified_native_navigation'
+          : result === 'verified_locate' ? 'verified_native_locate' : result === 'verified_open' ? 'verified_native_open'
+          : result === 'paused' ? 'native_paused' : result);
+      })).catch(() => { this.#send(taskId, 'blocked_recovery'); })
+      .finally(() => { this.#adapterSettled(run, authority); });
   }
 
   async close(): Promise<void> {

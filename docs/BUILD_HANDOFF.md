@@ -9,6 +9,25 @@ each implementation slice lands.
 
 ## New-chat resume checkpoint — 1 October 2026
 
+**Current continuation:** branch `codex/native-controller-recovery`, based on
+`codex/native-controller-actor` (#68) at `d0482bc`. Native fixture recovery now
+has private controller requests and a developer-panel Check recovery / Resume
+sheet. Fresh scoped checkpoint reads and a visible-presentation acknowledgment
+precede exact one-use Resume intent; deadlines and quotas stay unchanged.
+Only the retained same-process fixture actor can resume. Restart reconstruction,
+replacement admission, general actions and Mac/live qualification remain open.
+Linux typecheck and **388 passed, zero failed, two Mac-only skips (390 total)**;
+11 added recovery tests. Inventory consistency and six checks pass.
+The AppKit changes and stable fixture process-scope binding are source changes
+only: this Linux environment has no Swift/AppKit compiler. Next source milestone:
+replacement command admission/correction with old-task fencing.
+
+**Owner instruction superseding earlier checkpoints:** the owner dropped the
+previous goal entirely. It is removed from the current working plan; continue
+v1 source development. Earlier “keep the owner goal stopped” instructions below
+are historical. No owner-app execution or durable owner journal change occurred
+in this cloud checkout.
+
 **Native controller continuation:** branch `codex/native-controller-actor`,
 stacked on `codex/release-dependency-inventory` (#67) at `076c241`.
 Implementation `54c3f0d`, [draft PR #68](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/68)
