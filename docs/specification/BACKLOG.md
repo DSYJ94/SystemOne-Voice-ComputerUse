@@ -133,6 +133,8 @@ Owner: CORE. Dependencies: B03/B05/B09 for the journal/actor foundation; B11/B12
 
 Implement the task state machine, goal revisions, verified facts, recent outcomes, budgets, execution permits, and SQLite event journal. Re-observe after each step. Persist prepared, dispatch, effect and verification dimensions separately. Unknown effects never become failed-and-safe-to-retry. Current facts expire with the relevant observation; historical evidence stays in the journal. Resume only from paused state after recovery.
 
+Source progress, 1 October 2026: the journal now supports [explicit checkpoint-bound recovery and correction fences](../TASK_RECOVERY.md). Native/browser actor integration, workflow recovery predicates, adapter barriers, replacement admission and UI/voice intent remain incomplete; this ticket stays open.
+
 Done when: scripted Finder -> Documents -> locate a file and portal -> search -> download work without a model; crash/timeout injection does not duplicate effects; a resumed session revalidates current UI; user corrections invalidate pending steps. CLM integration follows B14 after these gates.
 
 ### [ ] B16 - Implement outcome predicates and clarification
