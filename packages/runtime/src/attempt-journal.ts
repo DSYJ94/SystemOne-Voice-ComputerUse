@@ -4,6 +4,10 @@ import type { JSONValue } from '../../protocol/src/json.ts';
 import type { TaskAdmission, TaskAdmissionRegistry } from './task-authority.ts';
 import { DEFAULT_PROGRESS_LIMITS, TaskProgressExceeded, TaskProgressStore } from './task-progress.ts';
 import type { TaskCheckpoint, TaskObservation, TaskProgress, TaskProgressLimits } from './task-progress.ts';
+import { TASK_RECOVERY_READ_TTL_MS } from './task-recovery.ts';
+import type { RecoveryPredicateEvidence, RecoveryReadRow, TaskRecoveryBinding } from './task-recovery.ts';
+import type { ResumeRequest, UserPromptLedger } from './user-prompts.ts';
+import type { CommittedInput, CommittedInputSession } from './committed-input.ts';
 
 const ID = /^[A-Za-z0-9_.:-]{1,160}$/;
 const DIGEST = /^[a-f0-9]{64}$/;
@@ -76,6 +80,12 @@ export interface TaskCompletion {
   readonly completionVerifierRef: string | null;
 }
 
+export interface TaskCorrection {
+  readonly commandMessageId: string;
+  readonly replacementGoalRevision: number;
+  readonly commandDigest: string;
+}
+
 /** Private diagnostic history, never an admission, resume intent or permit.
  * The stored contract cannot be transferred through TaskAdmissionRegistry. */
 export interface JournalTaskRecord {
@@ -88,6 +98,7 @@ export interface JournalTaskRecord {
   readonly attempts: readonly JournalAttempt[];
   readonly completion: TaskCompletion | null;
   readonly progress: TaskProgress | null;
+  readonly correction: TaskCorrection | null;
 }
 
 interface TaskRow {
@@ -195,6 +206,21 @@ export class AttemptJournal {
         task_id TEXT NOT NULL REFERENCES tasks(task_id),
         event_kind TEXT NOT NULL,
         recorded_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS task_recovery_reads (
+        ticket TEXT PRIMARY KEY REFERENCES task_observations(ticket),
+        task_id TEXT NOT NULL REFERENCES tasks(task_id), deadline_ms INTEGER NOT NULL,
+        checkpoint_ref TEXT NOT NULL, history_digest TEXT NOT NULL,
+        observation_id TEXT, binding_digest TEXT, evidence_ref TEXT
+      );
+      CREATE TABLE IF NOT EXISTS task_resume_intents (
+        message_id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(task_id),
+        recovery_ticket TEXT NOT NULL UNIQUE REFERENCES task_recovery_reads(ticket),
+        prompt_id TEXT NOT NULL, presentation_digest TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS task_corrections (
+        task_id TEXT PRIMARY KEY REFERENCES tasks(task_id), command_message_id TEXT NOT NULL UNIQUE,
+        replacement_goal_revision INTEGER NOT NULL, command_digest TEXT NOT NULL
       );
     `);
     const taskColumns = this.#db.prepare('PRAGMA table_info(tasks)').all() as { name: string }[];
@@ -364,6 +390,32 @@ export class AttemptJournal {
     });
   }
 
+  /** A correction is a new committed command, never an edit to an admission.
+   * Cancel the old revision atomically; replacement admission and adapter Stop
+   * barriers remain separate host responsibilities. No compensation is implied. */
+  cancelTaskForCorrection(taskId: string, session: CommittedInputSession,
+    input: CommittedInput): readonly JournalAttempt[] {
+    assertId(taskId, 'task ID');
+    return this.#transaction(() => {
+      const task = this.#task(taskId);
+      if (!task || !['active', 'paused'].includes(task.state)
+        || input.taskId !== taskId || input.taskEpoch !== task.task_epoch
+        || input.goalRevision !== task.goal_revision + 1 || input.mode !== 'command') {
+        throw new ContractError('correction requires a new command at the next goal revision');
+      }
+      const commandDigest = digest(parseJSON(Buffer.from(JSON.stringify(input))));
+      this.#db.prepare('INSERT INTO task_corrections VALUES (?, ?, ?, ?)')
+        .run(taskId, input.messageId, input.goalRevision, commandDigest);
+      this.#db.prepare("UPDATE tasks SET state = 'cancelled' WHERE task_id = ?").run(taskId);
+      this.#taskEvent(taskId, `corrected:${input.messageId}:r${input.goalRevision}`);
+      this.#settlePrepared(taskId, 'corrected_before_dispatch');
+      this.#progress.expire(taskId);
+      const unresolved = this.unresolvedAttempts(taskId);
+      session.claimForAdmission(input);
+      return unresolved;
+    });
+  }
+
   /** Records a host-verified terminal result. The caller must own and check the
    * completion predicate; a read-only task can finish without any action.
    * Unknown delivery/effect cannot be silently completed. */
@@ -394,7 +446,7 @@ export class AttemptJournal {
   /** Call only after the new host has exclusive ownership of the journal. */
   recoverAfterRestart(): readonly JournalAttempt[] {
     return this.#transaction(() => {
-      const active = this.#db.prepare(`SELECT task_id FROM tasks WHERE state = 'active'`)
+      const active = this.#db.prepare(`SELECT task_id FROM tasks WHERE state IN ('active', 'paused')`)
         .all() as { task_id: string }[];
       for (const { task_id: taskId } of active) {
         this.#db.prepare(`UPDATE tasks SET state = 'paused' WHERE task_id = ?`).run(taskId);
@@ -420,11 +472,17 @@ export class AttemptJournal {
       if (!task) return undefined;
       const row = this.#db.prepare('SELECT * FROM task_completions WHERE task_id = ?')
         .get(taskId) as { evidence_ref: string; completion_verifier_ref: string | null } | undefined;
+      const correction = this.#db.prepare('SELECT * FROM task_corrections WHERE task_id = ?')
+        .get(taskId) as { command_message_id: string; replacement_goal_revision: number;
+          command_digest: string } | undefined;
       return Object.freeze({ taskId, taskEpoch: task.task_epoch,
         goalRevision: task.goal_revision, state: task.state,
         admission: this.#storedAdmission(taskId), budget: this.getTaskBudget(taskId),
         attempts: this.attemptsForTask(taskId),
         progress: this.#progress.get(taskId),
+        correction: correction ? Object.freeze({ commandMessageId: correction.command_message_id,
+          replacementGoalRevision: correction.replacement_goal_revision,
+          commandDigest: correction.command_digest }) : null,
         completion: row ? Object.freeze({ evidenceRef: row.evidence_ref,
           completionVerifierRef: row.completion_verifier_ref }) : null });
     });
@@ -573,6 +631,141 @@ export class AttemptJournal {
     return this.#progress.get(taskId);
   }
 
+  /** Only a bounded independent read is permitted while paused. Spend the
+   * existing quota before awaiting; each new reservation fences older reads. */
+  reserveTaskRecoveryObservation(taskId: string): string {
+    return this.#progressOperation(taskId, () => {
+      const context = this.#recoveryContext(taskId);
+      const ticket = this.#progress.reserve(taskId, false);
+      if (ticket instanceof TaskProgressExceeded) return ticket;
+      this.#db.prepare(`INSERT INTO task_recovery_reads
+        (ticket, task_id, deadline_ms, checkpoint_ref, history_digest) VALUES (?, ?, ?, ?, ?)`)
+        .run(ticket, taskId, Math.min(this.getTaskBudget(taskId)!.deadlineMillis,
+          this.#lastBudgetTime(taskId) + TASK_RECOVERY_READ_TTL_MS),
+          context.checkpoint.checkpointId, context.historyDigest);
+      return ticket;
+    }, 'paused');
+  }
+
+  /** Caller owns the fresh predicate check. This journals its scope-bound
+   * evidence and returns exactly what a Resume presentation must reference. */
+  recordTaskRecoveryObservation(taskId: string, ticket: string, observed: TaskObservation,
+    verified: RecoveryPredicateEvidence): TaskRecoveryBinding {
+    return this.#progressOperation(taskId, () => {
+      const context = this.#recoveryContext(taskId);
+      const read = this.#recoveryRead(taskId, ticket);
+      assertId(verified.evidenceRef, 'recovery evidence reference');
+      if (read.observation_id !== null || read.history_digest !== context.historyDigest
+        || read.checkpoint_ref !== context.checkpoint.checkpointId
+        || verified.checkpointRef !== context.checkpoint.checkpointId
+        || verified.predicateRef !== context.checkpoint.predicateRef) {
+        throw new ContractError('recovery checkpoint or predicate changed');
+      }
+      const failure = this.#progress.observe(taskId, ticket, observed);
+      if (failure instanceof TaskProgressExceeded) return failure;
+      const checkpointDigest = digest({ historyDigest: context.historyDigest,
+        ticket, observation: { observationId: observed.observationId, scopeRef: observed.scopeRef,
+          stateDigest: observed.stateDigest }, evidence: { checkpointRef: verified.checkpointRef,
+          predicateRef: verified.predicateRef, evidenceRef: verified.evidenceRef } });
+      this.#db.prepare(`UPDATE task_recovery_reads SET observation_id = ?,
+        binding_digest = ?, evidence_ref = ? WHERE ticket = ?`)
+        .run(observed.observationId, checkpointDigest, verified.evidenceRef, ticket);
+      const task = this.#task(taskId)!;
+      return Object.freeze({ taskId, taskEpoch: task.task_epoch, goalRevision: task.goal_revision,
+        state: 'paused', checkpointRef: read.checkpoint_ref, checkpointDigest,
+        recoveryObservationId: observed.observationId });
+    }, 'paused');
+  }
+
+  /** Consume exact native-UI intent after a fresh checkpoint revalidation.
+   * Reactivation expires the recovery read: it cannot authorize an action or
+   * complete the task. A new actionable read and predicate check are required. */
+  resumeTask(ledger: UserPromptLedger, intent: ResumeRequest): void {
+    this.#progressOperation(intent.taskId, () => {
+      const task = this.#task(intent.taskId)!;
+      const context = this.#recoveryContext(intent.taskId);
+      if (intent.taskEpoch !== task.task_epoch || intent.goalRevision !== task.goal_revision) {
+        throw new ContractError('resume task revision mismatch');
+      }
+      const read = this.#db.prepare(`SELECT * FROM task_recovery_reads
+        WHERE task_id = ? AND observation_id = ?`).get(intent.taskId,
+        intent.recoveryObservationId) as RecoveryReadRow | undefined;
+      if (!read) throw new ContractError('resume has no recovery observation');
+      this.#recoveryRead(intent.taskId, read.ticket);
+      this.#progress.assertCurrent(intent.taskId, intent.recoveryObservationId, false);
+      const current = context.progress.currentObservation!;
+      const expectedDigest = digest({ historyDigest: context.historyDigest, ticket: read.ticket,
+        observation: { observationId: current.observationId, scopeRef: current.scopeRef,
+          stateDigest: current.stateDigest }, evidence: { checkpointRef: read.checkpoint_ref,
+          predicateRef: context.checkpoint.predicateRef, evidenceRef: read.evidence_ref } });
+      if (read.history_digest !== context.historyDigest
+        || intent.checkpointRef !== read.checkpoint_ref
+        || intent.checkpointDigest !== read.binding_digest || read.binding_digest !== expectedDigest) {
+        throw new ContractError('resume checkpoint binding changed');
+      }
+      if (context.progress.observationsUsed >= context.progress.maxObservations
+        || context.progress.decisionsUsed >= context.progress.maxDecisions) {
+        return new TaskProgressExceeded(context.progress.observationsUsed >= context.progress.maxObservations
+          ? 'observations' : 'decisions');
+      }
+      this.#db.prepare('INSERT INTO task_resume_intents VALUES (?, ?, ?, ?, ?)')
+        .run(intent.messageId, intent.taskId, read.ticket, intent.promptId, intent.presentationDigest);
+      this.#db.prepare("UPDATE tasks SET state = 'active' WHERE task_id = ?").run(intent.taskId);
+      this.#taskEvent(intent.taskId, `resumed:${intent.messageId}`);
+      this.#progress.expire(intent.taskId);
+      // Claim last so ordinary validation/SQL failures leave a genuine intent
+      // unconsumed. A commit failure may consume it, but never authorize replay.
+      ledger.claimForRecovery(intent);
+    }, 'paused');
+  }
+
+  #lastBudgetTime(taskId: string): number {
+    return (this.#db.prepare('SELECT last_checked_ms FROM task_budgets WHERE task_id = ?')
+      .get(taskId) as { last_checked_ms: number }).last_checked_ms;
+  }
+
+  #recoveryRead(taskId: string, ticket: string): RecoveryReadRow {
+    assertId(ticket, 'recovery ticket');
+    const read = this.#db.prepare('SELECT * FROM task_recovery_reads WHERE ticket = ?')
+      .get(ticket) as RecoveryReadRow | undefined;
+    if (!read || read.task_id !== taskId || this.#lastBudgetTime(taskId) >= read.deadline_ms) {
+      throw new ContractError('missing or expired recovery read');
+    }
+    return read;
+  }
+
+  #recoveryContext(taskId: string): {
+    progress: TaskProgress; checkpoint: TaskCheckpoint; historyDigest: string;
+  } {
+    const admission = this.#storedAdmission(taskId);
+    const progress = this.#progress.get(taskId);
+    const checkpoint = progress?.checkpoints.at(-1);
+    if (!admission || !progress || !checkpoint || progress.scopeRef !== admission.scopeRef
+      || progress.completionVerifierRef !== admission.completionVerifierRef) {
+      throw new ContractError('recovery requires an admitted task and verified checkpoint');
+    }
+    if (progress.pauseReason) throw new TaskProgressExceeded(progress.pauseReason);
+    if (this.#db.prepare("SELECT 1 FROM tasks WHERE state = 'active'").get()
+      || this.#db.prepare("SELECT 1 FROM attempts WHERE phase = 'prepared'").get()
+      || this.unresolvedAttempts().length) {
+      throw new ContractError('recovery blocked by active execution or unresolved/unknown effects');
+    }
+    const attempts = this.attemptsForTask(taskId);
+    for (const attempt of attempts) {
+      if (attempt.outcome?.effectStatus === 'applied' && (attempt.outcome.verification !== 'matched'
+        || !progress.checkpoints.some(value => value.executionId === attempt.executionId
+          && value.evidenceRef === attempt.outcome?.evidenceRef))) {
+        throw new ContractError('recovery has an applied effect without a verified checkpoint');
+      }
+    }
+    // Include lifecycle and outcome history to fence replies if either changes
+    // while the independent read or user presentation is pending.
+    const events = this.taskEventKinds(taskId);
+    const historyDigest = digest(parseJSON(Buffer.from(JSON.stringify({ admission, attempts,
+      checkpoints: progress.checkpoints.map(({ current: _current, ...value }) => value), events }))));
+    return { progress, checkpoint, historyDigest };
+  }
+
   #assertProgressAttempt(attempt: PreparedAttempt): void {
     const progress = this.#progress.get(attempt.taskId);
     if (!progress) return;
@@ -580,7 +773,8 @@ export class AttemptJournal {
     this.#progress.assertCurrent(attempt.taskId, attempt.observationId, true);
   }
 
-  #progressOperation<T>(taskId: string, operation: () => T | TaskProgressExceeded): T {
+  #progressOperation<T>(taskId: string, operation: () => T | TaskProgressExceeded,
+    expectedState: 'active' | 'paused' = 'active'): T {
     assertId(taskId, 'task ID');
     const task = this.#task(taskId);
     if (!task) throw new ContractError('unknown task');
@@ -594,7 +788,7 @@ export class AttemptJournal {
         this.#progress.expire(taskId, value.reason);
       }
       return value;
-    });
+    }, expectedState);
     // Pause and prepared-attempt settlement must commit before surfacing failure.
     if (result instanceof TaskProgressExceeded) throw result;
     return result;
@@ -631,11 +825,12 @@ export class AttemptJournal {
     }
   }
 
-  #assertActive(attempt: Pick<PreparedAttempt, 'taskId' | 'taskEpoch' | 'goalRevision'>): void {
+  #assertActive(attempt: Pick<PreparedAttempt, 'taskId' | 'taskEpoch' | 'goalRevision'>,
+    expectedState: 'active' | 'paused'): void {
     const task = this.#task(attempt.taskId);
-    if (!task || task.state !== 'active' || task.task_epoch !== attempt.taskEpoch
+    if (!task || task.state !== expectedState || task.task_epoch !== attempt.taskEpoch
       || task.goal_revision !== attempt.goalRevision) {
-      throw new ContractError('task revision is not active');
+      throw new ContractError(`task revision is not ${expectedState}`);
     }
   }
 
@@ -645,16 +840,18 @@ export class AttemptJournal {
   }
 
   #budgeted<T>(revision: Pick<PreparedAttempt, 'taskId' | 'taskEpoch' | 'goalRevision'>,
-    newStep: boolean, body: () => T): T {
+    newStep: boolean, body: () => T, expectedState: 'active' | 'paused' = 'active'): T {
     const result = this.#transaction((): { value: T } | { failure: TaskBudgetExceeded } => {
-      this.#assertActive(revision);
+      this.#assertActive(revision, expectedState);
       const row = this.#db.prepare('SELECT * FROM task_budgets WHERE task_id = ?')
         .get(revision.taskId) as BudgetRow | undefined;
       const now = this.#clock();
       const reason: TaskBudget['pauseReason'] = !row ? 'missing'
+        : row.pause_reason ? row.pause_reason
         : !Number.isSafeInteger(now) || now < row.last_checked_ms ? 'clock'
           : now >= row.deadline_ms ? 'time'
-            : newStep && this.#stepsUsed(revision.taskId) >= row.max_steps ? 'steps' : null;
+            : (newStep || expectedState === 'paused')
+              && this.#stepsUsed(revision.taskId) >= row.max_steps ? 'steps' : null;
       if (reason) {
         this.#db.prepare("UPDATE tasks SET state = 'paused' WHERE task_id = ?")
           .run(revision.taskId);

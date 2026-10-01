@@ -61,7 +61,28 @@ test('resume is one intent bound to a paused checkpoint and fresh recovery obser
   const result = ledger.acceptResume(endpoint, bytes(source), source.recoveryObservationId);
   assert.equal(result.checkpointRef, 'checkpoint-1');
   assert.ok(Object.isFrozen(result));
+  assert.throws(() => ledger.claimForRecovery({ ...result }), /not issued/);
+  ledger.claimForRecovery(result);
+  assert.throws(() => ledger.claimForRecovery(result), /claimed/);
   assert.throws(() => ledger.acceptResume(endpoint, bytes(source), source.recoveryObservationId), /unregistered/);
+});
+
+test('another presentation invalidates previously accepted, unclaimed resume intent', () => {
+  const { endpoint, ledger, source } = fixture('resume');
+  const intent = ledger.acceptResume(endpoint, bytes(source), source.recoveryObservationId);
+  ledger.presentClarification({ promptId: 'new-clarification',
+    presentationDigest: source.presentationDigest, observationId: 'new-observation',
+    optionIds: ['one', 'two'] }, 50);
+  assert.throws(() => ledger.claimForRecovery(intent), /invalidated/);
+});
+
+test('claiming accepted resume intent rechecks the monotonic clock', () => {
+  const { endpoint, ledger, source, setTime } = fixture('resume');
+  const intent = ledger.acceptResume(endpoint, bytes(source), source.recoveryObservationId);
+  setTime(99);
+  assert.throws(() => ledger.claimForRecovery(intent), /clock/);
+  setTime(100);
+  assert.throws(() => ledger.claimForRecovery(intent), /closed/);
 });
 
 test('resume refuses changed checkpoint, observation and non-paused presentation', () => {
