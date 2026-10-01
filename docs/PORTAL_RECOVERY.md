@@ -63,9 +63,11 @@ active portal rows, and start refuses any paused or unresolved projection.
 Reconciliation can be rerun after a projection-write interruption and remains
 conservative. A storage/integrity failure may block startup rather than guess.
 
-Remaining work: explicit recovery intent bound to a fresh observation and
-checkpoint, safe classification of unknown effects, correction invalidation,
-sleep/lock handling and a general task actor. A release-authenticated browser
+The journal now supplies [explicit recovery and correction APIs](TASK_RECOVERY.md),
+but this projection and fixed task constructor do not yet use them. Remaining
+work: actor integration with fresh portal predicates and adapter barriers,
+replacement admission, safe classification of unknown effects, sleep/lock
+handling and a general task actor. A release-authenticated browser
 worker and real-app qualification also remain. No inference service, paid GPU,
 owner browser profile, live Mac permission or user-goal resume was involved.
 See [validation](VALIDATION.md) and the [handoff](BUILD_HANDOFF.md).

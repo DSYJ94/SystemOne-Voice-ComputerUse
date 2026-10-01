@@ -29,12 +29,17 @@ setup, live permission recovery and physical multi-monitor use remain pending.
 
 ## Current implementation
 
+- [Explicit host recovery](docs/TASK_RECOVERY.md) now consumes a one-use Resume
+  intent against a fresh, scope-matched checkpoint recheck, preserving deadlines
+  and quotas. Committed corrections cancel old execution authority and retain
+  uncertain effects. Native/browser actor and panel integration remain next;
+  the user's goal remains stopped.
 - [Durable progress](docs/TASK_PROGRESS.md) now expires action facts on fresh
   reads, dispatch, Stop and restart in synthetic native navigation/LOCATE/OPEN
   and the fixed portal workflow.
   Verified checkpoints survive as history; read, decision and equivalent-state
   limits pause the task. [Portal restart reconciliation](docs/PORTAL_RECOVERY.md)
-  projects verified history without replay; explicit recovery remains.
+  projects verified history without replay; recovery into its actor remains.
 - [CLM serving preparation](docs/CLM_DEPLOYMENT_PLAN.md) describes the private
   API and GPU reference experiment; no paid deployment or owner setup is needed yet.
 - [Durable admitted task records](docs/DURABLE_TASK_RECORD.md) now retain the

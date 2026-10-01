@@ -1,18 +1,20 @@
 # Build handoff
 
-Updated 30 September 2026. This is the current implementation handoff, not a
+Updated 1 October 2026. This is the current implementation handoff, not a
 release claim. Read this with [implementation status](IMPLEMENTATION_STATUS.md),
 the [fixture test](FIXTURE_COMPUTER_USE_TEST.md),
 [managed-browser status](MANAGED_BROWSER.md), and the reviewed
 [backlog](specification/BACKLOG.md). Keep this file and the README aligned as
 each implementation slice lands.
 
-## New-chat resume checkpoint — 30 September 2026
+## New-chat resume checkpoint — 1 October 2026
 
 **Cloud source continuation:** use `/workspace/SystemOne-Voice-ComputerUse`,
-branch `codex/portal-checkpoint-reconciliation`, based on #61 at `93259b7`.
-Implementation commit: `7381f03`.
-[Draft PR #62](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/62)
+branch `codex/explicit-task-recovery`, based on #62 at `76e28dc`.
+Implementation commit: `08abcaa`.
+[Draft PR #63](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/63)
+targets `codex/portal-checkpoint-reconciliation` (#62).
+The preceding [draft PR #62](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/62)
 targets `codex/task-checkpoint-recovery` (#61).
 The preceding [draft PR #61](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/61)
 targets `codex/durable-task-contracts` (#60).
@@ -29,8 +31,18 @@ checkpoints and effect history without replay. Restart retains history and
 pauses; only already-committed terminal evidence and completion can restore
 completed history. Legacy/unbound or inconsistent records require review.
 Linux checks and the saved cloud configuration are recorded in `VALIDATION.md`.
-Next, implement explicit recovery intent bound to checkpoints and fresh
-native/browser observations, then correction invalidation and the general actor.
+The journal now provides [explicit host recovery and correction fences](TASK_RECOVERY.md).
+Recovery requires a fresh scoped checkpoint recheck and exact one-use Resume
+intent, retains deadlines/quotas, and expires facts before further execution.
+Restart invalidates recovery reads for already-paused tasks too. Unknown effects
+and applied receipts without checkpoints still block recovery. Corrections cancel
+the old revision without changing its admission or implying undo.
+Latest Linux check: **325 passed, zero failed, two Mac-only skips (327 total)**;
+46 focused recovery/prompt/progress checks passed after final normalization.
+Next, build the persistent native/browser actor around these APIs, including
+workflow-specific recovery predicates, adapter barriers, task slots, portal
+projection, replacement admission and UI/voice intent. The current fixed task
+constructors/controller do not expose Resume. Prove scripted recovery before CLM.
 Keep the goal stopped. Mac signing,
 Accessibility, voice and real-app gates below remain open.
 
@@ -173,7 +185,8 @@ established by the current fixture-only native or browser tests.
   [#59 panel visibility and exact-build permission recovery](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/59),
   [#60 durable admitted task contracts](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/60),
   [#61 native checkpoints and progress limits](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/61),
-  [#62 portal checkpoint reconciliation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/62).
+  [#62 portal checkpoint reconciliation](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/62),
+  [#63 explicit host recovery and correction fences](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/63).
   These are stacked drafts; evaluate or merge in dependency order.
 - The current fix branch is `codex/panel-permission-recovery`, in the idle
   `task-lifecycle` worktree, draft #59, stacked on `codex/durable-task-budgets` (#58).
@@ -369,14 +382,15 @@ deadlines to the shared attempt journal, with a truthful `paused_budget` UI
 status. It also rejects unknown-effect retries while budget remains. The
 scripted portal store enforces outcome-specific stage transitions and one
 advancement at a time. See [task limits](TASK_EXECUTION_LIMITS.md).
-Automated checks pass (255/255 at the latest run) and the native bundle
-compiles; this does not establish new live action coverage.
+The preserved Mac check passed 255/255 and its native bundle compiled; latest
+Linux checks are recorded above. Neither establishes new live action coverage.
 
 The cloud continuation now persists admitted goals for the native and browser
-action paths. Next source priority is the general task actor: reconcile
-intermediate verified checkpoints in that lifecycle, expire current facts after
-re-observation, apply decision/no-progress budgets, and invalidate proposals on
-correction. Replace fixed workflow choices with legal semantic next-action
+action paths, intermediate checkpoints and bounded current facts, and now
+provides shared host recovery/correction APIs. Next source priority is the
+persistent native/browser actor: own recovery predicates, adapter fences,
+pending proposal invalidation and replacement admission in one lifecycle.
+Replace fixed workflow choices with legal semantic next-action
 candidates for native and managed navigation. Prove scripted dispatch, Stop,
 unknown effects and terminal predicates before inserting primary CLM decisions;
 qualify current-profile Chrome and signed delivery before v1. Manual gates stay

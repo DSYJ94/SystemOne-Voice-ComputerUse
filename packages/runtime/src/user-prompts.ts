@@ -64,6 +64,9 @@ export class UserPromptLedger {
   readonly #clock: () => number;
   readonly #seenPrompts = new Set<string>();
   readonly #seenMessages = new Set<string>();
+  readonly #resumes = new WeakMap<object, { deadline: number; generation: number }>();
+  readonly #claimedResumes = new WeakSet<object>();
+  #generation = 0;
   #pending: PendingPrompt | undefined;
   #lastTime = -Infinity;
   #closed = false;
@@ -122,6 +125,25 @@ export class UserPromptLedger {
     return Object.freeze({ ...message });
   }
 
+  /** Exact, short-lived, one-use proof of a reply accepted by this ledger.
+   * Copies and persisted messages are intent history, never recovery authority. */
+  claimForRecovery(intent: ResumeRequest): void {
+    this.#assertOpen();
+    const issued = this.#resumes.get(intent);
+    if (!issued || this.#claimedResumes.has(intent) || issued.generation !== this.#generation) {
+      throw new ContractError('resume intent was not issued by this ledger or was claimed/invalidated');
+    }
+    if (this.#now() >= issued.deadline) throw new ContractError('resume intent expired');
+    this.#claimedResumes.add(intent);
+  }
+
+  /** A changed presentation or interruption invalidates accepted but unused intent. */
+  invalidate(): void {
+    this.#assertOpen();
+    this.#pending = undefined;
+    this.#generation++;
+  }
+
   acceptResume(endpoint: Endpoint, bytes: Uint8Array,
     currentObservationId: string): ResumeRequest {
     const { message, pending } = this.#accept(endpoint, bytes, 'resume', currentObservationId);
@@ -132,7 +154,9 @@ export class UserPromptLedger {
       if (message[key] !== pending.binding[key]) throw new ContractError(`resume binding mismatch: ${key}`);
     }
     this.#consume(message.messageId);
-    return Object.freeze({ ...message });
+    const intent = Object.freeze({ ...message });
+    this.#resumes.set(intent, { deadline: pending.deadline, generation: this.#generation });
+    return intent;
   }
 
   close(): void {
@@ -160,6 +184,7 @@ export class UserPromptLedger {
     }
     const deadline = this.#now() + timeoutMs;
     if (!Number.isFinite(deadline)) throw new ContractError('invalid user prompt deadline');
+    this.#generation++;
     this.#pending = { ...pending, deadline };
     this.#seenPrompts.add(pending.binding.promptId);
   }

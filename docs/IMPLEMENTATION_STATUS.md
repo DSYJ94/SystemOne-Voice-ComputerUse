@@ -1,5 +1,29 @@
 # Implementation status
 
+## Explicit host recovery and correction fences, 1 October 2026
+
+Cloud continuation: `codex/explicit-task-recovery`, based on #62 at `76e28dc`,
+implementation `08abcaa`, [draft #63](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/63)
+stacked on `codex/portal-checkpoint-reconciliation`. The journal now reserves
+bounded paused-state reads, binds fresh checkpoint predicate evidence to an
+exact one-use native-UI Resume intent and reactivates without resetting budgets
+or restoring action facts. Restart fences already-paused reads too. Unknown
+effects, uncheckpointed applied receipts and other active execution block recovery.
+
+Committed next-revision corrections cancel the old task atomically, expire
+pending facts and retain immutable admission, correction provenance and uncertain
+effects. They do not install a replacement goal or imply compensation. See
+[recovery contract](TASK_RECOVERY.md). Native/browser actors, controller/panel
+intent routing, workflow predicates, adapter barriers and replacement admission
+remain the next source slice. B15–B17 and live qualification remain incomplete;
+CLM is not connected to execution.
+
+Linux `npm run check`: **325 passed, zero failed, two Mac-only skips (327 total)**.
+All **46 focused recovery/prompt/progress checks** passed after the final digest
+normalization. Twenty-six added tests cover recovery, replay, expiry, bindings,
+budgets, Stop/restart, uncertain effects, correction and rollback. The owner goal
+remains stopped; no Mac UI, owner Chrome profile, live model or paid deployment ran.
+
 ## Portal checkpoints and conservative reconciliation, 30 September 2026
 
 Cloud continuation: `codex/portal-checkpoint-reconciliation`, based on #61 at
@@ -64,7 +88,7 @@ build/live permission tests remain unrun in this continuation. See
 was created or resumed and no normal AppKit UI or owner browser was launched.
 
 Context refresh checkpoint, 30 September 2026: the canonical
-[new-chat handoff](BUILD_HANDOFF.md#new-chat-resume-checkpoint--30-september-2026)
+[new-chat handoff](BUILD_HANDOFF.md#new-chat-resume-checkpoint--1-october-2026)
 identifies the current #59 checkout, pending owner signing setup, protected
 checkout state and next B15–B17 work. This documentation update adds no new
 implementation or live-test evidence.

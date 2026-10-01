@@ -1,5 +1,35 @@
 # Initial foundation validation
 
+## Explicit recovery intent and correction fences, 1 October 2026
+
+Branch `codex/explicit-task-recovery`, based on #62 at `76e28dc`, implementation
+`08abcaa`, [draft #63](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/63).
+Same Linux/Node 26.5.0 and official Playwright 1.63.0 assets as prior cloud
+records; manifests, locks, fixtures and saved environment settings are unchanged.
+
+- `npm run check`: typecheck passed; **325 passed, zero failed, two skipped,
+  327 total**. Only the existing macOS Chrome-host registration tests skipped.
+- **26 added tests** cover exact one-use intent, fresh reactivation/terminal
+  evidence, already-paused restart, out-of-order reads, scope/predicate/revision
+  bindings, read/prompt expiry, copied/foreign/closed/invalidated intent, durable
+  replay, Stop, global active/unknown blockers, applied receipts without checkpoints,
+  immutable quotas/clock pauses, changed history, transactional SQL failure and
+  correction provenance/cancellation without undo. Recovery tests use synthetic
+  host state and journal attempts, not live AX or portal resumed execution.
+- All **46 focused recovery/prompt/progress tests** and typecheck passed after
+  final normalization of digest inputs to their contracted fields. The existing
+  headless portal, controller-child, synthetic-native and Chrome-extension
+  regressions passed in the full suite.
+- `git diff --check`: passed. Initial typechecks caught a SQLite result cast and
+  one misplaced test assertion; both were corrected before passing runs.
+
+The new host APIs do not wire Resume into the fixed native/browser actors or
+panel, resolve unknown effects, admit replacement goals or replace adapter Stop
+barriers. No native Mac build/live permission check, normal AppKit launch,
+TCC/Keychain change, audio capture, owner-profile browser use, model call, paid
+resource or user-goal resume occurred. Python/native suites were not rerun for
+this TypeScript/documentation slice. See [recovery scope](TASK_RECOVERY.md).
+
 ## Portal reconciliation and shared progress guards, 30 September 2026
 
 Branch `codex/portal-checkpoint-reconciliation`, based on #61 at `93259b7`.

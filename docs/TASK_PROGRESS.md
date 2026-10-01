@@ -3,8 +3,9 @@
 This B15–B17 slice adds opt-in progress tracking to `AttemptJournal` and uses
 it in synthetic native NAVIGATE/LOCATE/OPEN and the fixed portal workflow.
 It preserves verified history
-while expiring the facts that could authorize an action. It does not implement
-a general task actor, correction or resume.
+while expiring the facts that could authorize an action. The journal now also
+supports [explicit host recovery and correction fences](TASK_RECOVERY.md);
+native/browser actor integration remains incomplete.
 
 The host enables tracking before any attempt, binding the scope and completion
 verifier to the stored admission. Development defaults are **90 observations,
@@ -58,8 +59,8 @@ against journal checkpoints before worker startup. It retains historical
 completion only when terminal evidence and completion already committed.
 Single-action native field, managed field/link, existing-Chrome fill and older
 host-gate fixtures retain their existing preparation/deadline guards. The next
-slice must prove explicit recovery decisions with fresh native/browser
-observations and invalidate pending steps on correction.
+slice must connect the new recovery/correction APIs to native/browser actors,
+fresh workflow predicates, adapter Stop barriers and replacement admission.
 No automatic resume or paid inference deployment is introduced here. Hung
 reads still need adapter timeouts and Stop barriers; quotas bound starts of
 reads rather than interrupting an outstanding OS call.

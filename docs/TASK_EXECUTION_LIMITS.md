@@ -30,8 +30,10 @@ The persisted wall-clock deadline is checked against a saved high-water time.
 A backwards or invalid clock causes a conservative pause; a forward clock
 adjustment may expire a task early. The production host must still address
 sleep/lock notifications and workflow-specific time policy. Old task rows
-without a budget fail closed; restart recovery still pauses old active tasks,
-and this slice does not introduce a resume path.
+without a budget fail closed; restart recovery still pauses old active tasks.
+[Explicit host recovery](TASK_RECOVERY.md) now preserves the original deadline,
+preparation and progress quotas and refuses sticky budget pauses. It does not
+yet expose Resume through the native/browser actor or panel.
 
 These checks run at journal transitions. They do **not** interrupt a hung
 observation, stop an already dispatched effect at the exact deadline, or undo
@@ -54,8 +56,8 @@ The shared journal now retains [admitted task records](DURABLE_TASK_RECORD.md)
 for native and browser action paths and commits structured terminal evidence
 with completion. Synthetic native tasks now retain intermediate verified
 checkpoints and expire current facts. The portal now tracks the same facts and
-quotas and [reconciles historical checkpoints](PORTAL_RECOVERY.md). Goal correction,
-safe explicit resume, general navigation
-and CLM decisions remain unfinished.
+quotas and [reconciles historical checkpoints](PORTAL_RECOVERY.md). Correction
+and explicit recovery now have shared journal fences; their actor integration,
+replacement admission, general navigation and CLM decisions remain unfinished.
 See [build handoff](BUILD_HANDOFF.md) for the next implementation slice and
 [validation](VALIDATION.md) for source evidence versus manual evidence.
