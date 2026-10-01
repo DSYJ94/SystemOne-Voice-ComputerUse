@@ -3,6 +3,8 @@
 ## Native fixture recovery controller and panel, 1 October 2026
 
 `codex/native-controller-recovery`, based on #68 at `d0482bc`.
+Implementation `582b959`, [draft PR #69](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/69),
+targeting `codex/native-controller-actor` (#68).
 The [recovery integration](NATIVE_CONTROLLER_RECOVERY.md) adds explicit
 Check recovery / Resume for the retained same-process fixture actor. The host
 rechecks scoped checkpoint state, and accepts a session/presentation/checkpoint/

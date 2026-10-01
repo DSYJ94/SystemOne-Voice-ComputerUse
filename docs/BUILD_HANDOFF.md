@@ -10,7 +10,9 @@ each implementation slice lands.
 ## New-chat resume checkpoint — 1 October 2026
 
 **Current continuation:** branch `codex/native-controller-recovery`, based on
-`codex/native-controller-actor` (#68) at `d0482bc`. Native fixture recovery now
+`codex/native-controller-actor` (#68) at `d0482bc`. Implementation `582b959`,
+[draft PR #69](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/69)
+targets `codex/native-controller-actor` (#68). Native fixture recovery now
 has private controller requests and a developer-panel Check recovery / Resume
 sheet. Fresh scoped checkpoint reads and a visible-presentation acknowledgment
 precede exact one-use Resume intent; deadlines and quotas stay unchanged.
