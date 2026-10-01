@@ -40,3 +40,6 @@ before distribution. No weights downloaded, inference run or runtime selected.
 Qualify safe loading, immutable artifacts and full serialization/token budgeting
 in B01/B02. Keep alternatives behind a separately qualified DecisionProvider; no
 provider substitution or external fallback is authorized by this manifest.
+The [artifact preflight](CLM_ARTIFACT_PREFLIGHT.md) validates these declarations
+and hashes already-present files without loading a checkpoint. Its pending
+manifest is not an artifact lock and does not establish qualified inference.

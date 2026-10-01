@@ -10,8 +10,11 @@ each implementation slice lands.
 ## New-chat resume checkpoint — 1 October 2026
 
 **Cloud source continuation:** use `/workspace/SystemOne-Voice-ComputerUse`,
-branch `codex/clm-decision-boundary`, based on #64 at `e64f59b`.
-Implementation commit: `40eb6cb`.
+branch `codex/clm-artifact-preflight`, based on #65 at `3da29cb`.
+Implementation commit: `c984914`.
+[Draft PR #66](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/66)
+targets `codex/clm-decision-boundary` (#65).
+The preceding decision implementation is `40eb6cb`.
 [Draft PR #65](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/65)
 targets `codex/persistent-scripted-actor` (#64).
 The preceding actor implementation is `cdc641c`.
@@ -51,12 +54,17 @@ candidate/provider/calibration-bound proposals from approved semantic choices.
 An opt-in native fixture selector tests synthetic closed-loop execution through
 existing dispatch and verifiers; cancellation and invalid proposals cannot
 prepare effects. No real CLM or owner-app model configuration has run.
-Latest Linux check: **355 passed, zero failed, two Mac-only skips (357 total)**.
+An [offline artifact preflight](CLM_ARTIFACT_PREFLIGHT.md) now requires immutable
+encoder/head/container/server declarations, safe serving settings and exact local
+file hashes without loading tensors. Its pending manifest deliberately fails;
+encoder/tokenizer pins, actual artifact bytes, owned server/container and license
+review remain unresolved. Preflight is not runtime attestation or qualification.
+Latest Linux check: **363 passed, zero failed, two Mac-only skips (365 total)**.
 The owner requested continued work toward v1; [readiness](V1_READINESS.md) tracks
 unfinished general execution, replacement admission, native/controller/panel
 recovery, existing-profile Chrome, model calibration, Mac and release gates.
-Continue with artifact preflight, reproducible serving preparation and qualified
-controller integration. The current cloud network returns 403 for Hugging Face
+Continue with release preparation, reproducible serving and qualified controller
+integration. The current cloud network returns 403 for Hugging Face
 metadata and has no owned endpoint/provider credentials. Synthetic proposal
 evidence does not establish live model or Mac gates.
 Keep the goal stopped. Mac signing,

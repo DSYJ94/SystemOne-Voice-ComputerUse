@@ -48,6 +48,9 @@ container/launch configuration covering these requirements:
    hash recorded in [dependencies](DEPENDENCIES.md); review exact artifact
    licenses and safe checkpoint loading. No immutable encoder/tokenizer pin or
    downloaded artifact verification has been completed yet.
+   The [offline preflight](CLM_ARTIFACT_PREFLIGHT.md) now validates completed
+   immutable declarations and exact local bytes without loading tensors. Its
+   committed pending manifest deliberately fails until missing pins are resolved.
 2. Reproduce the reference embedding and head computation, including the
    2048-token per-text budget, normalization and cache identity. The upstream
    embedder silently truncates; the owned deployment must reject overflow
