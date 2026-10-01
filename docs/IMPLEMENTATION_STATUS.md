@@ -2,7 +2,8 @@
 
 ## Offline CLM artifact and serving preflight, 1 October 2026
 
-`codex/clm-artifact-preflight`, based on #65 at `3da29cb`. The
+`codex/clm-artifact-preflight`, based on #65 at `3da29cb`, implementation
+`c984914`, [draft #66](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/66). The
 [preflight](CLM_ARTIFACT_PREFLIGHT.md) validates immutable declarations and safe
 baseline serving settings, then streams exact local SHA-256/byte checks without
 checkpoint deserialization or network access. Missing/changed files, traversal,

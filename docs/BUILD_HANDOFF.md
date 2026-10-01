@@ -11,6 +11,9 @@ each implementation slice lands.
 
 **Cloud source continuation:** use `/workspace/SystemOne-Voice-ComputerUse`,
 branch `codex/clm-artifact-preflight`, based on #65 at `3da29cb`.
+Implementation commit: `c984914`.
+[Draft PR #66](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/66)
+targets `codex/clm-decision-boundary` (#65).
 The preceding decision implementation is `40eb6cb`.
 [Draft PR #65](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/65)
 targets `codex/persistent-scripted-actor` (#64).

@@ -2,7 +2,8 @@
 
 ## Offline CLM artifact preflight, 1 October 2026
 
-`codex/clm-artifact-preflight`, based on #65 at `3da29cb`.
+`codex/clm-artifact-preflight`, based on #65 at `3da29cb`, implementation
+`c984914`, [draft #66](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/66).
 Same Linux/pinned Node/Playwright toolchain as preceding records.
 
 - `npm run check`: typecheck passed; **363 passed, zero failed, two Mac-only
