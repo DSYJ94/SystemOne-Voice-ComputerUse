@@ -1,0 +1,44 @@
+{
+  "node": {
+    "version": "26.5.0",
+    "platform": "darwin-arm64",
+    "source": "https://nodejs.org/dist/v26.5.0/node-v26.5.0-darwin-arm64.tar.xz",
+    "sha256": "48231d6204eca6be13e6c5184dfdffa1d64ad88880364cc2cfb198f872cb2b13",
+    "evidence": "docs/BUNDLED_DEV_RUNTIME.md",
+    "license": "Node LICENSE includes bundled third-party notices; inventory not yet expanded to those components",
+    "scope": "bundled-runtime",
+    "reviewStatus": "pending-authenticated-checksum-provenance-native-component-sbom-and-release-signing",
+    "sqlite": "node:sqlite bundled with Node; native worker also uses macOS SQLite3"
+  },
+  "browsers": {
+    "playwrightVersion": "1.63.0",
+    "names": ["chromium", "chromium-headless-shell"],
+    "revision": "1243",
+    "browserVersion": "153.0.8010.12",
+    "platform": "darwin-arm64",
+    "source": "node_modules/playwright-core/browsers.json from locked npm package",
+    "artifactSha256": null,
+    "scope": "bundled-runtime",
+    "reviewStatus": "pending-browser-byte-hashes-redistribution-notices-and-security-update-policy",
+    "exclusions": "Firefox, WebKit, ffmpeg, winldd and Android are not copied by the current bundle script"
+  },
+  "macos": {
+    "toolchainEvidence": "Swift 6.4 reported in docs/DEPENDENCIES.md; exact release Xcode/SDK and OS matrix pending",
+    "components": ["AppKit", "ApplicationServices", "AVFoundation", "Carbon", "CoreFoundation", "CryptoKit", "Darwin", "Foundation", "Security", "Speech", "SQLite3", "libbsm"],
+    "scope": "system-platform-not-redistributed",
+    "speechAssets": "OS-managed on-device Speech assets; offline availability and hardware/language coverage unqualified",
+    "reviewStatus": "pending-sdk-build-pins-minimum-os-and-clean-mac-qualification"
+  },
+  "chromeBridge": {
+    "source": "extensions/chrome and packages/chrome-native-host plus AppKit listener",
+    "license": "repository MIT source",
+    "scope": "mandatory-release-component-not-yet-bundled",
+    "browser": "User-installed Google Chrome, existing current profile; not redistributed by this project",
+    "reviewStatus": "pending-host-bundling-authenticated-peer-policy-extension-delivery-and-owner-profile-qualification"
+  },
+  "optionalModes": {
+    "status": "not-enabled-or-shipped",
+    "components": ["local CLM", "Laya", "Jev", "OCR/VLM", "training datasets and projection-head training"],
+    "reviewStatus": "separate-pins-licenses-privacy-and-qualification-required-if-enabled"
+  }
+}

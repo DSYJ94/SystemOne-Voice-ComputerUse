@@ -19,7 +19,7 @@ until their actual acceptance evidence exists.
 | Native Mac execution | Previous fixture action and build evidence | Stable signing/TCC attribution, physical AX actions, permission revocation/rebuild, focus/Spaces/multi-monitor, actual supported applications |
 | Existing Chrome | Isolated extension/native-host fixture checks | Owner-profile tabs/data continuity, authentication/grants, Stop, routing and live qualification |
 | Privacy and authority | Strict protocol/digests, default-denied effects, pre-I/O provider checks | Release peer identities, enabled-mode disclosure/egress evidence, transfers, retention and logging review |
-| Release packaging | Development build scripts and bundled runtime experiments | Developer ID/notarization, SBOM/license notices, clean-Mac install without Node/Python/Xcode, update/rollback and compatibility matrix |
+| Release packaging | Development build scripts, bundled runtime experiments and a validated pending source dependency inventory | Developer ID/notarization, artifact SBOM/license notices, clean-Mac install without Node/Python/Xcode, update/rollback and compatibility matrix |
 | Acceptance corpus | Focused synthetic/headless regressions | Fixed 300-run native/browser/hybrid corpus plus 100 failure scenarios; published latency, success, Stop and resource metrics |
 
 Source work can proceed in Linux, but Linux cannot qualify macOS Accessibility,

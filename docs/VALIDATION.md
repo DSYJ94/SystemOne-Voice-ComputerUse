@@ -1,5 +1,40 @@
 # Initial foundation validation
 
+## Pending release dependency inventory, 1 October 2026
+
+`codex/release-dependency-inventory`, based on #66 at `3b6c6a8`.
+Reconstructed from committed manifests, lockfiles and bundle declarations;
+no pending worktree/stash/unreachable implementation or remote branch was found.
+
+- Official Linux Node 26.5.0 was downloaded and checked against its official
+  SHA-256 list. Frozen `npm ci --ignore-scripts --cache
+  /tmp/systemone-npm-cache --no-audit --no-fund` installed 13 packages without
+  changing dependency pins or the lockfile. The initial installation failed
+  because the default cache path was unavailable; using `/tmp` fixed it with
+  integrity and TLS verification preserved.
+- `npm run inventory:write` and `npm run test:release-inventory`: inventory
+  consistency passed; **6/6 focused tests passed**. Repeat generation is byte
+  stable. Changed output, manifest/lock disagreement, missing integrity/license,
+  unpinned Python, changed Node checksum and changed browser revision fail.
+- `npm run typecheck` and `git diff --check`: passed.
+- Broader `npm run check`: typecheck passed; **338 passed, 25 failed, two
+  Mac-only skips (365 total)**. Browser cases lacked pinned Chromium/headless
+  executables; dependent controller cases then timed out waiting for browser
+  status. No full-suite pass is claimed for this environment. The prior #66
+  result remains historical evidence, not a result of this run.
+- Installing official Playwright revision 1243 was blocked by HTTP 403
+  `Domain forbidden` at `cdn.playwright.dev`. GitHub API reads also return 403,
+  blocking draft PR creation. A saved environment network draft adds
+  `api.github.com`, `cdn.playwright.dev`, `storage.googleapis.com` and
+  `playwright.download.prss.microsoft.com`, preserving the package-manager
+  preset. Saving the draft has not applied it to the current runtime.
+
+The [source inventory](RELEASE_DEPENDENCY_INVENTORY.md) is pending release review,
+not a distributable SBOM or new artifact/license clearance. No Mac app, model,
+GPU, microphone, TCC/Keychain, owner Chrome profile or owner-goal resume ran.
+The publication body and exact draft command are retained in
+[draft PR material](release/DRAFT_PR.md) for continuation after network review.
+
 ## Offline CLM artifact preflight, 1 October 2026
 
 `codex/clm-artifact-preflight`, based on #65 at `3da29cb`, implementation

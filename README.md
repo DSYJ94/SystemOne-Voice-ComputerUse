@@ -29,6 +29,10 @@ setup, live permission recovery and physical multi-monitor use remain pending.
 
 ## Current implementation
 
+- A [pending release dependency inventory](docs/RELEASE_DEPENDENCY_INVENTORY.md)
+  records locked runtime/build/test packages and non-npm release gaps, with
+  repeatable generation and drift checks. Artifact SBOM and license clearance
+  remain open.
 - A [CLM decision boundary](docs/CLM_DECISION_BOUNDARY.md) now validates approved
   semantic choices, host confidence thresholds and bounded owned-API replies.
   Synthetic native tasks exercise proposals through existing dispatch/verifiers;

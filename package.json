@@ -35,7 +35,10 @@
     "test:accessibility-recovery": "zsh scripts/check-accessibility-recovery.sh",
     "try:local": "zsh scripts/try-local.sh",
     "run:portal-fixture": "node scripts/run-portal-fixture.ts",
-    "fixtures": "node scripts/export-fixtures.ts"
+    "fixtures": "node scripts/export-fixtures.ts",
+    "inventory:write": "node scripts/release-dependency-inventory.mjs --write",
+    "inventory:check": "node scripts/release-dependency-inventory.mjs --check",
+    "test:release-inventory": "npm run inventory:check && node --test scripts/test-release-dependency-inventory.mjs"
   },
   "dependencies": {
     "ajv": "8.20.0",

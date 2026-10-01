@@ -1,5 +1,18 @@
 # Implementation status
 
+## Pending release dependency inventory, 1 October 2026
+
+`codex/release-dependency-inventory`, stacked on #66 at `3b6c6a8`.
+The [source inventory](RELEASE_DEPENDENCY_INVENTORY.md) reconstructs the pending
+release record with 32 npm packages (nine runtime), 19 Python test pins and
+non-npm Node/browser/platform/Chrome/model declarations. Repeatable generation
+records source hashes; consistency checks reject stale output, missing npm
+integrity/licenses and manifest, Node or browser metadata drift. Six focused
+checks pass. Full-text notices, actual release artifact SBOM and qualification
+remain open; B01/B27 and G1–G6 are not complete. See current validation evidence
+for environment-dependent browser failures and PR publication status.
+The owner goal remains stopped.
+
 ## Offline CLM artifact and serving preflight, 1 October 2026
 
 `codex/clm-artifact-preflight`, based on #65 at `3da29cb`, implementation
