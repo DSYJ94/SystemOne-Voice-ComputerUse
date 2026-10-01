@@ -15,7 +15,7 @@ import { parseScopedManagedFill } from './scoped-native-command.ts';
 import { AttemptJournal } from './attempt-journal.ts';
 import { TaskAdmissionRegistry } from './task-authority.ts';
 import { NativeFillAuthority } from './native-fill-authority.ts';
-import { NativePressAuthority } from './native-press-authority.ts';
+import { NativeFixtureAuthority } from './native-fixture-authority.ts';
 import { NativeFieldPipeWorker } from './native-field-pipe-worker.ts';
 import { ChromeReadSession } from './chrome-read-session.ts';
 import { ChromeFillAuthority } from './chrome-fill-authority.ts';
@@ -122,7 +122,7 @@ type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
   | 'observing_native_open' | 'verified_native_open'
   | 'observing_chrome' | 'verified_chrome_dom_fill' | 'verified_navigation'
   | 'portal_located' | 'portal_opened' | 'portal_downloaded'
-  | 'verified_portal_download' | 'portal_paused';
+  | 'verified_portal_download' | 'portal_paused' | 'native_paused';
 
 function isRecord(value: JSONValue): value is Record<string, JSONValue> {
   return value !== null && !Array.isArray(value) && typeof value === 'object';
@@ -291,7 +291,7 @@ interface ActiveTask {
 
 interface NativeActiveTask {
   readonly requestId: string;
-  readonly authority: NativeFillAuthority | NativePressAuthority;
+  readonly authority: NativeFillAuthority | NativeFixtureAuthority;
   done: Promise<void>;
 }
 
@@ -318,7 +318,7 @@ export class NativeManagedController {
   readonly #headless: boolean;
   readonly #nativeWorker: NativeFieldPipeWorker | undefined;
   readonly #nativeAuthority: NativeFillAuthority | undefined;
-  readonly #pressAuthority: NativePressAuthority | undefined;
+  readonly #pressAuthority: NativeFixtureAuthority | undefined;
   readonly #chromeOutput: ((value: Record<string, JSONValue>) => void) | undefined;
   readonly #chromeSessions = new Map<string, ChromeReadSession>();
   readonly #chromeAuthorities = new Map<string, ChromeFillAuthority>();
@@ -346,28 +346,30 @@ export class NativeManagedController {
     this.#nativeAuthority = nativeWorker
       ? new NativeFillAuthority(journal, nativeWorker) : undefined;
     this.#pressAuthority = nativeWorker
-      ? new NativePressAuthority(journal, nativeWorker) : undefined;
+      ? new NativeFixtureAuthority(journal, nativeWorker) : undefined;
     journal.recoverAfterRestart();
     portalStore?.recoverAfterRestart();
   }
 
   startupPhase(): Phase {
-    return this.#journal.unresolvedAttempts().length
+    return this.#journal.unresolvedAttempts().length || this.#journal.pendingTaskIds().length
       || this.#portalStore?.hasBlockingTask() ? 'blocked_recovery' : 'ready';
   }
 
   #adapterSettled(run: ControllerRun,
-    authority: NativeFillAuthority | NativePressAuthority | ChromeFillAuthority): void {
+    authority: NativeFillAuthority | NativeFixtureAuthority | ChromeFillAuthority): void {
     if (this.#runs.release(run)) this.#send(run.requestId,
       this.#workerFenceFailed || authority.needsRecovery
-        || this.#journal.unresolvedAttempts().length ? 'blocked_recovery' : 'ready');
+        || this.#journal.unresolvedAttempts().length || this.#journal.pendingTaskIds().length
+        ? 'blocked_recovery' : 'ready');
   }
 
   #adapterStopFinished(run: ControllerRun,
-    authority: NativeFillAuthority | NativePressAuthority | ChromeFillAuthority): void {
+    authority: NativeFillAuthority | NativeFixtureAuthority | ChromeFillAuthority): void {
     if (this.#runs.finishStop(run)) this.#send(run.requestId,
       this.#workerFenceFailed || authority.needsRecovery
-        || this.#journal.unresolvedAttempts().length ? 'blocked_recovery' : 'ready');
+        || this.#journal.unresolvedAttempts().length || this.#journal.pendingTaskIds().length
+        ? 'blocked_recovery' : 'ready');
   }
 
   receive(line: Uint8Array): void {
@@ -399,7 +401,7 @@ export class NativeManagedController {
     if (this.#workerFenceFailed || this.#nativeAuthority?.needsRecovery
       || this.#pressAuthority?.needsRecovery
       || [...this.#chromeAuthorities.values()].some(x => x.needsRecovery)
-      || this.#journal.unresolvedAttempts().length
+      || this.#journal.unresolvedAttempts().length || this.#journal.pendingTaskIds().length
       || this.#portalStore?.hasBlockingTask()) {
       this.#send(request.requestId, 'blocked_recovery');
       return;
@@ -445,6 +447,7 @@ export class NativeManagedController {
           ? authority.startLocate(request) : authority.start(request)).then(result => {
         const phase: Phase = result === 'verified_navigation'
           ? 'verified_native_navigation'
+          : result === 'paused' ? 'native_paused'
           : result === 'verified_locate' ? 'verified_native_locate'
             : result === 'verified_open' ? 'verified_native_open'
           : result === 'already_matched' ? 'already_matched'
@@ -514,6 +517,7 @@ export class NativeManagedController {
       await run.task.done.catch(() => {});
     }
     this.#nativeWorker?.close();
+    await this.#pressAuthority?.settleBeforeClose();
     const active = run?.surface === 'managed' ? run.task : undefined;
     if (active) {
       active.cancelled = true;
@@ -864,6 +868,20 @@ export class NativeManagedController {
 
   async #stop(request: Stop): Promise<void> {
     const run = this.#runs.active;
+    // A paused actor has settled its run and released the dispatch slot, but
+    // remains the durable owner. Explicit Stop must fence that exact task too.
+    if (!run && this.#pressAuthority?.taskId === request.targetRequestId
+      && this.#journal.getTaskState(request.targetRequestId) === 'paused') {
+      this.#send(request.requestId, 'stopping');
+      const authority = this.#pressAuthority;
+      const result = await authority.stop().catch(() => ({ workerFenced: false }));
+      if (!result.workerFenced) this.#workerFenceFailed = true;
+      this.#send(request.requestId, result.workerFenced && !authority.needsRecovery ? 'stopped' : 'uncertain');
+      if (!authority.needsRecovery && !this.#journal.pendingTaskIds().length) {
+        this.#send(request.targetRequestId, 'ready');
+      }
+      return;
+    }
     const chromeActive = run?.surface === 'chrome' ? run.task : undefined;
     if (chromeActive?.requestId === request.targetRequestId) {
       if (!this.#runs.beginStop(run!)) {

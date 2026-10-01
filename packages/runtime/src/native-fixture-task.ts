@@ -40,18 +40,20 @@ export class NativeFixtureTask {
   #advancing = false;
   #recovering = false;
   #generation = 0;
+  #initialObservation: NativePressObservation | undefined;
 
   static start(journal: AttemptJournal, worker: NativePressWorker,
     registry: TaskAdmissionRegistry, admission: TaskAdmission, limits?: TaskProgressLimits,
-    decision?: NativeFixtureDecision): NativeFixtureTask {
+    decision?: NativeFixtureDecision, initialObservation?: NativePressObservation): NativeFixtureTask {
     validateAdmission(admission);
     journal.startAdmittedTask(registry, admission);
     try { journal.enableTaskProgress(admission.taskId, admission.scopeRef, admission.completionVerifierRef, limits); }
     catch (error) { journal.pauseTask(admission.taskId, 'native_progress_failed'); throw error; }
-    return new NativeFixtureTask(journal, worker, admission.taskId, decision);
+    return new NativeFixtureTask(journal, worker, admission.taskId, decision, initialObservation);
   }
 
-  constructor(journal: AttemptJournal, worker: NativePressWorker, taskId: string, decision?: NativeFixtureDecision) {
+  constructor(journal: AttemptJournal, worker: NativePressWorker, taskId: string,
+    decision?: NativeFixtureDecision, initialObservation?: NativePressObservation) {
     const record = journal.getTaskRecord(taskId);
     if (!record?.admission || !record.progress || !['active', 'paused'].includes(record.state)) {
       throw new ContractError('native actor requires admitted tracked history');
@@ -59,11 +61,18 @@ export class NativeFixtureTask {
     validateAdmission(record.admission);
     this.taskId = taskId; this.#journal = journal; this.#worker = worker;
     this.#decision = decision;
+    if (initialObservation) {
+      this.#validateObservation(initialObservation, record.admission.scopeRef);
+      this.#initialObservation = Object.freeze({ ...initialObservation,
+        controls: Object.freeze(initialObservation.controls.map(c => Object.freeze({ ...c }))),
+        windowTitles: Object.freeze([...initialObservation.windowTitles]) });
+    }
     this.#terminalTitle = record.admission.outcomeKind === 'NAVIGATE' ? DOCUMENTS
       : record.admission.outcomeKind === 'LOCATE' ? LOCATED : OPENED;
   }
 
   pause(reasonRef: string): { readonly workerFenced: boolean } {
+    this.#initialObservation = undefined;
     this.#generation++; this.#abort.abort();
     if (['active', 'paused'].includes(this.#journal.getTaskState(this.taskId) ?? '')) {
       this.#journal.pauseTask(this.taskId, reasonRef);
@@ -72,6 +81,7 @@ export class NativeFixtureTask {
   }
 
   async stop(): Promise<{ readonly workerFenced: boolean }> {
+    this.#initialObservation = undefined;
     this.#generation++; this.#abort.abort();
     if (['active', 'paused'].includes(this.#journal.getTaskState(this.taskId) ?? '')) {
       this.#journal.cancelTask(this.taskId);
@@ -128,7 +138,9 @@ export class NativeFixtureTask {
     let executionId: string | undefined;
     try {
       const ticket = this.#journal.reserveTaskObservation(this.taskId);
-      const observed = await this.#worker.observePress({ taskId: this.taskId, bundleId: BUNDLE,
+      const initial = this.#initialObservation;
+      this.#initialObservation = undefined;
+      const observed = initial ?? await this.#worker.observePress({ taskId: this.taskId, bundleId: BUNDLE,
         signal: this.#abort.signal });
       this.#active(generation); this.#validateObservation(observed, admission.scopeRef);
       this.#journal.recordTaskObservation(this.taskId, ticket, { observationId: observed.observationId,
