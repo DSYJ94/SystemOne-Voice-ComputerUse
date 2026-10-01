@@ -11,6 +11,8 @@ each implementation slice lands.
 
 **Release inventory continuation:** branch `codex/release-dependency-inventory`,
 stacked on `codex/clm-artifact-preflight` (#66) at `3b6c6a8`.
+Implementation commit `1673db7` is pushed and verified on the remote. The draft
+PR was not created: `gh pr create --draft` returned 403 at the GitHub GraphQL API.
 The pending [release dependency inventory](RELEASE_DEPENDENCY_INVENTORY.md) was
 reconstructed from committed source; no recoverable pending files or inventory
 branch existed in this cloud snapshot. It contains 32 locked npm records (nine

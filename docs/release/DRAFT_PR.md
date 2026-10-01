@@ -7,6 +7,8 @@ Title: `Add pending release dependency inventory and drift validation`
 Publication is pending because this runtime denies GitHub API requests with
 HTTP 403. The environment draft includes the required network additions for
 user review. Native HTTPS Git access works; a pushed branch alone is not a PR.
+Implementation commit `1673db7` was pushed and verified on the remote. The actual
+draft creation attempt failed at `https://api.github.com/graphql` with 403.
 After applying the network settings, check API access and reuse the existing
 injected GitHub authentication. Do not create a duplicate PR if one exists.
 

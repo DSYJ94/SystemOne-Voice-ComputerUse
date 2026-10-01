@@ -3,6 +3,9 @@
 ## Pending release dependency inventory, 1 October 2026
 
 `codex/release-dependency-inventory`, based on #66 at `3b6c6a8`.
+Implementation `1673db7` is pushed and its remote hash verified. Actual
+`gh pr create --draft` returned `Post https://api.github.com/graphql: Forbidden`;
+no draft PR exists from this attempt.
 Reconstructed from committed manifests, lockfiles and bundle declarations;
 no pending worktree/stash/unreachable implementation or remote branch was found.
 

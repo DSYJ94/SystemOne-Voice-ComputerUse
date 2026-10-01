@@ -3,6 +3,8 @@
 ## Pending release dependency inventory, 1 October 2026
 
 `codex/release-dependency-inventory`, stacked on #66 at `3b6c6a8`.
+Implementation `1673db7` is pushed; draft PR creation is blocked by GitHub API
+403. The committed PR material preserves its intended base/title/body.
 The [source inventory](RELEASE_DEPENDENCY_INVENTORY.md) reconstructs the pending
 release record with 32 npm packages (nine runtime), 19 Python test pins and
 non-npm Node/browser/platform/Chrome/model declarations. Repeatable generation
