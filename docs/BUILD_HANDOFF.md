@@ -10,7 +10,9 @@ each implementation slice lands.
 ## New-chat resume checkpoint — 1 October 2026
 
 **Latest continuation:** branch `codex/clm-serving-boundary`, based on
-`codex/native-field-actor` (#71) at `7727da0`. The
+`codex/native-field-actor` (#71) at `7727da0`. Implementation `7158cb4`,
+[draft PR #72](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/72)
+targets `codex/native-field-actor`. The
 [owned CLM serving boundary](CLM_SERVING_BOUNDARY.md) now enforces authentication,
 exact bounded requests, overflow rejection before ranking, redacted validated
 replies and outstanding backend ownership. Production startup verifies local
