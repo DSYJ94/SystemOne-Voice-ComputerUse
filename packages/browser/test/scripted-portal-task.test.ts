@@ -19,9 +19,147 @@ import { CommittedInputSession } from '../../runtime/src/committed-input.ts';
 import { bindEndpoint } from '../../protocol/src/session.ts';
 import { schema } from '../../protocol/src/contract.ts';
 import { digest } from '../../protocol/src/json.ts';
+import { PersistentTaskActor } from '../../runtime/src/persistent-task-actor.ts';
+import { UserPromptLedger } from '../../runtime/src/user-prompts.ts';
+import type { TaskRecoveryBinding } from '../../runtime/src/task-recovery.ts';
 import type { ScriptedPortalContract, ScriptedPortalRecord } from '../src/scripted-portal-task.ts';
 
 const admissions = new WeakMap<object, TaskAdmission>();
+
+function resumePrompt(binding: TaskRecoveryBinding) {
+  const endpoint = bindEndpoint(['clarification_reply', 'resume_request']);
+  const message = { ...schema.examples.find((x: any) => x.type === 'resume_request'),
+    taskId: binding.taskId, taskEpoch: binding.taskEpoch, goalRevision: binding.goalRevision,
+    checkpointRef: binding.checkpointRef, checkpointDigest: binding.checkpointDigest,
+    recoveryObservationId: binding.recoveryObservationId, messageId: `resume-${binding.recoveryObservationId}`,
+    promptId: `prompt-${binding.recoveryObservationId}` };
+  const ledger = new UserPromptLedger(endpoint, binding, message.actorRef, message.uiSessionRef, Date.now);
+  ledger.presentResume({ ...binding, promptId: message.promptId,
+    presentationDigest: message.presentationDigest }, 10_000);
+  return { ledger, intent: ledger.acceptResume(endpoint, Buffer.from(JSON.stringify(message)),
+    binding.recoveryObservationId) };
+}
+
+test('persistent actor pauses at verified results and resumes OPEN without repeating search', async t => {
+  const h = scriptedHarness(t);
+  const actor = new PersistentTaskActor(h.journal, h.task);
+  const before = h.journal.getTaskBudget(h.record.taskId)!;
+  assert.equal((await actor.run(() => { actor.pause(); })).state, 'paused');
+  assert.equal(h.state.searches, 1); assert.equal(h.state.opens, 0);
+  assert.equal(h.store.get(h.record.taskId)?.stage, 'located');
+  const p = resumePrompt(await actor.prepareRecovery());
+  actor.bindPrompt(p.ledger); actor.resume(p.ledger, p.intent);
+  assert.equal((await actor.run()).state, 'completed');
+  assert.equal(h.state.searches, 1); assert.equal(h.state.opens, 1);
+  assert.equal(h.journal.getTaskBudget(h.record.taskId)?.deadlineMillis, before.deadlineMillis);
+  assert.deepEqual(h.journal.getTaskProgress(h.record.taskId)?.checkpoints.map(x => x.stageRef),
+    ['located', 'opened']);
+});
+
+test('restarted portal attachment requires one-use recovery activation instead of stored admission', async t => {
+  const h = scriptedHarness(t);
+  await h.task.advance();
+  h.journal.recoverAfterRestart(); h.store.recoverAfterRestart();
+  const p = resumePrompt(await h.task.prepareRecovery());
+  const activated = h.store.resume(p.ledger, p.intent);
+  assert.throws(() => new ScriptedPortalTask(h.store, h.journal, h.fake,
+    activated.admission, { ...activated.record }), /not issued/);
+  const attached = new ScriptedPortalTask(h.store, h.journal, h.fake,
+    activated.admission, activated.record);
+  const actor = new PersistentTaskActor(h.journal, attached);
+  assert.equal((await actor.run()).state, 'completed');
+  assert.equal(h.state.searches, 1); assert.equal(h.state.opens, 1);
+  assert.throws(() => new ScriptedPortalTask(h.store, h.journal, h.fake,
+    activated.admission, activated.record), /state|claimed/);
+});
+
+test('changed portal account and stale UI state cannot authorize recovery effects', async t => {
+  const h = scriptedHarness(t);
+  const actor = new PersistentTaskActor(h.journal, h.task);
+  await actor.run(() => { actor.pause(); });
+  h.state.current = { ...h.results, rows: [{ ...h.results.rows[0]!, account: 'Another account' }] };
+  await assert.rejects(actor.prepareRecovery(), /not currently verified/);
+  assert.equal(h.state.opens, 0);
+  h.state.current = h.results;
+  const p = resumePrompt(await actor.prepareRecovery());
+  actor.bindPrompt(p.ledger);
+  await actor.stop();
+  assert.throws(() => actor.resume(p.ledger, p.intent), /no current prompt/);
+  assert.equal(h.journal.getTaskState(h.record.taskId), 'cancelled');
+  assert.equal(h.state.opens, 0);
+});
+
+test('projection failure during recovery consumes intent conservatively and leaves task paused', async t => {
+  const h = scriptedHarness(t);
+  await h.task.advance(); h.task.pause();
+  const p = resumePrompt(await h.task.prepareRecovery());
+  const other = new DatabaseSync(join(h.root, 'tasks.sqlite'));
+  try {
+    other.exec(`CREATE TRIGGER reject_activation BEFORE UPDATE OF state ON scripted_portal_tasks
+      WHEN NEW.state = 'active' BEGIN SELECT RAISE(ABORT, 'synthetic activation failure'); END;`);
+    assert.throws(() => h.task.resume(p.ledger, p.intent), /activation failure/);
+    assert.equal(h.journal.getTaskState(h.record.taskId), 'paused');
+    assert.equal(h.store.get(h.record.taskId)?.state, 'paused');
+    assert.equal(h.journal.getTaskProgress(h.record.taskId)?.currentObservation, null);
+    other.exec('DROP TRIGGER reject_activation');
+    assert.throws(() => h.task.resume(p.ledger, p.intent), /current|binding/);
+    assert.equal(h.state.opens, 0);
+  } finally { other.close(); }
+});
+
+test('actor timeout retains pending read ownership until its actual completion', async t => {
+  const h = scriptedHarness(t);
+  let resolve!: (value: PortalObservation) => void;
+  const gate = new Promise<PortalObservation>(r => { resolve = r; });
+  h.fake.observe = () => gate;
+  const actor = new PersistentTaskActor(h.journal, h.task, 10);
+  assert.equal((await actor.run()).state, 'paused');
+  assert.equal(actor.busy, true);
+  await assert.rejects(actor.prepareRecovery(), /settled/);
+  const stop = await actor.stop();
+  assert.equal(stop.journalFenced, true); assert.equal(stop.operationSettled, false);
+  resolve(h.results);
+  await new Promise(r => setImmediate(r));
+  assert.equal(actor.busy, false);
+  assert.equal(h.state.searches, 0); assert.equal(h.state.opens, 0);
+  assert.equal(h.journal.getTaskProgress(h.record.taskId)?.currentObservation, null);
+});
+
+test('actor catches a workflow that returns without spending a bounded decision', async t => {
+  const h = scriptedHarness(t);
+  const workflow = { taskId: h.task.taskId, advance: async () => 'done',
+    pause: (reason: string) => h.task.pause(reason), prepareRecovery: () => h.task.prepareRecovery(),
+    resume: h.task.resume.bind(h.task), stop: h.task.stop.bind(h.task) };
+  const actor = new PersistentTaskActor(h.journal, workflow);
+  assert.equal((await actor.run()).state, 'paused');
+  assert.equal(h.state.searches, 0);
+});
+
+test('real headless portal actor resumes DOWNLOAD at verified detail without replaying earlier effects', async t => {
+  const fixture = await startPortalFixture();
+  const local = privateStore();
+  t.after(async () => { await fixture.close(); local.store.close();
+    local.journal.close(); rmSync(local.root, { recursive: true, force: true }); });
+  const session = await ManagedPortalSession.launch(fixture.url, { headless: true });
+  t.after(async () => { await session.close(); });
+  const record = start(local.store, { taskId: 'actor-download', origin: fixture.url,
+    outcomeKind: 'DOWNLOAD', invoiceId: 'INV-105', title: 'April Service Statement',
+    account: 'Harbor Works', query: 'April', destinationPath: local.store.fixtureDestination('INV-105') });
+  const task = newTask(local.store, local.journal, session, record);
+  const actor = new PersistentTaskActor(local.journal, task);
+  const paused = await actor.run(history => {
+    if (history.progress!.checkpoints.at(-1)?.stageRef === 'opened') actor.pause();
+  });
+  assert.equal(paused.state, 'paused');
+  assert.equal(local.store.get(record.taskId)?.stage, 'opened');
+  assert.equal(local.journal.attemptsForTask(record.taskId).length, 2);
+  const p = resumePrompt(await actor.prepareRecovery()); actor.bindPrompt(p.ledger);
+  actor.resume(p.ledger, p.intent);
+  assert.equal((await actor.run()).state, 'completed');
+  assert.deepEqual(local.journal.attemptsForTask(record.taskId).map(x => x.candidateId),
+    ['scripted-search', 'scripted-open', 'scripted-download', 'scripted-save']);
+  assert.match(await readFile(record.destinationPath!, 'utf8'), /SYNTHETIC FIXTURE/);
+});
 
 function mint(contract: ScriptedPortalContract) {
   const revision = { taskId: contract.taskId, taskEpoch: 1, goalRevision: 1 };

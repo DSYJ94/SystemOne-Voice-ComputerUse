@@ -3,8 +3,9 @@
 The shared journal now has a bounded recovery API for admitted, progress-tracked
 tasks. A trusted host must independently recheck the latest historical checkpoint
 in its original scope, present that exact recovery state, and consume the user's
-explicit Resume reply. This is a B15–B17 host foundation. The existing native and
-portal task actors, controller pipe and panel do not yet expose this flow.
+explicit Resume reply. A [persistent scripted actor](PERSISTENT_TASK_ACTOR.md)
+now uses this path for native fixtures and the fixed portal. Controller/panel
+recovery intent and general actor/action integration remain incomplete.
 
 The source tests use synthetic tasks only. The owner's stopped goal is unchanged.
 No automatic retry, effect compensation, model call or deployment is introduced.
@@ -66,7 +67,8 @@ diagnostic record. The original admission and goal revision remain immutable;
 late outcomes update old execution history without reactivation. Unknown effects
 still block replacement execution. There is no implied undo.
 
-This API consumes the command for the cancellation fence. It does **not** install
+The actor now coordinates cancellation with its workflow Stop barrier. This API
+consumes the command for the cancellation fence. It does **not** install
 or admit the replacement goal. A future actor must implement replacement
 admission/provenance and coordinate its adapter Stop barrier, pending proposal
 and permit revocation, prompt closure, task slot and browser projection. A journal
@@ -74,12 +76,11 @@ fence alone cannot recall an operation already handed to an adapter.
 
 ## Remaining integration
 
-Build a persistent native/browser actor that owns recovery reads, workflow
-predicate implementations, prompts, adapter fences and replacement admission.
-Reconcile the portal projection before presenting Resume; its current constructor
-still requires a freshly issued start record, and download receipts cannot be
-restored into a new browser session. Do not route resumed DOWNLOAD through its
-old fixed workflow or reconstruct a `TaskAdmissionRegistry` capability from JSON.
+Extend the scripted actor with controller/UI intent and replacement admission.
+The portal now rechecks results/detail predicates, reconciles history and issues
+an exact activation record after journal Resume. DOWNLOAD can continue from
+verified detail; a temporary receipt cannot be restored into a new browser
+session. Never reconstruct a `TaskAdmissionRegistry` capability from JSON.
 Failure classification, unknown-effect reconciliation, sleep/lock handling,
 voice/UI recovery and real Mac/existing-profile Chrome qualification remain open.
 Prove this scripted integration before CLM makes execution decisions.

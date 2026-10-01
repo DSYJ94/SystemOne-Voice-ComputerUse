@@ -116,6 +116,8 @@ function validObservation(value: NativePressObservation): boolean {
   return true;
 }
 
+export { validObservation as validNativePressObservation };
+
 /** Only fixed synthetic Documents navigation, file selection and Open are admitted.
  * The model cannot widen the target, operation or expected outcome. */
 export class NativePressAuthority {
