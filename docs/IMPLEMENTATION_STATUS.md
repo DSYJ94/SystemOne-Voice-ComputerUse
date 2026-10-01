@@ -1,5 +1,21 @@
 # Implementation status
 
+## Offline CLM artifact and serving preflight, 1 October 2026
+
+`codex/clm-artifact-preflight`, based on #65 at `3da29cb`. The
+[preflight](CLM_ARTIFACT_PREFLIGHT.md) validates immutable declarations and safe
+baseline serving settings, then streams exact local SHA-256/byte checks without
+checkpoint deserialization or network access. Missing/changed files, traversal,
+symlinks, moving revisions, silent truncation and unsafe loading declarations fail.
+
+The committed manifest is deliberately incomplete. No model pins were invented,
+weights downloaded, inference qualified or paid deployment authorized. Container/
+server declarations and an HTTP header do not establish running artifact identity.
+Actual encoder/tokenizer/artifact access, server implementation, startup checks,
+costed provider plan and live evaluation remain open before B02/B14 can pass.
+Linux typecheck and **363 passed, zero failed, two Mac-only skips (365 total)**;
+eight added tests. No owner goal or Mac checkout changed.
+
 ## CLM proposals and bounded owned transport, 1 October 2026
 
 `codex/clm-decision-boundary`, based on #64 at `e64f59b`, implementation

@@ -33,6 +33,9 @@ setup, live permission recovery and physical multi-monitor use remain pending.
   semantic choices, host confidence thresholds and bounded owned-API replies.
   Synthetic native tasks exercise proposals through existing dispatch/verifiers;
   live inference, calibration and owner-app integration remain open.
+- An [offline CLM artifact preflight](docs/CLM_ARTIFACT_PREFLIGHT.md) rejects
+  unresolved pins and unsafe serving declarations, then verifies local bytes
+  without loading weights. The pending manifest remains deliberately incomplete.
 - A [persistent scripted actor](docs/PERSISTENT_TASK_ACTOR.md) now coordinates
   repeated steps, pause/recovery, correction and Stop. Synthetic native tasks
   and a real headless portal resume from verified progress without repeating

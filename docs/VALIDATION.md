@@ -1,5 +1,27 @@
 # Initial foundation validation
 
+## Offline CLM artifact preflight, 1 October 2026
+
+`codex/clm-artifact-preflight`, based on #65 at `3da29cb`.
+Same Linux/pinned Node/Playwright toolchain as preceding records.
+
+- `npm run check`: typecheck passed; **363 passed, zero failed, two Mac-only
+  skips, 365 total**. Eight focused new artifact checks passed **8/8**.
+- Tests use metadata declarations and small synthetic bytes; none loads tensors
+  or downloads a model. They cover unresolved/moving pins, reference identities,
+  loader/authentication/recipe declarations, missing roles, duplicate/escaping
+  paths, checksum/size mismatch, symlinks/nonregular files and cancellation.
+- The pending-manifest CLI exits unsuccessfully without writing a report;
+  absent model files cannot produce a successful full preflight. Successful
+  standalone fixture-file hashing proves those fixture bytes only.
+- Initial typecheck caught array guard narrowing to `any[]`; an explicit typed
+  snapshot fixed it. Final checks and `git diff --check` passed.
+
+The recipe/settings are declarations, not verified server behavior. No genuine
+artifact preflight report, inference, container, GPU or paid service exists.
+Mac/voice/owner-profile/release qualification remains open. No owner goal resumed.
+See [preflight limits](CLM_ARTIFACT_PREFLIGHT.md) and [v1 gates](V1_READINESS.md).
+
 ## CLM proposal boundary and owned transport, 1 October 2026
 
 `codex/clm-decision-boundary`, based on #64 at `e64f59b`, implementation
