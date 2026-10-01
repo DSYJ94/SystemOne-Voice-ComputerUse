@@ -3,8 +3,10 @@
 ## Pending release dependency inventory, 1 October 2026
 
 `codex/release-dependency-inventory`, stacked on #66 at `3b6c6a8`.
-Implementation `1673db7` is pushed; draft PR creation is blocked by GitHub API
-403. The committed PR material preserves its intended base/title/body.
+Implementation `1673db7` is pushed; [draft PR #67](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/67)
+targets `codex/clm-artifact-preflight` (#66). Applied network settings resolved
+the initial GitHub API/download 403. The full suite now passes 363 tests with
+zero failures and two Mac-only skips; six inventory checks also pass.
 The [source inventory](RELEASE_DEPENDENCY_INVENTORY.md) reconstructs the pending
 release record with 32 npm packages (nine runtime), 19 Python test pins and
 non-npm Node/browser/platform/Chrome/model declarations. Repeatable generation
@@ -12,7 +14,7 @@ records source hashes; consistency checks reject stale output, missing npm
 integrity/licenses and manifest, Node or browser metadata drift. Six focused
 checks pass. Full-text notices, actual release artifact SBOM and qualification
 remain open; B01/B27 and G1–G6 are not complete. See current validation evidence
-for environment-dependent browser failures and PR publication status.
+for the resolved environment failures and actual publication evidence.
 The owner goal remains stopped.
 
 ## Offline CLM artifact and serving preflight, 1 October 2026

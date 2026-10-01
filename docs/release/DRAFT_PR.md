@@ -4,13 +4,11 @@ Head: `codex/release-dependency-inventory`
 Base: `codex/clm-artifact-preflight` (draft #66), starting at `3b6c6a8`.
 Title: `Add pending release dependency inventory and drift validation`
 
-Publication is pending because this runtime denies GitHub API requests with
-HTTP 403. The environment draft includes the required network additions for
-user review. Native HTTPS Git access works; a pushed branch alone is not a PR.
-Implementation commit `1673db7` was pushed and verified on the remote. The actual
-draft creation attempt failed at `https://api.github.com/graphql` with 403.
-After applying the network settings, check API access and reuse the existing
-injected GitHub authentication. Do not create a duplicate PR if one exists.
+The earlier publication attempt at implementation `1673db7` was blocked with
+GitHub API 403. After the owner applied the saved network settings, API access
+and official browser downloads succeeded. Current validation is recorded below.
+[Draft PR #67](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/67) is published and stacked on #66;
+it does not merge or release the source.
 
 ## PR body
 
@@ -29,12 +27,11 @@ This is source inventory preparation for B01/B27, not a distributable SBOM.
 The owner goal remains stopped; release and Mac gates remain open.
 
 Validation: pinned Node 26.5.0, frozen npm install with scripts disabled;
-inventory consistency and six focused tests passed; typecheck and
-`git diff --check` passed. Broader suite: 338 passed, 25 failed, two Mac-only
-skips (365 total), because pinned browser executables were unavailable and
-their dependent controller tests timed out. Official Playwright downloads
-were blocked with 403. Full-suite green remains pending network access and
-browser installation; no live Mac/model/owner-profile qualification is claimed.
+inventory consistency and six focused tests passed. With official Playwright
+1.63.0 Chromium/headless-shell revision 1243, `npm run check` passed typecheck
+and all 363 executable tests: zero failures, two Mac-only skips (365 total).
+`git diff --check` passed. The earlier network/browser failures are resolved;
+no live Mac/model/owner-profile qualification is claimed.
 
 ## Publication command
 
@@ -49,6 +46,5 @@ gh pr create --draft \
   --body-file /tmp/systemone-release-inventory-pr.md
 ```
 
-After publication, record the actual draft PR URL in handoff/status/validation.
-Install version-matched official browser assets and rerun `npm run check` before
-replacing the current failure evidence. Keep the owner goal stopped.
+The published URL and passing validation are recorded in handoff/status/validation.
+If continuing, reuse #67 rather than creating a duplicate. Keep the owner goal stopped.
