@@ -1,5 +1,26 @@
 # Implementation status
 
+## Portal checkpoints and conservative reconciliation, 30 September 2026
+
+Cloud continuation: `codex/portal-checkpoint-reconciliation`, based on #61 at
+`93259b7`, implementation `7381f03`,
+[draft #62](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/62) stacked
+on `codex/task-checkpoint-recovery`. The fixed portal now stores the exact admission in `AttemptJournal`,
+uses shared observation/decision/equivalent-state limits and records independently
+verified stages. Interference expires journal facts; Stop also cancels paused
+tasks. Restart validates contract bindings and checkpoint/effect linkage, catches
+up lagging historical progress and preserves unknown effects without replay.
+Only already-committed terminal evidence plus completion can restore completed
+history. Legacy/unbound or contradictory records remain blocked for review.
+See [portal recovery](PORTAL_RECOVERY.md) and [progress](TASK_PROGRESS.md).
+
+Linux typecheck and **299 passed, zero failed, two Mac-only skips (301 total)**
+passed. Eighteen added tests cover crash windows, quotas, fresh references,
+changed bindings, legacy/orphan records and late Stop replies. The user goal
+remains stopped; no Mac UI, owner Chrome profile or inference deployment ran.
+Explicit recovery/correction, the general actor and live qualification remain
+open before CLM drives task decisions.
+
 ## Durable native checkpoints and bounded observations, 30 September 2026
 
 Cloud continuation: `codex/task-checkpoint-recovery`, based on #60 at `387b61c`.

@@ -1,5 +1,11 @@
 # Managed Chromium source status
 
+30 September 2026: the separate fixed portal now persists its admission and
+verified checkpoints in the shared journal, spends observation/decision budgets,
+expires current facts and reconciles progress at restart without replay. See
+[portal recovery](PORTAL_RECOVERY.md). This does not expand the general
+observer/field/link capabilities below or qualify existing-profile Chrome.
+
 Updated 28 September 2026. `ManagedObservationSession` in
 `packages/browser/src/managed-observation.ts` is a general semantic observation
 surface, separate from the scripted invoice-portal driver. A trusted caller

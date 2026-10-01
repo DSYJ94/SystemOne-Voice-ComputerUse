@@ -1,5 +1,39 @@
 # Initial foundation validation
 
+## Portal reconciliation and shared progress guards, 30 September 2026
+
+Branch `codex/portal-checkpoint-reconciliation`, based on #61 at `93259b7`.
+Implementation `7381f03`, [draft #62](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/62).
+Same Linux, Node 26.5.0 and official Playwright 1.63.0 browser assets as the
+prior cloud records. Dependency locks, fixture data and environment settings
+remain unchanged.
+
+- `npm run check`: typecheck passed; **299 passed, zero failed, two skipped,
+  301 total**. Only the existing macOS Chrome-host registration tests skipped.
+- Eighteen new tests cover intermediate/terminal projection-write failures,
+  receipt without checkpoint, checkpoint without completion, unknown effects
+  after verified progress, read-only completion, changed bindings, staged orphan
+  and legacy/unbound rows, admission-write rollback/retry, browser read/decision
+  limits, equivalent states despite changed revisions, Stop during predicates,
+  projection ahead of journal history, persisted Stop reconciliation and fresh
+  permit observation references and multiple legacy records pausing together.
+- The existing real headless four-step portal and controller-child workflows
+  assert the durable admission, scoped output binding, checkpoint stages,
+  decision count and expired facts. Existing delayed download/local-save Stop,
+  restart, manual interference, native, managed and extension regressions pass.
+- The focused portal/permit/journal/controller checks passed **50/50** before
+  the final five tests were added. The final full suite includes those tests.
+- `git diff --check`: passed. No test failure was encountered in this slice.
+
+Reconciliation repairs a historical projection; it never resumes execution or
+reuses an old browser/download receipt. Portal/journal writes remain separate
+commits, with crash windows tested conservatively. This does not qualify a
+general actor, user-facing recovery, release-authenticated workers, real Mac
+permission/voice use or the owner's existing Chrome profile. No normal AppKit
+launch, TCC/Keychain change, audio capture, live model call, paid resource or
+user-goal resume occurred. Python/native checks were not rerun for this
+TypeScript/documentation slice. See [recovery scope](PORTAL_RECOVERY.md).
+
 ## Native progress and checkpoint guards in the cloud, 30 September 2026
 
 Branch `codex/task-checkpoint-recovery`, based on #60 at `387b61c`, implementation

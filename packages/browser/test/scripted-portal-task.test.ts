@@ -5,10 +5,12 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { DatabaseSync } from 'node:sqlite';
 import { setTimeout as delay } from 'node:timers/promises';
 import { startPortalFixture } from '../../fixtures/portal.ts';
 import { ManagedPortalSession } from '../src/managed-portal.ts';
 import type { PortalObservation } from '../src/managed-portal.ts';
+import type { TaskProgressLimits } from '../../runtime/src/task-progress.ts';
 import { ScriptedPortalStore, ScriptedPortalTask } from '../src/scripted-portal-task.ts';
 import { AttemptJournal } from '../../runtime/src/attempt-journal.ts';
 import { TaskAdmissionRegistry } from '../../runtime/src/task-authority.ts';
@@ -74,9 +76,299 @@ function privateStore() {
   const output = join(root, 'output');
   mkdirSync(output);
   const database = join(root, 'tasks.sqlite');
-  return { root, output, store: new ScriptedPortalStore(database, output),
-    journal: new AttemptJournal(database) };
+  const journal = new AttemptJournal(database);
+  return { root, output, store: new ScriptedPortalStore(database, output, journal), journal };
 }
+
+function scriptedHarness(t: { after(callback: () => void): void },
+  outcomeKind: 'LOCATE' | 'OPEN' = 'OPEN', limits?: TaskProgressLimits) {
+  const local = privateStore();
+  const origin = 'http://127.0.0.1:12345';
+  const row = { id: 'INV-105', title: 'April Service Statement', account: 'Harbor Works' };
+  const state = { current: { kind: 'home', revision: 1, url: origin } as PortalObservation,
+    observations: 0, searches: 0, opens: 0, failOpen: false, changeReadRevision: false };
+  const results: PortalObservation = { kind: 'results', revision: 2,
+    url: `${origin}/invoices?q=April`, rows: [row] };
+  const fake = {
+    origin, stop: async () => ({ workerFenced: true }),
+    observe: async () => {
+      state.observations++;
+      return state.changeReadRevision ? { ...state.current, revision: state.observations } : state.current;
+    },
+    search: async () => { state.searches++; state.current = results; return state.current; },
+    openInvoice: async (): Promise<PortalObservation> => {
+      state.opens++;
+      if (state.failOpen) throw new Error('synthetic lost open reply');
+      state.current = { kind: 'detail', revision: 3, url: `${origin}/invoices/INV-105`,
+        invoiceId: row.id, title: row.title, account: row.account };
+      return state.current;
+    },
+    downloadInvoice: async () => { throw new Error('unexpected download'); },
+    verifyGoal: async () => ({ status: 'matched', revision: state.current.revision } as const),
+  };
+  const record = start(local.store, { taskId: 'recovery-task', origin, outcomeKind,
+    invoiceId: row.id, title: row.title, account: row.account, query: 'April' });
+  const task = new ScriptedPortalTask(local.store, local.journal, fake, admissions.get(record)!, record, limits);
+  t.after(() => { local.journal.close(); local.store.close(); rmSync(local.root, { recursive: true, force: true }); });
+  return { ...local, state, results, fake, record, task };
+}
+
+test('restart reconciles a verified intermediate checkpoint after projection-write failure without replay', async t => {
+  const h = scriptedHarness(t);
+  const other = new DatabaseSync(join(h.root, 'tasks.sqlite'));
+  try {
+    other.exec(`CREATE TRIGGER reject_progress BEFORE UPDATE OF stage ON scripted_portal_tasks
+      WHEN NEW.stage != OLD.stage BEGIN SELECT RAISE(ABORT, 'synthetic projection failure'); END;`);
+    assert.equal((await h.task.advance()).state, 'paused');
+    assert.equal(h.store.get(h.record.taskId)?.stage, 'admitted');
+    assert.equal(h.journal.getTaskProgress(h.record.taskId)?.checkpoints[0]?.stageRef, 'located');
+    const counts = h.journal.getTaskProgress(h.record.taskId)!;
+    other.exec('DROP TRIGGER reject_progress');
+    const recovered = h.store.recoverAfterRestart()[0]!;
+    assert.equal(recovered.stage, 'located');
+    assert.equal(recovered.state, 'paused');
+    assert.equal(recovered.inFlight, null);
+    assert.equal(h.journal.getTaskState(h.record.taskId), 'paused');
+    assert.equal(h.journal.getTaskProgress(h.record.taskId)?.observationsUsed, counts.observationsUsed);
+    assert.equal(h.journal.getTaskProgress(h.record.taskId)?.currentObservation, null);
+    assert.equal(h.state.searches, 1); assert.equal(h.state.opens, 0);
+    await assert.rejects(h.task.advance(), /not active/);
+  } finally { other.close(); }
+});
+
+test('restart restores already-committed terminal history after projection-write failure', async t => {
+  const h = scriptedHarness(t, 'LOCATE');
+  const other = new DatabaseSync(join(h.root, 'tasks.sqlite'));
+  try {
+    other.exec(`CREATE TRIGGER reject_progress BEFORE UPDATE OF stage ON scripted_portal_tasks
+      WHEN NEW.stage != OLD.stage BEGIN SELECT RAISE(ABORT, 'synthetic projection failure'); END;`);
+    assert.equal((await h.task.advance()).state, 'paused');
+    assert.equal(h.journal.getTaskState(h.record.taskId), 'completed');
+    other.exec('DROP TRIGGER reject_progress');
+    assert.deepEqual(h.store.recoverAfterRestart(), []);
+    assert.equal(h.store.get(h.record.taskId)?.state, 'completed');
+    assert.equal(h.store.get(h.record.taskId)?.stage, 'located');
+    assert.equal(h.store.get(h.record.taskId)?.inFlight, null);
+    assert.equal(h.state.searches, 1);
+    assert.equal(h.journal.getTaskProgress(h.record.taskId)?.currentObservation, null);
+  } finally { other.close(); }
+});
+
+test('a matched receipt without a committed checkpoint cannot promote portal progress', async t => {
+  const h = scriptedHarness(t, 'LOCATE');
+  const other = new DatabaseSync(join(h.root, 'tasks.sqlite'));
+  try {
+    other.exec(`CREATE TRIGGER reject_checkpoint BEFORE INSERT ON task_checkpoints
+      BEGIN SELECT RAISE(ABORT, 'synthetic checkpoint failure'); END;`);
+    assert.equal((await h.task.advance()).state, 'paused');
+    assert.equal(h.journal.attemptsForTask(h.record.taskId)[0]?.outcome?.verification, 'matched');
+    assert.equal(h.journal.getTaskProgress(h.record.taskId)?.checkpoints.length, 0);
+    other.exec('DROP TRIGGER reject_checkpoint');
+    const recovered = h.store.recoverAfterRestart()[0]!;
+    assert.equal(recovered.stage, 'admitted');
+    assert.equal(recovered.inFlight, 'search');
+    assert.equal(recovered.reason, 'action outcome unknown after restart');
+    assert.equal(h.journal.getTaskRecord(h.record.taskId)?.completion, null);
+    assert.equal(h.store.hasBlockingTask(), true);
+    assert.equal(h.state.searches, 1);
+  } finally { other.close(); }
+});
+
+test('a terminal checkpoint without committed completion remains paused on restart', async t => {
+  const h = scriptedHarness(t, 'LOCATE');
+  const other = new DatabaseSync(join(h.root, 'tasks.sqlite'));
+  try {
+    other.exec(`CREATE TRIGGER reject_completion BEFORE INSERT ON task_completions
+      BEGIN SELECT RAISE(ABORT, 'synthetic completion failure'); END;`);
+    assert.equal((await h.task.advance()).state, 'paused');
+    assert.equal(h.journal.getTaskProgress(h.record.taskId)?.checkpoints[0]?.terminal, true);
+    other.exec('DROP TRIGGER reject_completion');
+    const recovered = h.store.recoverAfterRestart()[0]!;
+    assert.equal(recovered.state, 'paused'); assert.equal(recovered.stage, 'located');
+    assert.equal(recovered.inFlight, null);
+    assert.equal(h.journal.getTaskRecord(h.record.taskId)?.completion, null);
+    await assert.rejects(h.task.advance(), /not active/);
+  } finally { other.close(); }
+});
+
+test('restart retains the last verified stage and a later unknown browser effect', async t => {
+  const h = scriptedHarness(t);
+  assert.equal((await h.task.advance()).stage, 'located');
+  h.state.failOpen = true;
+  assert.equal((await h.task.advance()).state, 'paused');
+  const recovered = h.store.recoverAfterRestart()[0]!;
+  assert.equal(recovered.stage, 'located'); assert.equal(recovered.inFlight, 'open');
+  assert.equal(h.journal.unresolvedAttempts(h.record.taskId).length, 1);
+  assert.equal(h.journal.getTaskProgress(h.record.taskId)?.checkpoints.length, 1);
+  assert.equal(h.state.opens, 1);
+  await assert.rejects(h.task.advance(), /not active/);
+});
+
+test('already-matched portal predicates complete without actions and recover as historical completion', async t => {
+  const h = scriptedHarness(t, 'LOCATE');
+  h.state.current = h.results;
+  assert.equal((await h.task.advance()).state, 'completed');
+  assert.equal(h.journal.attemptsForTask(h.record.taskId).length, 0);
+  assert.equal(h.journal.getTaskProgress(h.record.taskId)?.checkpoints[0]?.executionId, undefined);
+  assert.deepEqual(h.store.recoverAfterRestart(), []);
+  assert.equal(h.store.get(h.record.taskId)?.state, 'completed');
+  assert.equal(h.state.searches, 0);
+});
+
+test('changed stored portal bindings pause before I/O and block restart reconciliation', async t => {
+  const h = scriptedHarness(t);
+  assert.equal((await h.task.advance()).stage, 'located');
+  const observations = h.state.observations;
+  const other = new DatabaseSync(join(h.root, 'tasks.sqlite'));
+  try {
+    other.prepare('UPDATE scripted_portal_tasks SET account = ? WHERE task_id = ?')
+      .run('Different account', h.record.taskId);
+    assert.equal((await h.task.advance()).state, 'paused');
+    assert.equal(h.state.observations, observations);
+    assert.equal(h.state.opens, 0);
+    assert.equal(h.store.recoverAfterRestart()[0]?.reason, 'portal contract or journal evidence requires review');
+    assert.equal(h.journal.getTaskProgress(h.record.taskId)?.currentObservation, null);
+  } finally { other.close(); }
+});
+
+test('staged orphan portal projection blocks restart instead of inventing journal authority', () => {
+  const h = privateStore();
+  const other = new DatabaseSync(join(h.root, 'tasks.sqlite'));
+  try {
+    other.exec(`INSERT INTO scripted_portal_tasks VALUES
+      ('orphan', 'http://127.0.0.1:12345', 'LOCATE', 'INV-105', 'April Service Statement',
+       'Harbor Works', 'April', NULL, 'active', 'admitted', NULL, NULL)`);
+    assert.equal(h.store.recoverAfterRestart()[0]?.state, 'paused');
+    assert.equal(h.journal.getTaskRecord('orphan'), undefined);
+    assert.equal(h.store.hasBlockingTask(), true);
+  } finally { other.close(); h.journal.close(); h.store.close(); rmSync(h.root, { recursive: true, force: true }); }
+});
+
+test('admission-write failure removes the unsent portal projection and permits genuine retry', () => {
+  const h = privateStore();
+  const contract: ScriptedPortalContract = { taskId: 'failed-start', origin: 'http://127.0.0.1:12345',
+    outcomeKind: 'LOCATE', invoiceId: 'INV-105', title: 'April Service Statement', account: 'Harbor Works', query: 'April' };
+  const { registry, admission } = mint(contract);
+  const other = new DatabaseSync(join(h.root, 'tasks.sqlite'));
+  try {
+    other.exec(`CREATE TRIGGER reject_admission BEFORE INSERT ON task_admissions
+      BEGIN SELECT RAISE(ABORT, 'synthetic admission failure'); END;`);
+    assert.throws(() => h.store.start(registry, admission, contract), /admission failure/);
+    assert.equal(h.store.get(contract.taskId), undefined);
+    assert.equal(h.journal.getTaskRecord(contract.taskId), undefined);
+    other.exec('DROP TRIGGER reject_admission');
+    assert.equal(h.store.start(registry, admission, contract).state, 'active');
+    assert.equal(h.journal.getTaskRecord(contract.taskId)?.admission?.admissionId, admission.admissionId);
+  } finally { other.close(); h.journal.close(); h.store.close(); rmSync(h.root, { recursive: true, force: true }); }
+});
+
+test('browser observation quota pauses before a preflight read or action', async t => {
+  const h = scriptedHarness(t, 'LOCATE', { maxObservations: 1, maxDecisions: 10, maxStateVisits: 10 });
+  assert.equal((await h.task.advance()).reason, 'task observations budget exhausted');
+  assert.equal(h.state.observations, 1); assert.equal(h.state.searches, 0);
+  assert.equal(h.journal.getTaskState(h.record.taskId), 'paused');
+  assert.equal(h.journal.getTaskProgress(h.record.taskId)?.pauseReason, 'observations');
+  assert.equal(h.journal.getTaskProgress(h.record.taskId)?.currentObservation, null);
+});
+
+test('browser decision quota preserves verified progress and Stop also fences a paused journal', async t => {
+  const h = scriptedHarness(t, 'OPEN', { maxObservations: 20, maxDecisions: 1, maxStateVisits: 10 });
+  assert.equal((await h.task.advance()).stage, 'located');
+  assert.equal((await h.task.advance()).reason, 'task decisions budget exhausted');
+  assert.equal(h.state.opens, 0);
+  assert.equal(h.journal.getTaskProgress(h.record.taskId)?.checkpoints[0]?.stageRef, 'located');
+  assert.equal(h.journal.getTaskState(h.record.taskId), 'paused');
+  const stopped = await h.task.stop();
+  assert.equal(stopped.journalFenced, true);
+  assert.equal(h.journal.getTaskState(h.record.taskId), 'cancelled');
+});
+
+test('changing browser document revisions cannot hide an equivalent-state visit', async t => {
+  const h = scriptedHarness(t, 'LOCATE', { maxObservations: 10, maxDecisions: 10, maxStateVisits: 1 });
+  h.state.changeReadRevision = true;
+  assert.equal((await h.task.advance()).reason, 'task no_progress budget exhausted');
+  assert.equal(h.state.observations, 2); assert.equal(h.state.searches, 0);
+  assert.equal(h.journal.getTaskProgress(h.record.taskId)?.pauseReason, 'no_progress');
+});
+
+test('Stop during a predicate read fences a late matched result and creates no terminal checkpoint', async t => {
+  const h = scriptedHarness(t, 'LOCATE');
+  h.state.current = h.results;
+  let release!: () => void;
+  let reached!: () => void;
+  const waiting = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { reached = resolve; });
+  h.fake.verifyGoal = async () => { reached(); await waiting; return { status: 'matched', revision: 2 }; };
+  const pending = h.task.advance();
+  await started;
+  assert.equal((await h.task.stop()).journalFenced, true);
+  release();
+  assert.equal((await pending).state, 'cancelled');
+  assert.equal(h.journal.getTaskProgress(h.record.taskId)?.checkpoints.length, 0);
+  assert.equal(h.journal.getTaskRecord(h.record.taskId)?.completion, null);
+  assert.equal(h.journal.getTaskProgress(h.record.taskId)?.currentObservation, null);
+});
+
+test('a completed portal projection cannot outrun verified journal history', async t => {
+  const h = scriptedHarness(t);
+  await h.task.advance();
+  const other = new DatabaseSync(join(h.root, 'tasks.sqlite'));
+  try {
+    other.prepare(`UPDATE scripted_portal_tasks SET state = 'completed', stage = 'opened'
+      WHERE task_id = ?`).run(h.record.taskId);
+    const recovered = h.store.recoverAfterRestart()[0]!;
+    assert.equal(recovered.state, 'paused'); assert.equal(recovered.stage, 'located');
+    assert.equal(recovered.reason, 'terminal checkpoint and completion disagree');
+    assert.equal(h.journal.getTaskRecord(h.record.taskId)?.completion, null);
+    assert.equal(h.state.opens, 0);
+  } finally { other.close(); }
+});
+
+test('restart finishes a persisted Stop fence without resurrecting the portal task', async t => {
+  const h = scriptedHarness(t);
+  await h.task.advance();
+  const other = new DatabaseSync(join(h.root, 'tasks.sqlite'));
+  try {
+    other.prepare(`UPDATE scripted_portal_tasks SET state = 'cancelled' WHERE task_id = ?`)
+      .run(h.record.taskId);
+    assert.equal(h.journal.getTaskState(h.record.taskId), 'active');
+    assert.deepEqual(h.store.recoverAfterRestart(), []);
+    assert.equal(h.store.get(h.record.taskId)?.state, 'cancelled');
+    assert.equal(h.journal.getTaskState(h.record.taskId), 'cancelled');
+    assert.equal(h.journal.getTaskProgress(h.record.taskId)?.currentObservation, null);
+    assert.equal(h.state.opens, 0);
+  } finally { other.close(); }
+});
+
+test('legacy unbound journal records require review instead of reconstructing admission from portal text', async t => {
+  const h = scriptedHarness(t);
+  const other = new DatabaseSync(join(h.root, 'tasks.sqlite'));
+  try {
+    other.prepare('DELETE FROM task_admissions WHERE task_id = ?').run(h.record.taskId);
+    other.prepare('UPDATE tasks SET admission_digest = NULL WHERE task_id = ?').run(h.record.taskId);
+    assert.equal(h.store.recoverAfterRestart()[0]?.reason, 'portal contract or journal evidence requires review');
+    assert.equal(h.journal.getTaskRecord(h.record.taskId)?.admission, null);
+    assert.equal(h.store.hasBlockingTask(), true);
+    assert.equal(h.state.searches, 0);
+  } finally { other.close(); }
+});
+
+test('multiple legacy completions can pause for review without a uniqueness failure or new task', () => {
+  const h = privateStore();
+  const other = new DatabaseSync(join(h.root, 'tasks.sqlite'));
+  try {
+    for (const taskId of ['legacy-one', 'legacy-two']) {
+      other.prepare(`INSERT INTO scripted_portal_tasks VALUES
+        (?, 'http://127.0.0.1:12345', 'LOCATE', 'INV-105', 'April Service Statement',
+         'Harbor Works', 'April', NULL, 'completed', 'located', NULL, NULL)`).run(taskId);
+    }
+    assert.equal(h.store.recoverAfterRestart().length, 2);
+    assert.equal(h.store.hasBlockingTask(), true);
+    assert.throws(() => start(h.store, { taskId: 'next-task', origin: 'http://127.0.0.1:12345',
+      outcomeKind: 'LOCATE', invoiceId: 'INV-105', title: 'April Service Statement',
+      account: 'Harbor Works', query: 'April' }), /unresolved/);
+  } finally { other.close(); h.journal.close(); h.store.close(); rmSync(h.root, { recursive: true, force: true }); }
+});
 
 test('progress cannot skip, repeat, or complete at an intermediate stage', () => {
   const local = privateStore();
@@ -280,9 +572,19 @@ test('one task searches, opens exact duplicate, downloads, then saves to scoped 
     assert.deepEqual([ (await task.advance()).stage, (await task.advance()).stage,
       (await task.advance()).stage, (await task.advance()).stage ],
     ['located', 'opened', 'downloaded_temporary', 'saved']);
-    assert.equal(local.store.get('task-1')?.state, 'completed');
+  assert.equal(local.store.get('task-1')?.state, 'completed');
     assert.equal(local.journal.getTaskState('task-1'), 'completed');
     const attempts = local.journal.attemptsForTask('task-1');
+    const record = local.journal.getTaskRecord('task-1')!;
+    assert.equal(record.admission?.outcomeKind, 'DOWNLOAD');
+    assert.equal(record.admission?.parameters.find(value => value.parameterRef === 'destinationPath')?.valueDigest,
+      digest(destinationPath));
+    assert.deepEqual(record.progress?.checkpoints.map(value => value.stageRef),
+      ['located', 'opened', 'downloaded_temporary', 'saved']);
+    assert.equal(record.progress?.decisionsUsed, 4);
+    assert.equal(record.progress?.currentObservation, null);
+    assert.ok(record.progress?.checkpoints.every(value => !value.current));
+    assert.equal(record.completion?.completionVerifierRef, 'portal-download-v1');
     assert.deepEqual(attempts.map(item => item.candidateId),
       ['scripted-search', 'scripted-open', 'scripted-download', 'scripted-save']);
     for (const item of attempts) {
@@ -310,7 +612,7 @@ test('restart pauses an active task and never auto-replays a prior step', async 
       query: 'April' });
     local.store.begin('task-recover', 'search');
     local.store.close();
-    const recovered = new ScriptedPortalStore(join(local.root, 'tasks.sqlite'), local.output);
+    const recovered = new ScriptedPortalStore(join(local.root, 'tasks.sqlite'), local.output, local.journal);
     try {
       const paused = recovered.recoverAfterRestart();
       assert.equal(paused.length, 1);
@@ -352,7 +654,7 @@ test('fixture output root refuses a symlink to another directory', () => {
   const link = join(root, 'redirected-output');
   symlinkSync(output, link, 'dir');
   try {
-    assert.throws(() => new ScriptedPortalStore(join(root, 'tasks.sqlite'), link),
+    assert.throws(() => new ScriptedPortalStore(join(root, 'tasks.sqlite'), link, undefined!),
       /fixture output directory is unsafe/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
@@ -372,6 +674,8 @@ test('manual navigation after verified search pauses instead of fighting the use
     const paused = await task.advance();
     assert.equal(paused.state, 'paused');
     assert.equal(paused.reason, 'verified result is no longer current');
+    assert.equal(local.journal.getTaskState('task-interference'), 'paused');
+    assert.equal(local.journal.getTaskProgress('task-interference')?.currentObservation, null);
     assert.equal((await session.observe()).kind, 'results');
   } finally {
     await session?.close();
@@ -573,8 +877,8 @@ test('restart preserves a journaled browser boundary and pauses the task', async
   local.journal.close();
   local.store.close();
   const database = join(local.root, 'tasks.sqlite');
-  const recoveredStore = new ScriptedPortalStore(database, local.output);
   const recoveredJournal = new AttemptJournal(database);
+  const recoveredStore = new ScriptedPortalStore(database, local.output, recoveredJournal);
   try {
     assert.equal(recoveredStore.recoverAfterRestart()[0]?.state, 'paused');
     assert.deepEqual(recoveredJournal.recoverAfterRestart()
