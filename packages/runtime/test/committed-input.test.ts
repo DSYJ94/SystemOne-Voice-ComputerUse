@@ -58,3 +58,36 @@ test('old revision, unbound native channel and input after session closure are r
   session.close();
   assert.throws(() => session.accept(peer, bytes(command())), /closed/);
 });
+
+test('claimed correction transfers exact provenance once and rejects copied, foreign or unclaimed input', () => {
+  const peer = bindEndpoint(['command']);
+  const session = new CommittedInputSession(peer, { ...revision, goalRevision: 2 });
+  const input = session.accept(peer, bytes({ ...command(), ...revision, goalRevision: 2,
+    text: 'Locate synthetic fixture file Documents/Budget.xlsx' })).input;
+  const target = { taskId: 'replacement-task', taskEpoch: 1, goalRevision: 2 };
+  assert.throws(() => session.transferClaimedCorrection(input, target));
+  session.claimForCorrection(input);
+  assert.throws(() => session.transferClaimedCorrection({ ...input }, target));
+  assert.throws(() => session.transferClaimedCorrection(input, { ...target, goalRevision: 3 }));
+  assert.throws(() => session.transferClaimedCorrection(input, { ...target, taskId: input.taskId }));
+  const transfer = session.transferClaimedCorrection(input, target);
+  assert.equal(transfer.input.text, input.text);
+  assert.equal(transfer.input.messageId, input.messageId);
+  assert.equal(transfer.input.utteranceId, input.utteranceId);
+  assert.equal(transfer.input.taskId, target.taskId);
+  assert.equal(transfer.session.correctionSource!.taskId, input.taskId);
+  assert.throws(() => transfer.session.claimForAdmission({ ...transfer.input }));
+  transfer.session.claimForAdmission(transfer.input);
+  assert.throws(() => transfer.session.claimForAdmission(transfer.input));
+  assert.throws(() => session.transferClaimedCorrection(input, { ...target, taskId: 'another' }));
+  assert.throws(() => transfer.session.accept(peer, bytes(transfer.input)), /replay/);
+});
+
+test('ordinary admission claim cannot be mistaken for a correction handoff', () => {
+  const peer = bindEndpoint(['command']);
+  const session = new CommittedInputSession(peer, { ...revision, goalRevision: 2 });
+  const input = session.accept(peer, bytes({ ...command(), ...revision, goalRevision: 2 })).input;
+  session.claimForAdmission(input);
+  assert.throws(() => session.transferClaimedCorrection(input,
+    { taskId: 'different-task', taskEpoch: 1, goalRevision: 2 }));
+});

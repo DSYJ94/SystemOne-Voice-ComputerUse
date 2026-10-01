@@ -42,7 +42,8 @@ the full Linux suite passes 388 tests with two Mac-only skips. Linux cannot
 compile AppKit. Actual sheet visibility/acknowledgment, focus, expiry/Stop races,
 process-scope binding and live AX actions still require a Mac build and manual
 qualification. The inherited development pipe is not authenticated release IPC.
-Restart reconstruction, replacement/correction admission, arbitrary native or
+The [replacement path](NATIVE_TASK_REPLACEMENT.md) now supports changed paused
+fixture goals. Restart reconstruction, general/active correction, arbitrary native or
 browser recovery and release/model qualification remain open.
 
 The previous owner goal was dropped from the work plan. No owner-app execution

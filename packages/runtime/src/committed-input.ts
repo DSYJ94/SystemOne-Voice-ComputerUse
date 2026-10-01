@@ -1,7 +1,7 @@
 import { receive } from '../../protocol/src/session.ts';
 import type { Endpoint, TaskRevision } from '../../protocol/src/session.ts';
 import type { Message } from '../../protocol/src/contract.ts';
-import { ContractError } from '../../protocol/src/json.ts';
+import { ContractError, digest, parseJSON } from '../../protocol/src/json.ts';
 
 export interface CommittedInput extends Message {
   type: 'command';
@@ -11,6 +11,14 @@ export interface CommittedInput extends Message {
   utteranceRevision: number;
   text: string;
   isFinal: true;
+}
+
+export interface CorrectionSource {
+  readonly taskId: string;
+  readonly taskEpoch: number;
+  readonly goalRevision: number;
+  readonly commandMessageId: string;
+  readonly commandDigest: string;
 }
 
 export type InputRoute =
@@ -28,6 +36,9 @@ export class CommittedInputSession {
   readonly #messages = new Set<string>();
   readonly #issued = new WeakSet<object>();
   readonly #claimed = new WeakSet<object>();
+  readonly #transferred = new WeakSet<object>();
+  readonly #corrections = new WeakSet<object>();
+  #correctionSource: CorrectionSource | undefined;
   #closed = false;
 
   constructor(endpoint: Endpoint, revision: TaskRevision) {
@@ -64,6 +75,39 @@ export class CommittedInputSession {
     }
     this.#claimed.add(input);
   }
+
+  /** Called by durable correction cancellation, not ordinary admission. */
+  claimForCorrection(input: CommittedInput): void {
+    if (input.mode !== 'command' || input.goalRevision < 2) throw new ContractError('invalid correction command');
+    this.claimForAdmission(input);
+    this.#corrections.add(input);
+  }
+
+  /** Transfer a claimed correction exactly once; never accept its JSON again.
+   * The journal separately verifies this provenance against durable cancellation
+   * before admitting the derived task. The host must fence the old worker first. */
+  transferClaimedCorrection(input: CommittedInput, revision: TaskRevision): {
+    readonly session: CommittedInputSession; readonly input: CommittedInput;
+  } {
+    if (this.#closed || !this.#issued.has(input) || !this.#corrections.has(input)
+      || this.#transferred.has(input) || input.mode !== 'command' || input.goalRevision < 2
+      || !/^[A-Za-z0-9_.:-]{1,160}$/.test(revision.taskId) || revision.taskId === input.taskId
+      || revision.taskEpoch !== 1 || revision.goalRevision !== input.goalRevision) {
+      throw new ContractError('invalid or replayed correction transfer');
+    }
+    this.#transferred.add(input);
+    const session = new CommittedInputSession(this.#endpoint, revision);
+    const transferred = Object.freeze({ ...input, ...revision });
+    session.#issued.add(transferred);
+    // Prevent the same command from also being reaccepted through this session.
+    session.#messages.add(input.messageId); session.#utterances.add(input.utteranceId);
+    session.#correctionSource = Object.freeze({ taskId: input.taskId, taskEpoch: input.taskEpoch,
+      goalRevision: input.goalRevision, commandMessageId: input.messageId,
+      commandDigest: digest(parseJSON(Buffer.from(JSON.stringify(input)))) });
+    return Object.freeze({ session, input: transferred });
+  }
+
+  get correctionSource(): CorrectionSource | undefined { return this.#correctionSource; }
 
   close(): void { this.#closed = true; }
 }

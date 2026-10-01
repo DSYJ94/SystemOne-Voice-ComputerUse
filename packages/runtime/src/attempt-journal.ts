@@ -99,6 +99,8 @@ export interface JournalTaskRecord {
   readonly completion: TaskCompletion | null;
   readonly progress: TaskProgress | null;
   readonly correction: TaskCorrection | null;
+  readonly replacement: { readonly taskId: string } | null;
+  readonly replaces: { readonly taskId: string } | null;
 }
 
 interface TaskRow {
@@ -218,6 +220,10 @@ export class AttemptJournal {
         recovery_ticket TEXT NOT NULL UNIQUE REFERENCES task_recovery_reads(ticket),
         prompt_id TEXT NOT NULL, presentation_digest TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS task_replacements (
+        source_task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
+        replacement_task_id TEXT NOT NULL UNIQUE REFERENCES tasks(task_id)
+      );
       CREATE TABLE IF NOT EXISTS task_corrections (
         task_id TEXT PRIMARY KEY REFERENCES tasks(task_id), command_message_id TEXT NOT NULL UNIQUE,
         replacement_goal_revision INTEGER NOT NULL, command_digest TEXT NOT NULL
@@ -251,6 +257,25 @@ export class AttemptJournal {
         .run(admission.taskId, serialized, contractDigest);
       this.#db.prepare('UPDATE tasks SET admission_digest = ? WHERE task_id = ?')
         .run(contractDigest, admission.taskId);
+      const source = registry.correctionSource;
+      if (source) {
+        const old = this.#task(source.taskId);
+        const correction = this.#db.prepare('SELECT * FROM task_corrections WHERE task_id = ?')
+          .get(source.taskId) as { command_message_id: string; replacement_goal_revision: number;
+            command_digest: string } | undefined;
+        if (this.#db.prepare("SELECT 1 FROM tasks WHERE state = 'paused'").get()
+          || !old || old.state !== 'cancelled' || old.task_epoch !== source.taskEpoch
+          || old.goal_revision + 1 !== source.goalRevision
+          || !correction || correction.command_message_id !== source.commandMessageId
+          || correction.command_digest !== source.commandDigest
+          || correction.replacement_goal_revision !== admission.goalRevision
+          || admission.commandMessageId !== source.commandMessageId) {
+          throw new ContractError('replacement does not match a cancelled correction');
+        }
+        this.#db.prepare('INSERT INTO task_replacements VALUES (?, ?)').run(source.taskId, admission.taskId);
+        this.#taskEvent(source.taskId, `replaced_by:${admission.taskId}`);
+        this.#taskEvent(admission.taskId, `replaces:${source.taskId}`);
+      }
       // Claim last: normal validation/SQL failures do not consume a genuine
       // admission. A copied or foreign admission rolls back all inserted rows.
       registry.claimForTask(admission);
@@ -411,7 +436,7 @@ export class AttemptJournal {
       this.#settlePrepared(taskId, 'corrected_before_dispatch');
       this.#progress.expire(taskId);
       const unresolved = this.unresolvedAttempts(taskId);
-      session.claimForAdmission(input);
+      session.claimForCorrection(input);
       return unresolved;
     });
   }
@@ -491,9 +516,19 @@ export class AttemptJournal {
         correction: correction ? Object.freeze({ commandMessageId: correction.command_message_id,
           replacementGoalRevision: correction.replacement_goal_revision,
           commandDigest: correction.command_digest }) : null,
+        replacement: this.#replacementLink(taskId, false),
+        replaces: this.#replacementLink(taskId, true),
         completion: row ? Object.freeze({ evidenceRef: row.evidence_ref,
           completionVerifierRef: row.completion_verifier_ref }) : null });
     });
+  }
+
+  #replacementLink(taskId: string, source: boolean): { readonly taskId: string } | null {
+    const row = this.#db.prepare(source
+      ? 'SELECT source_task_id AS task_id FROM task_replacements WHERE replacement_task_id = ?'
+      : 'SELECT replacement_task_id AS task_id FROM task_replacements WHERE source_task_id = ?')
+      .get(taskId) as { task_id: string } | undefined;
+    return row ? Object.freeze({ taskId: row.task_id }) : null;
   }
 
   /** Private host diagnostics. Attempts include failed preflights: minting a

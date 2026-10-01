@@ -14,7 +14,7 @@ const HOME = 'SystemOne Fixture';
 const DOCS = HOME + ' — Documents';
 const LOCATED = DOCS + ' — Budget.xlsx selected';
 const OPENED = DOCS + ' — Budget.xlsx opened';
-function start(requestId = randomUUID()) {
+function start(requestId: string = randomUUID()) {
   return { type: 'start_native_open', requestId, bundleId: 'com.aurium.systemone.fixture',
     folderName: 'Documents', fileName: 'Budget.xlsx', expectedWindowTitle: OPENED,
     command: { type: 'command', protocolVersion: '2.0', messageId: randomUUID(), taskId: requestId,
@@ -37,7 +37,8 @@ function harness(t: TestContext, pausedAtStart = false) {
   if (pausedAtStart) { journal.startTask('unfinished', 1, 1); journal.pauseTask('unfinished', 'test-interruption'); }
   const output: Record<string, JSONValue>[] = [];
   const phases: { id: string; phase: string }[] = [];
-  const state = { title: HOME, duplicate: true, stalled: false, prepares: 0, commits: 0, stops: 0, observations: 0 };
+  const state = { title: HOME, duplicate: true, stalled: false, prepares: 0, commits: 0, stops: 0, observations: 0,
+    stopResult: true, holdStops: false, holdObservations: false, held: [] as (() => void)[], stopIDs: [] as string[] };
   let expected = '';
   let worker!: NativeFieldPipeWorker;
   worker = new NativeFieldPipeWorker(message => {
@@ -57,11 +58,14 @@ function harness(t: TestContext, pausedAtStart = false) {
         expected = String(message.expectedWindowTitle); result = { kind: 'ready', preparationRef: randomUUID() }; break;
       case 'commit_press': state.commits++; state.title = expected; result = 'returned_unverified'; break;
       case 'verify_press': result = state.title === message.expectedWindowTitle; break;
-      case 'stop': state.stops++; result = true; break;
+      case 'stop': state.stops++; state.stopIDs.push(String(message.taskId)); result = state.stopResult; break;
       default: throw new Error(`unexpected operation ${message.operation}`);
     }
-    queueMicrotask(() => worker.receive({ type: 'native_worker_reply', requestId: message.requestId!,
-      operation: message.operation!, result }));
+    const reply = () => { worker.receive({ type: 'native_worker_reply', requestId: message.requestId!,
+      operation: message.operation!, result }); };
+    if ((message.operation === 'stop' && state.holdStops)
+      || (message.operation === 'observe_press' && state.holdObservations)) state.held.push(reply);
+    else queueMicrotask(reply);
   });
   const controller = new NativeManagedController(journal, (id, phase) => { phases.push({ id, phase }); }, true, worker, message => { output.push(message); });
   let closed = false;
@@ -180,4 +184,80 @@ test('restart recovery and extra control fields cannot reconstruct a native admi
   h.send(recoveryControl('prepare_native_recovery', 'unfinished', { command: {} }));
   assert.equal(h.has('invalid', 'error'), true);
   assert.equal(h.state.observations, 0); assert.deepEqual(h.output, []);
+  const stop = randomUUID(); h.send({ type: 'stop', requestId: stop, targetRequestId: 'unfinished' });
+  assert.equal(h.has(stop, 'uncertain'), true); assert.equal(h.journal.getTaskState('unfinished'), 'paused');
+});
+
+function replace(targetRequestId: string, mode: 'navigate' | 'locate' | 'open' = 'locate', revision = 2) {
+  const next = start(); next.command.taskId = targetRequestId; next.command.goalRevision = revision;
+  next.command.text = mode === 'navigate' ? 'Navigate synthetic fixture to Documents'
+    : `${mode === 'open' ? 'Open' : 'Locate'} synthetic fixture file Documents/Budget.xlsx`;
+  const replacement: Record<string, unknown> = { bundleId: next.bundleId, folderName: next.folderName,
+    command: next.command, expectedWindowTitle: mode === 'navigate' ? DOCS : mode === 'locate' ? LOCATED : OPENED };
+  if (mode !== 'navigate') replacement.fileName = 'Budget.xlsx';
+  return { type: 'replace_native_fixture', requestId: next.requestId, targetRequestId, mode, replacement };
+}
+test('controller installs changed fixture goal with revision and ownership handoff after old Stop fence', async t => {
+  const h = await pausedController(t); const replacement = replace(h.input.requestId);
+  h.send(replacement); await waitFor(() => h.has(replacement.requestId, 'ready'));
+  const handoff = h.output.find(p => p.type === 'native_replacement_task')!;
+  assert.equal(handoff.taskId, replacement.requestId); assert.equal(handoff.targetRequestId, h.input.requestId);
+  assert.equal(handoff.goalRevision, 2); assert.equal(handoff.mode, 'locate');
+  assert.equal(h.has(replacement.requestId, 'verified_native_locate'), true);
+  assert.equal(h.has(h.input.requestId, 'ready'), false);
+  assert.deepEqual(h.state.stopIDs, [h.input.requestId]); assert.equal(h.state.commits, 2);
+  assert.equal(h.journal.getTaskState(h.input.requestId), 'cancelled');
+  assert.deepEqual(h.journal.getTaskRecord(replacement.requestId)!.replaces, { taskId: h.input.requestId });
+});
+test('pending old worker fence excludes replacement observations and cross-surface intake; Stop cancels transition', async t => {
+  const h = await pausedController(t); h.state.holdStops = true;
+  const replacement = replace(h.input.requestId); const observations = h.state.observations;
+  h.send(replacement); await waitFor(() => h.state.stops === 1);
+  assert.equal(h.state.observations, observations);
+  const concurrent = start(); h.send(concurrent); assert.equal(h.has(concurrent.requestId, 'busy'), true);
+  const stop = randomUUID(); h.send({ type: 'stop', requestId: stop, targetRequestId: h.input.requestId });
+  h.state.holdStops = false; h.state.held.splice(0).forEach(reply => reply());
+  await waitFor(() => h.has(h.input.requestId, 'ready'));
+  assert.equal(h.has(stop, 'stopped'), true); assert.equal(h.state.observations, observations);
+  assert.equal(h.journal.getTaskRecord(replacement.requestId), undefined);
+  assert.equal(h.output.some(p => p.type === 'native_replacement_task'), false);
+});
+test('Stop using old UI target during replacement read fences child task before admission', async t => {
+  const h = await pausedController(t); h.state.holdObservations = true;
+  const replacement = replace(h.input.requestId); const before = h.state.observations;
+  h.send(replacement); await waitFor(() => h.state.observations > before);
+  const stop = randomUUID(); h.send({ type: 'stop', requestId: stop, targetRequestId: h.input.requestId });
+  await waitFor(() => h.has(h.input.requestId, 'ready'));
+  assert.deepEqual(h.state.stopIDs, [h.input.requestId, replacement.requestId]);
+  h.state.held.splice(0).forEach(reply => reply());
+  assert.equal(h.journal.getTaskRecord(replacement.requestId), undefined); assert.equal(h.state.commits, 1);
+});
+test('paused child handoff accepts in-flight old Stop target only for its linked replacement', async t => {
+  const h = await pausedController(t); h.state.duplicate = true;
+  const replacement = replace(h.input.requestId); h.send(replacement);
+  await waitFor(() => h.has(replacement.requestId, 'blocked_recovery'));
+  assert.equal(h.journal.getTaskState(replacement.requestId), 'paused');
+  const wrongStop = randomUUID(); h.send({ type: 'stop', requestId: wrongStop, targetRequestId: 'unrelated-task' });
+  assert.equal(h.has(wrongStop, 'uncertain'), true);
+  const stop = randomUUID(); h.send({ type: 'stop', requestId: stop, targetRequestId: h.input.requestId });
+  await waitFor(() => h.has(replacement.requestId, 'ready'));
+  assert.equal(h.journal.getTaskState(replacement.requestId), 'cancelled');
+  assert.deepEqual(h.state.stopIDs, [h.input.requestId, replacement.requestId]);
+});
+test('failed old worker fence emits no handoff, replacement observation or admission', async t => {
+  const h = await pausedController(t); h.state.stopResult = false;
+  const before = h.state.observations; const replacement = replace(h.input.requestId); h.send(replacement);
+  await waitFor(() => h.has(replacement.requestId, 'blocked_recovery'));
+  assert.equal(h.journal.getTaskState(h.input.requestId), 'cancelled');
+  assert.equal(h.journal.getTaskRecord(replacement.requestId), undefined);
+  assert.equal(h.state.observations, before); assert.deepEqual(h.output, []);
+});
+test('unchanged, malformed and wrong-source replacement requests preserve the original paused actor', async t => {
+  const h = await pausedController(t); const before = h.state.observations;
+  const unchanged = replace(h.input.requestId, 'open'); h.send(unchanged);
+  await waitFor(() => h.has(unchanged.requestId, 'error'));
+  const wrong = replace('foreign-task'); h.send(wrong); assert.equal(h.has(wrong.requestId, 'blocked_recovery'), true);
+  h.send({ ...replace(h.input.requestId), approval: true }); assert.equal(h.has('invalid', 'error'), true);
+  assert.equal(h.journal.getTaskState(h.input.requestId), 'paused'); assert.equal(h.state.stops, 0);
+  assert.equal(h.state.observations, before); assert.deepEqual(h.output, []);
 });

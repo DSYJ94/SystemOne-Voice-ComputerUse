@@ -1,5 +1,27 @@
 # Implementation status
 
+## Native fixture replacement admission, 1 October 2026
+
+`codex/native-task-replacement`, based on #69 at `4bcab66`.
+[Replacement admission](NATIVE_TASK_REPLACEMENT.md) now transfers one exact final
+correction from a retained paused fixture actor into a fresh child task only
+after cancellation and a settled successful worker fence. Source correction
+message/digest/next revision and unique durable parent/child lineage are checked
+inside the child admission transaction. Old history stays intact; new goals get
+fresh scope/limits/evidence. Unchanged goals, foreign/stale commands, failed
+fences, unknown effects and other unfinished tasks cannot admit replacements.
+The controller keeps exclusive ownership and Stop targeting through the
+transition; developer-panel intake adopts only its exact linked child/revision.
+
+Linux typecheck and **407 passed, zero failed, two Mac-only skips (409 total)**;
+19 added regressions and six release inventory checks pass. The extended Swift
+intake checks and AppKit choice sheet are uncompiled in Linux. General/active
+correction, native field-fill/browser actor integration, restart reconstruction
+and all model/Mac/Chrome/release qualification remain open. Next: persistent
+native field-fill actor and semantic completion contracts. The previous owner
+goal remains dropped from the work plan.
+
+
 ## Native fixture recovery controller and panel, 1 October 2026
 
 `codex/native-controller-recovery`, based on #68 at `d0482bc`.

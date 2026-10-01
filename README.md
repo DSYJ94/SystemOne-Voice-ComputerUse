@@ -34,7 +34,9 @@ setup, live permission recovery and physical multi-monitor use remain pending.
   controller intake across restart; explicit Stop fences a retained native
   fixture actor. [Check recovery / explicit Resume](docs/NATIVE_CONTROLLER_RECOVERY.md)
   continues a retained fixture actor after fresh checkpoint verification. Mac
-  compilation and live behavior remain unqualified.
+  compilation and live behavior remain unqualified. [Replacement admission](docs/NATIVE_TASK_REPLACEMENT.md)
+  fences a paused fixture actor before transferring an explicit changed goal
+  into a fresh task with durable lineage.
 - A [pending release dependency inventory](docs/RELEASE_DEPENDENCY_INVENTORY.md)
   records locked runtime/build/test packages and non-npm release gaps, with
   repeatable generation and drift checks. Artifact SBOM and license clearance

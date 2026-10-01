@@ -118,6 +118,9 @@ final class DevTaskIntake {
 
     private(set) var activeRequestID: String?
     private(set) var activeSurface: Surface?
+    private(set) var activeGoalRevision = 1
+    private var replacement: (taskID: String, sourceID: String, surface: Surface, mode: String, revision: Int)?
+    var replacementRequestID: String? { replacement?.taskID }
 
     @discardableResult
     func submit(_ intent: Intent, originalText: String? = nil, voice: Bool = false,
@@ -143,10 +146,63 @@ final class DevTaskIntake {
         return true
     }
 
+    /// A correction keeps the old writer until the host returns a linked task.
+    /// Delivery is a final explicit command, not a Resume intent or admission.
+    func replaceFixture(_ intent: Intent, send: ([String: Any]) -> Bool) -> Bool {
+        guard let sourceID = activeRequestID, replacement == nil,
+              let surface = activeSurface,
+              [.nativeNavigation, .nativeLocate, .nativeOpen].contains(surface),
+              intent.surface != surface else { return false }
+        let mode: String
+        switch intent {
+        case .fixtureDocuments: mode = "navigate"
+        case .fixtureFile(let open): mode = open ? "open" : "locate"
+        default: return false
+        }
+        let taskID = UUID().uuidString.lowercased()
+        let revision = activeGoalRevision + 1
+        let command: [String: Any] = ["type": "command", "protocolVersion": "2.0",
+            "messageId": UUID().uuidString.lowercased(), "taskId": sourceID,
+            "taskEpoch": 1, "goalRevision": revision, "source": "text", "mode": "command",
+            "utteranceId": UUID().uuidString.lowercased(), "utteranceRevision": 1,
+            "text": intent.commandText, "isFinal": true,
+            "createdAt": ISO8601DateFormatter().string(from: Date()),
+            "originSurface": ["adapter": "native", "surfaceId": "systemone-panel",
+                "appBundleId": "com.aurium.systemone.dev", "windowId": "command-panel",
+                "contentRevision": sourceID]]
+        var payload = intent.request(taskID: taskID, command: command)
+        payload.removeValue(forKey: "type"); payload.removeValue(forKey: "requestId")
+        guard send(["type": "replace_native_fixture", "requestId": taskID,
+            "targetRequestId": sourceID, "mode": mode, "replacement": payload]) else { return false }
+        replacement = (taskID, sourceID, intent.surface, mode, revision)
+        return true
+    }
+
+    func acceptReplacement(_ object: [String: Any]) -> Bool {
+        guard let pending = replacement, activeRequestID == pending.sourceID,
+              Set(object.keys) == ["type", "requestId", "targetRequestId", "taskId", "taskEpoch", "goalRevision", "mode"],
+              object["type"] as? String == "native_replacement_task",
+              object["requestId"] as? String == pending.taskID,
+              object["taskId"] as? String == pending.taskID,
+              object["targetRequestId"] as? String == pending.sourceID,
+              object["taskEpoch"] as? Int == 1,
+              object["goalRevision"] as? Int == pending.revision,
+              object["mode"] as? String == pending.mode else { return false }
+        activeRequestID = pending.taskID; activeSurface = pending.surface
+        activeGoalRevision = pending.revision; replacement = nil
+        return true
+    }
+
+    func rejectReplacement(requestID: String) {
+        if replacement?.taskID == requestID { replacement = nil }
+    }
+
     func releaseIfReady(requestID: String) {
         guard requestID == activeRequestID else { return }
         activeRequestID = nil
         activeSurface = nil
+        activeGoalRevision = 1
+        replacement = nil
     }
 
 }

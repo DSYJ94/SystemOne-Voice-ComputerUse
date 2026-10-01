@@ -48,6 +48,9 @@ contract in `ScriptedPortalStore`. Its separate commits are conservatively
 review. The older synthetic `HostDispatchGate` retains the revision-only API.
 
 The journal now has [checkpoint-bound recovery intent and correction fences](TASK_RECOVERY.md).
-Next: connect them to the native/browser actor, adapter barriers and replacement
-admission. Stored history alone never authorizes retry or resume. See
+The [fixture replacement path](NATIVE_TASK_REPLACEMENT.md) now records unique
+parent/child lineage atomically with child admission after a settled worker fence.
+`replacement` and `replaces` are diagnostic links; restart cannot reconstruct
+command transfer or actor authority. General/browser replacement and active
+correction remain open. Stored history alone never authorizes retry or resume. See
 [validation](VALIDATION.md) and the [build handoff](BUILD_HANDOFF.md).
