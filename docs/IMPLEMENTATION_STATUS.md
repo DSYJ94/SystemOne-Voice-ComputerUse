@@ -2,7 +2,9 @@
 
 ## CLM proposals and bounded owned transport, 1 October 2026
 
-`codex/clm-decision-boundary`, based on #64 at `e64f59b`. The client validates
+`codex/clm-decision-boundary`, based on #64 at `e64f59b`, implementation
+`40eb6cb`, [draft #65](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/65).
+The client validates
 approved semantic choices before I/O and returns observation/digest/provider/
 calibration-bound proposals. Host thresholds, ties, malformed output, cancellation
 and transport errors prevent effect selection. Owned transport requires remote

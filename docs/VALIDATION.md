@@ -2,7 +2,8 @@
 
 ## CLM proposal boundary and owned transport, 1 October 2026
 
-`codex/clm-decision-boundary`, based on #64 at `e64f59b`.
+`codex/clm-decision-boundary`, based on #64 at `e64f59b`, implementation
+`40eb6cb`, [draft #65](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/65).
 Same Linux/pinned Node/Playwright toolchain as preceding records.
 
 - `npm run check`: typecheck passed; **355 passed, zero failed, two Mac-only

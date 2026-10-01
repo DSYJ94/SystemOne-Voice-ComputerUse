@@ -11,6 +11,9 @@ each implementation slice lands.
 
 **Cloud source continuation:** use `/workspace/SystemOne-Voice-ComputerUse`,
 branch `codex/clm-decision-boundary`, based on #64 at `e64f59b`.
+Implementation commit: `40eb6cb`.
+[Draft PR #65](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/65)
+targets `codex/persistent-scripted-actor` (#64).
 The preceding actor implementation is `cdc641c`.
 [Draft PR #64](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/64)
 targets `codex/explicit-task-recovery` (#63).
