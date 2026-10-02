@@ -1,10 +1,10 @@
 # CLM serving and preparation
 
-No owner setup is needed yet. CLM will be served through an owned private HTTP
-API; the repository has a [bounded decision client](CLM_DECISION_BOUNDARY.md),
+The owner selected self-hosted testing on premise or AWS/GCP. CLM will be
+served through an owned private HTTP API; the repository has a [bounded decision client](CLM_DECISION_BOUNDARY.md),
 an opt-in synthetic native selector and a separate fixture probe. It has no
-deployed server or live CLM-backed owner-app executor. Having AWS, GCP, Modal or Runpod access is
-sufficient for later deployment planning. Do not put credentials in chat or
+deployed server or live CLM-backed owner-app executor. The account/project, region and usable
+GPU host still need to be bound to this session. Do not put credentials in chat or
 tracked files. No GPU, weights or paid service was provisioned for this slice.
 
 The intended reference path is:
@@ -31,9 +31,8 @@ reference first, then compare a Metal/MLX backend against its embeddings and
 rankings before treating local inference as supported. Quantization needs a
 separate fidelity check.
 
-For a short reference experiment, Modal or Runpod is a practical starting
-point; AWS or GCP is also acceptable if existing quotas and deployment tooling
-make it easier. Choose one service for the first run. An initial **24–48 GB
+For the requested reference experiment, use the available on-premise GPU host
+or one owned AWS/GCP deployment. Choose one target for the first run. An initial **24–48 GB
 NVIDIA GPU** is a planning range to investigate, not a qualified requirement:
 an 8B encoder in two-byte precision alone is roughly 16 GB of weights, with
 additional head, activation, batching and runtime memory. Measure actual peak
@@ -98,3 +97,18 @@ On 1 October, this task had no owned endpoint or provider credential binding.
 The cloud network policy returned HTTP 403 for Hugging Face model metadata, so
 immutable encoder/tokenizer resolution and artifact verification remain pending.
 The package-manager network preset was preserved; no GPU or paid deployment ran.
+
+The [owned serving boundary](CLM_SERVING_BOUNDARY.md) now provides mandatory
+authentication, exact SystemOne requests, pre-ranking overflow checks, redacted
+validated replies and bounded outstanding ownership. It needs a concrete pinned
+reference tokenizer/ranking adapter; synthetic ingress tests are not live
+inference evidence. Production listener startup rejects the pending manifest
+and missing local weights before opening a loopback socket.
+
+The network draft save for `huggingface.co`, `registry-1.docker.io` and
+`auth.docker.io` failed with a configuration-conflict error. A reread confirmed
+revision 3 and the previous allowlist unchanged; persistence of these additions
+is unconfirmed. Add those hosts in environment settings while preserving GitHub,
+Playwright, Google Storage and the package-manager preset. Actual access must
+be retested after application. No credential variable bindings, cloud account or
+Mac SSH/CI runner are available in this task.
