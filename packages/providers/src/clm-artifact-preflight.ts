@@ -28,7 +28,7 @@ export interface CLMArtifactManifest {
   readonly encoder: { readonly repository: 'Qwen/Qwen3-8B'; readonly revision: string; readonly files: readonly CLMArtifactFile[] };
   readonly heads: { readonly repository: 'Contrastive-LM/CLM-v0.1-8B'; readonly revision: string; readonly files: readonly CLMArtifactFile[] };
   readonly runtime: { readonly image: string; readonly serverRevision: string } | {
-    readonly platform: 'macos-arm64'; readonly pythonVersion: '3.12.14';
+    readonly platform: 'macos-arm64'; readonly pythonVersion: `3.12.${number}`;
     readonly requirementsSha256: string; readonly serverRevision: string;
   };
   readonly recipe: typeof RECIPE;
@@ -91,7 +91,8 @@ export function validateCLMArtifactManifest(value: unknown): CLMArtifactManifest
   if ((!native && manifest.schemaVersion !== 'systemone-clm-artifacts-v1') || manifest.referenceRevision !== CLM_REFERENCE_REVISION
     || encoder.repository !== 'Qwen/Qwen3-8B' || typeof encoder.revision !== 'string' || !REVISION.test(encoder.revision)
     || heads.repository !== 'Contrastive-LM/CLM-v0.1-8B' || heads.revision !== CLM_HEAD_REVISION
-    || (native ? runtime.platform !== 'macos-arm64' || runtime.pythonVersion !== '3.12.14'
+    || (native ? runtime.platform !== 'macos-arm64' || typeof runtime.pythonVersion !== 'string'
+      || !/^3\.12\.\d+$/.test(runtime.pythonVersion)
       || typeof runtime.requirementsSha256 !== 'string' || !HASH.test(runtime.requirementsSha256)
       : typeof runtime.image !== 'string' || !/^[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}$/.test(runtime.image))
     || typeof runtime.serverRevision !== 'string' || !REVISION.test(runtime.serverRevision)
@@ -103,7 +104,10 @@ export function validateCLMArtifactManifest(value: unknown): CLMArtifactManifest
   return Object.freeze({ schemaVersion: native ? 'systemone-clm-artifacts-v2' : 'systemone-clm-artifacts-v1', referenceRevision: CLM_REFERENCE_REVISION,
     encoder: Object.freeze({ repository: 'Qwen/Qwen3-8B', revision: encoder.revision, files: files(encoder.files, 'encoder') }),
     heads: Object.freeze({ repository: 'Contrastive-LM/CLM-v0.1-8B', revision: CLM_HEAD_REVISION, files: files(heads.files, 'heads') }),
-    runtime: Object.freeze(native ? { platform: 'macos-arm64' as const, pythonVersion: '3.12.14' as const,
+    runtime: Object.freeze(native ? { platform: 'macos-arm64' as const,
+      // Passed through verbatim: the worker binds this exact value against the
+      // running interpreter, so it must be the version the manifest declares.
+      pythonVersion: runtime.pythonVersion as `3.12.${number}`,
       requirementsSha256: runtime.requirementsSha256 as string, serverRevision: runtime.serverRevision }
       : { image: runtime.image as string, serverRevision: runtime.serverRevision }),
     recipe: RECIPE, security: SECURITY, licenseReviewRef: manifest.licenseReviewRef });
