@@ -1,0 +1,306 @@
+[
+  {
+    "id": "diag-documents-base",
+    "synthetic": true,
+    "expectedCandidateId": "documents",
+    "targetPresent": true,
+    "providerView": {
+      "projectionRevision": "diagnostic.v1",
+      "stateText": "Goal: locate Budget.xlsx in Documents. Current state: Finder sidebar shows Recents selected and Documents available. Verified progress: Finder is active. Scope: locate only, do not open a file.",
+      "questionText": "Choose one next action that advances the goal, or pause if none is safe.",
+      "candidates": [
+        {
+          "candidateId": "documents",
+          "description": "Select Documents in the Finder sidebar to show the Documents folder."
+        },
+        {
+          "candidateId": "recents",
+          "description": "Select Recents in the Finder sidebar, which is already selected."
+        },
+        {
+          "candidateId": "help",
+          "description": "Pause and ask the user because no offered action can safely advance the task."
+        }
+      ]
+    },
+    "diagnostic": true,
+    "factor": "smoke fixture unchanged",
+    "taskKey": "diagnostic: locate Budget.xlsx in Documents (smoke task; never calibration)"
+  },
+  {
+    "id": "diag-documents-no-pause-question",
+    "synthetic": true,
+    "expectedCandidateId": "documents",
+    "targetPresent": true,
+    "providerView": {
+      "projectionRevision": "diagnostic.v1",
+      "stateText": "Goal: locate Budget.xlsx in Documents. Current state: Finder sidebar shows Recents selected and Documents available. Verified progress: Finder is active. Scope: locate only, do not open a file.",
+      "questionText": "Choose one next action that advances the goal.",
+      "candidates": [
+        {
+          "candidateId": "documents",
+          "description": "Select Documents in the Finder sidebar to show the Documents folder."
+        },
+        {
+          "candidateId": "recents",
+          "description": "Select Recents in the Finder sidebar, which is already selected."
+        },
+        {
+          "candidateId": "help",
+          "description": "Pause and ask the user because no offered action can safely advance the task."
+        }
+      ]
+    },
+    "diagnostic": true,
+    "factor": "question drops \"or pause if none is safe\"",
+    "taskKey": "diagnostic: locate Budget.xlsx in Documents (smoke task; never calibration)"
+  },
+  {
+    "id": "diag-documents-calibration-question",
+    "synthetic": true,
+    "expectedCandidateId": "documents",
+    "targetPresent": true,
+    "providerView": {
+      "projectionRevision": "diagnostic.v1",
+      "stateText": "Goal: locate Budget.xlsx in Documents. Current state: Finder sidebar shows Recents selected and Documents available. Verified progress: Finder is active. Scope: locate only, do not open a file.",
+      "questionText": "Choose the one offered action that advances the goal within its scope.",
+      "candidates": [
+        {
+          "candidateId": "documents",
+          "description": "Select Documents in the Finder sidebar to show the Documents folder."
+        },
+        {
+          "candidateId": "recents",
+          "description": "Select Recents in the Finder sidebar, which is already selected."
+        },
+        {
+          "candidateId": "help",
+          "description": "Pause and ask the user because no offered action can safely advance the task."
+        }
+      ]
+    },
+    "diagnostic": true,
+    "factor": "calibration.v1 question",
+    "taskKey": "diagnostic: locate Budget.xlsx in Documents (smoke task; never calibration)"
+  },
+  {
+    "id": "diag-documents-no-help",
+    "synthetic": true,
+    "expectedCandidateId": "documents",
+    "targetPresent": true,
+    "providerView": {
+      "projectionRevision": "diagnostic.v1",
+      "stateText": "Goal: locate Budget.xlsx in Documents. Current state: Finder sidebar shows Recents selected and Documents available. Verified progress: Finder is active. Scope: locate only, do not open a file.",
+      "questionText": "Choose one next action that advances the goal, or pause if none is safe.",
+      "candidates": [
+        {
+          "candidateId": "documents",
+          "description": "Select Documents in the Finder sidebar to show the Documents folder."
+        },
+        {
+          "candidateId": "recents",
+          "description": "Select Recents in the Finder sidebar, which is already selected."
+        }
+      ]
+    },
+    "diagnostic": true,
+    "factor": "help candidate removed",
+    "taskKey": "diagnostic: locate Budget.xlsx in Documents (smoke task; never calibration)"
+  },
+  {
+    "id": "diag-documents-no-recents",
+    "synthetic": true,
+    "expectedCandidateId": "documents",
+    "targetPresent": true,
+    "providerView": {
+      "projectionRevision": "diagnostic.v1",
+      "stateText": "Goal: locate Budget.xlsx in Documents. Current state: Finder sidebar shows Recents selected and Documents available. Verified progress: Finder is active. Scope: locate only, do not open a file.",
+      "questionText": "Choose one next action that advances the goal, or pause if none is safe.",
+      "candidates": [
+        {
+          "candidateId": "documents",
+          "description": "Select Documents in the Finder sidebar to show the Documents folder."
+        },
+        {
+          "candidateId": "help",
+          "description": "Pause and ask the user because no offered action can safely advance the task."
+        }
+      ]
+    },
+    "diagnostic": true,
+    "factor": "already-selected Recents distractor removed",
+    "taskKey": "diagnostic: locate Budget.xlsx in Documents (smoke task; never calibration)"
+  },
+  {
+    "id": "diag-documents-production-help",
+    "synthetic": true,
+    "expectedCandidateId": "documents",
+    "targetPresent": true,
+    "providerView": {
+      "projectionRevision": "diagnostic.v1",
+      "stateText": "Goal: locate Budget.xlsx in Documents. Current state: Finder sidebar shows Recents selected and Documents available. Verified progress: Finder is active. Scope: locate only, do not open a file.",
+      "questionText": "Choose one next action that advances the goal, or pause if none is safe.",
+      "candidates": [
+        {
+          "candidateId": "documents",
+          "description": "Select Documents in the Finder sidebar to show the Documents folder."
+        },
+        {
+          "candidateId": "recents",
+          "description": "Select Recents in the Finder sidebar, which is already selected."
+        },
+        {
+          "candidateId": "help",
+          "description": "Pause and ask the user because no offered action can safely advance this task."
+        }
+      ]
+    },
+    "diagnostic": true,
+    "factor": "help text is the host fallback text",
+    "taskKey": "diagnostic: locate Budget.xlsx in Documents (smoke task; never calibration)"
+  },
+  {
+    "id": "diag-documents-production-fallbacks",
+    "synthetic": true,
+    "expectedCandidateId": "documents",
+    "targetPresent": true,
+    "providerView": {
+      "projectionRevision": "diagnostic.v1",
+      "stateText": "Goal: locate Budget.xlsx in Documents. Current state: Finder sidebar shows Recents selected and Documents available. Verified progress: Finder is active. Scope: locate only, do not open a file.",
+      "questionText": "Choose one next action that advances the goal, or pause if none is safe.",
+      "candidates": [
+        {
+          "candidateId": "documents",
+          "description": "Select Documents in the Finder sidebar to show the Documents folder."
+        },
+        {
+          "candidateId": "recents",
+          "description": "Select Recents in the Finder sidebar, which is already selected."
+        },
+        {
+          "candidateId": "wait",
+          "description": "Wait briefly, then observe this scope again before proposing an action."
+        },
+        {
+          "candidateId": "help",
+          "description": "Pause and ask the user because no offered action can safely advance this task."
+        }
+      ]
+    },
+    "diagnostic": true,
+    "factor": "host wait + help fallbacks",
+    "taskKey": "diagnostic: locate Budget.xlsx in Documents (smoke task; never calibration)"
+  },
+  {
+    "id": "diag-documents-host-template",
+    "synthetic": true,
+    "expectedCandidateId": "documents",
+    "targetPresent": true,
+    "providerView": {
+      "projectionRevision": "diagnostic.v1",
+      "stateText": "Goal: locate Budget.xlsx in Documents. Current state: Finder sidebar shows Recents selected and Documents available. Verified progress: Finder is active. Scope: locate only, do not open a file.",
+      "questionText": "Choose one next action that advances the goal, or pause if none is safe.",
+      "candidates": [
+        {
+          "candidateId": "documents",
+          "description": "Invoke the visible AXButton “Documents” in the Finder sidebar, then independently verify that the Documents folder is shown."
+        },
+        {
+          "candidateId": "recents",
+          "description": "Select Recents in the Finder sidebar, which is already selected."
+        },
+        {
+          "candidateId": "help",
+          "description": "Pause and ask the user because no offered action can safely advance the task."
+        }
+      ]
+    },
+    "diagnostic": true,
+    "factor": "Documents candidate in the host invoke template",
+    "taskKey": "diagnostic: locate Budget.xlsx in Documents (smoke task; never calibration)"
+  },
+  {
+    "id": "diag-documents-no-negated-scope",
+    "synthetic": true,
+    "expectedCandidateId": "documents",
+    "targetPresent": true,
+    "providerView": {
+      "projectionRevision": "diagnostic.v1",
+      "stateText": "Goal: locate Budget.xlsx in Documents. Current state: Finder sidebar shows Recents selected and Documents available. Verified progress: Finder is active. Scope: locate only.",
+      "questionText": "Choose one next action that advances the goal, or pause if none is safe.",
+      "candidates": [
+        {
+          "candidateId": "documents",
+          "description": "Select Documents in the Finder sidebar to show the Documents folder."
+        },
+        {
+          "candidateId": "recents",
+          "description": "Select Recents in the Finder sidebar, which is already selected."
+        },
+        {
+          "candidateId": "help",
+          "description": "Pause and ask the user because no offered action can safely advance the task."
+        }
+      ]
+    },
+    "diagnostic": true,
+    "factor": "scope drops \"do not open a file\"",
+    "taskKey": "diagnostic: locate Budget.xlsx in Documents (smoke task; never calibration)"
+  },
+  {
+    "id": "diag-documents-no-scope",
+    "synthetic": true,
+    "expectedCandidateId": "documents",
+    "targetPresent": true,
+    "providerView": {
+      "projectionRevision": "diagnostic.v1",
+      "stateText": "Goal: locate Budget.xlsx in Documents. Current state: Finder sidebar shows Recents selected and Documents available. Verified progress: Finder is active.",
+      "questionText": "Choose one next action that advances the goal, or pause if none is safe.",
+      "candidates": [
+        {
+          "candidateId": "documents",
+          "description": "Select Documents in the Finder sidebar to show the Documents folder."
+        },
+        {
+          "candidateId": "recents",
+          "description": "Select Recents in the Finder sidebar, which is already selected."
+        },
+        {
+          "candidateId": "help",
+          "description": "Pause and ask the user because no offered action can safely advance the task."
+        }
+      ]
+    },
+    "diagnostic": true,
+    "factor": "scope sentence removed",
+    "taskKey": "diagnostic: locate Budget.xlsx in Documents (smoke task; never calibration)"
+  },
+  {
+    "id": "diag-documents-no-progress",
+    "synthetic": true,
+    "expectedCandidateId": "documents",
+    "targetPresent": true,
+    "providerView": {
+      "projectionRevision": "diagnostic.v1",
+      "stateText": "Goal: locate Budget.xlsx in Documents. Current state: Finder sidebar shows Recents selected and Documents available. Scope: locate only, do not open a file.",
+      "questionText": "Choose one next action that advances the goal, or pause if none is safe.",
+      "candidates": [
+        {
+          "candidateId": "documents",
+          "description": "Select Documents in the Finder sidebar to show the Documents folder."
+        },
+        {
+          "candidateId": "recents",
+          "description": "Select Recents in the Finder sidebar, which is already selected."
+        },
+        {
+          "candidateId": "help",
+          "description": "Pause and ask the user because no offered action can safely advance the task."
+        }
+      ]
+    },
+    "diagnostic": true,
+    "factor": "verified-progress sentence removed",
+    "taskKey": "diagnostic: locate Budget.xlsx in Documents (smoke task; never calibration)"
+  }
+]

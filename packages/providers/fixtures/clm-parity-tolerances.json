@@ -1,0 +1,22 @@
+{
+  "kind": "clm-full-encoder-parity-tolerances",
+  "revision": "parity-tolerances.v1",
+  "status": "candidate-preregistered",
+  "registeredOn": "2026-10-02",
+  "note": "Fixed before any Linux/vLLM reference output existed. The plan names the parity gate but no numeric bounds; these are candidate bounds that need owner acceptance before a pass counts toward B02/B06/G1. Never loosen them after seeing a comparison; a failure is a finding to explain.",
+  "tokens": { "rule": "exact-equality" },
+  "embedding": {
+    "space": "encoder last-token hidden state after float32 L2 normalization",
+    "minCosine": 0.999,
+    "maxAbsElement": 0.01
+  },
+  "distribution": {
+    "maxAbsProbabilityDifference": 0.02,
+    "topChoiceMustAgreeWhenReferenceMarginAtLeast": 0.05
+  },
+  "determinism": { "rule": "byte-identical-repetition-on-the-same-host" },
+  "headArithmetic": {
+    "description": "Reference embeddings ranked through the owned CPU head path versus the reference's own distribution; isolates head/arithmetic from encoder drift",
+    "maxAbsProbabilityDifference": 1e-5
+  }
+}
