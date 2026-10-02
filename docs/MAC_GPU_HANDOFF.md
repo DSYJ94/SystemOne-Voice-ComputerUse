@@ -117,6 +117,18 @@ encoder defect. The next decisive evidence is the Linux/vLLM reference
 capture on the same corpora. It separates model behavior from MPS drift, and
 it needs an NVIDIA host you approve.
 
+## Update, 3 October 2026: CLM parked, Jev first
+
+Owner decision: CLM is parked. There is no NVIDIA host for the parity
+reference. Jev (`jev-1.13.0`) is the active decision-model track, with no
+hard spending cap by owner choice. On the same 60 calibration cases Jev
+scored 59/60 with zero wrong actions, against CLM's 24/60 (see
+[validation](VALIDATION.md)). Next: the B22 product adapter behind a feature
+flag (explicit per-session enablement, disclosed egress, off in offline
+mode), plus a harder corpus built from real observations. The key lives in
+the login Keychain item `systemone-jev`; never put it in a file in this
+OneDrive checkout. The CLM harness stays in place for re-testing.
+
 ## Next steps, in order
 
 1. **Full-encoder parity** against the pinned Linux/vLLM recipe

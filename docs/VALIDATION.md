@@ -1,5 +1,38 @@
 # Initial foundation validation
 
+## First Jev benchmark on the calibration corpus, 3 October 2026
+
+Owner decision, 3 October 2026: CLM is parked and Jev is tried first. The
+owner declined a hard spending cap for this work (V1_PLAN previously required
+one). `4886238`, `scripts/benchmark-jev.ts`, pinned model `jev-1.13.0` at
+`https://api.typesafe.ai/v1/systemone`. The key was read from the owner's
+login Keychain item and never written anywhere. The run covered the same 74
+synthetic cases as the CLM capture, each in offered and reversed option order:
+148 requests, 148 valid, zero retries, 70,106 input tokens (about $0.003 at
+the documented price). Latency: median 234 ms, p95 335 ms. Private report:
+`private-traces/jev-benchmark-4886238.json`.
+
+| Same labels, calibration corpus (60) | CLM (MPS, `b43a927`) | Jev offered | Jev reversed |
+|---|---|---|---|
+| Top choice correct | 24 | 59 | 59 |
+| advance / identity / missing / scope / wait | 9/26, 3/10, 5/10, 7/8, 0/6 | 26/26, 10/10, 9/10, 8/8, 6/6 | same |
+| Wrong concrete actions at p ≥ 0.5 | 11 (vs 8 correct) | 0 (vs 41 correct) | 0 |
+| Highest-probability wrong action | 0.770 | none | none |
+
+Jev's single miss is `miss-settings-pane`, a near-tie between two non-effect
+answers (wait 0.49, request_help 0.48). Reversing option order changed no top
+choice in 74/74 cases. Every diagnostic edit of `native-locate-documents`
+chose documents at p ≈ 1.000.
+
+Limits: the corpus was written by one author with unreviewed labels, and its
+states spell out scope cues explicitly. So 59/60 shows that Jev reads this
+projection style correctly. It does not show reliability on real
+observations. Seven of the 60 top probabilities fall below 0.9, so
+confidence still varies. These results do not qualify B22 or any gate. The
+product has no Jev integration, feature flag, offline-mode deactivation or
+egress disclosure yet. Real screen content sent to TypeSafe still needs the
+privacy review in V1_PLAN.
+
 ## First CLM calibration-corpus capture on the owner M5, 3 October 2026
 
 `codex/mac-first-validation` at `b43a927` (parity harness and corpora), clean
