@@ -1,5 +1,38 @@
 # Initial foundation validation
 
+## First Mac host validation, 2 October 2026
+
+`codex/native-field-replacement` at
+`7cfe7a6b20961908ee86ba8b2e729e200f53e09c`, the owner's OneDrive checkout,
+macOS arm64. First execution of the repository test suite on a Mac.
+
+Prerequisites verified at the exact pins: Node v26.5.0, npm 11.17.0, Python
+3.14.6 (system default), Apple Swift 6.4 (swift-driver 1.168.6,
+arm64-apple-macosx26.0). A fresh `.venv` was created from
+`requirements-test.txt`; `npm ci` added 13 packages to the existing tree;
+Playwright Chromium revisions 1228/1243 were already cached locally.
+
+`make test`: typecheck clean; **468 passed, zero failed, zero skipped, zero
+cancelled** — the two tests Linux records as Mac-only skips ran and passed on
+macOS for the first time. Python oracle **115/115**. Release inventory
+consistency and **7/7** checks pass. The focused intake check passes
+("task intake keeps one writer and binds committed command bytes").
+
+`npm run build:native-dev` compiled and ad-hoc signed the development app on a
+Mac for the first time: `.build/native-dev/SystemOne Dev.app` (ad-hoc identity,
+external Node path; not distributable, and the live TCC permission flow is
+still unverified). The Swift protocol package's standalone check executables
+build under Command Line Tools. `npm run test:swift` still cannot run: the
+Command Line Tools SDK does not ship XCTest
+(`unable to resolve module dependency: 'XCTest'`), matching the documented
+limitation; the XCTest suite needs full Xcode.
+
+This is source and compilation evidence on the target platform. It does not
+qualify Accessibility, microphone, voice, focus/Spaces, lock behavior, the
+owner's Chrome profile, CLM inference or any release gate. The GPU experiment,
+signing certificate and live qualification items in [V1_PLAN.md](V1_PLAN.md)
+remain open.
+
 ## Native field replacement admission, 2 October 2026
 
 `codex/native-field-replacement`, based on host interruption #74 at

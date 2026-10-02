@@ -12,7 +12,9 @@ each implementation slice lands.
 checkout path, safe branch sync, current PR stack, source evidence and laptop GPU
 and Mac qualification steps. The owner will pull from GitHub; this cloud session
 has not synced or accessed that Mac checkout. Latest source is on
-`codex/native-field-replacement`, not `main`.
+`codex/native-field-replacement`, not `main`. The consolidated v1 position and
+remaining path live in [V1_PLAN.md](V1_PLAN.md). The owner-run first Mac host
+validation passed: see [validation](VALIDATION.md).
 
 ## New-chat resume checkpoint — 1 October 2026
 
