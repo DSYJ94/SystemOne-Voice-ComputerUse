@@ -23,6 +23,7 @@ import { ChromeReadSession } from './chrome-read-session.ts';
 import { ChromeFillAuthority } from './chrome-fill-authority.ts';
 import { ExclusiveTaskSlot } from './exclusive-task-slot.ts';
 import { PersistentTaskActor } from './persistent-task-actor.ts';
+import { HostLifecycleGate } from './host-lifecycle.ts';
 import { buildActionCandidates, fromManagedObservation,
   selectBoundCandidate } from './action-candidates.ts';
 import type { JSONValue } from '../../protocol/src/json.ts';
@@ -141,7 +142,7 @@ type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
   | 'observing_native_locate' | 'verified_native_locate'
   | 'observing_native_open' | 'verified_native_open'
   | 'observing_chrome' | 'verified_chrome_dom_fill' | 'verified_navigation'
-  | 'portal_located' | 'portal_opened' | 'portal_downloaded'
+  | 'host_unavailable' | 'portal_located' | 'portal_opened' | 'portal_downloaded'
   | 'verified_portal_download' | 'portal_paused' | 'native_paused' | 'checking_native_recovery' | 'replacing_native_task';
 
 function isRecord(value: JSONValue): value is Record<string, JSONValue> {
@@ -378,12 +379,15 @@ export class NativeManagedController {
   readonly #chromeAuthorities = new Map<string, ChromeFillAuthority>();
   readonly #seen = new Set<string>();
   readonly #runs = new ExclusiveTaskSlot<ControllerRun>();
+  readonly #hostLifecycle: HostLifecycleGate;
+  #hostInterruption: Promise<void> | undefined;
   #workerFenceFailed = false;
 
   constructor(journal: AttemptJournal, send: (requestId: string, phase: Phase) => void,
     headless = false, nativeWorker?: NativeFieldPipeWorker,
     chromeOutput?: (value: Record<string, JSONValue>) => void,
-    portalStore?: ScriptedPortalStore) {
+    portalStore?: ScriptedPortalStore, requireHostSnapshot = false) {
+    this.#hostLifecycle = new HostLifecycleGate(requireHostSnapshot);
     this.#journal = journal;
     this.#portalStore = portalStore;
     this.#send = (requestId, phase) => {
@@ -391,8 +395,9 @@ export class NativeManagedController {
       // pause instead of translating it into success or a safe retry.
       const budgetPaused = journal.getTaskState(requestId) === 'paused'
         && journal.taskEventKinds(requestId).some(event => event.startsWith('paused_budget:'));
-      send(requestId, budgetPaused && !['ready', 'stopped', 'stopping', 'busy',
-        'blocked_recovery'].includes(phase) ? 'paused_budget' : phase);
+      send(requestId, phase === 'ready' && this.#hostHeld ? 'host_unavailable'
+        : budgetPaused && !['ready', 'stopped', 'stopping', 'busy', 'host_unavailable',
+          'blocked_recovery'].includes(phase) ? 'paused_budget' : phase);
     };
     this.#headless = headless;
     this.#nativeWorker = nativeWorker;
@@ -406,8 +411,53 @@ export class NativeManagedController {
   }
 
   startupPhase(): Phase {
-    return this.#journal.unresolvedAttempts().length || this.#journal.pendingTaskIds().length
+    if (this.#hostHeld) return 'host_unavailable';
+    return this.#workerFenceFailed || this.#nativeAuthority?.needsRecovery || this.#pressAuthority?.needsRecovery
+      || this.#journal.unresolvedAttempts().length || this.#journal.pendingTaskIds().length
       || this.#portalStore?.hasBlockingTask() ? 'blocked_recovery' : 'ready';
+  }
+
+  get #hostHeld(): boolean { return !this.#hostLifecycle.available || this.#hostInterruption !== undefined; }
+
+  #reportHost(): void {
+    if (this.#hostLifecycle.sequence === 0) return;
+    this.#chromeOutput?.({ type: 'host_lifecycle_status', sequence: this.#hostLifecycle.sequence,
+      sessionAvailable: this.#hostLifecycle.available, interruptionSettled: this.#hostInterruption === undefined });
+  }
+
+  #receiveHost(message: Record<string, JSONValue>): void {
+    const change = this.#hostLifecycle.accept(message);
+    if (!change.accepted) { this.#reportHost(); return; }
+    if (!this.#hostLifecycle.available && !this.#hostInterruption) {
+      // Hold intake synchronously, before an observation/decision can settle.
+      const pending = this.#interruptHost();
+      this.#hostInterruption = pending;
+      void pending.catch(() => { this.#workerFenceFailed = true; }).finally(() => {
+        if (this.#hostInterruption === pending) this.#hostInterruption = undefined;
+        this.#reportHost();
+      });
+    }
+    this.#reportHost();
+  }
+
+  async #interruptHost(): Promise<void> {
+    const run = this.#runs.active;
+    if (run && !(run.surface === 'native'
+      && this.#journal.getTaskState(run.task.authority.taskId ?? run.requestId) === 'completed')) {
+      await this.#stop({ type: 'stop', requestId: randomUUID(), targetRequestId: run.requestId });
+    }
+    for (const authority of [this.#nativeAuthority, this.#pressAuthority]) {
+      const taskId = authority?.taskId;
+      if (!this.#runs.active && taskId && this.#journal.getTaskState(taskId) === 'paused') {
+        await this.#stop({ type: 'stop', requestId: randomUUID(), targetRequestId: taskId });
+      }
+    }
+    // After the existing Stop barrier, revoke grants/retained observations.
+    // This closes only the host connection, never the owner's Chrome tabs.
+    for (const [connectionId, session] of this.#chromeSessions) {
+      session.close(); this.#chromeOutput?.({ type: 'chrome_port_close', connectionId });
+    }
+    this.#chromeSessions.clear(); this.#chromeAuthorities.clear();
   }
 
   #adapterSettled(run: ControllerRun,
@@ -432,6 +482,9 @@ export class NativeManagedController {
       if (line.byteLength > MAX_LINE_BYTES) throw new ContractError('native request too large');
       const parsed = parseJSON(line);
       if (this.#nativeWorker?.receive(parsed)) return;
+      if (isRecord(parsed) && parsed.type === 'host_lifecycle') {
+        this.#receiveHost(parsed); return;
+      }
       if (isRecord(parsed) && typeof parsed.type === 'string'
         && parsed.type.startsWith('chrome_port_')) {
         this.#receiveChrome(parsed);
@@ -448,6 +501,9 @@ export class NativeManagedController {
     if (request.type === 'stop') {
       void this.#stop(request);
       return;
+    }
+    if (this.#hostHeld && request.type !== 'cancel_native_recovery') {
+      this.#send(request.requestId, 'host_unavailable'); return;
     }
     if (request.type === 'replace_native_fixture') {
       this.#replaceNative(request); return;
@@ -628,6 +684,9 @@ export class NativeManagedController {
   }
 
   async close(): Promise<void> {
+    // A pending lifecycle Stop still owns journal/session cleanup. Settle it
+    // before closing the transport and durable stores underneath its callback.
+    await this.#hostInterruption?.catch(() => { this.#workerFenceFailed = true; });
     const run = this.#runs.active;
     if (run?.surface === 'chrome') {
       await run.task.authority.stop().catch(() => {});
@@ -667,7 +726,7 @@ export class NativeManagedController {
     }
     try {
       if (message.type === 'chrome_port_open') {
-        if (Object.keys(message).sort().join(',')
+        if (this.#hostHeld || Object.keys(message).sort().join(',')
             !== 'connectionId,extensionId,type'
           || typeof message.extensionId !== 'string'
           || this.#chromeSessions.has(connectionId)
@@ -708,7 +767,9 @@ export class NativeManagedController {
         || bytes.toString('base64') !== message.base64) {
         throw new ContractError('invalid Chrome port frame');
       }
-      session.receive(parseJSON(bytes));
+      const payload = parseJSON(bytes);
+      if (this.#hostHeld && isRecord(payload) && ['hello', 'observation'].includes(String(payload.type))) return;
+      session.receive(payload);
     } catch {
       this.#chromeSessions.get(connectionId)?.close();
       this.#chromeSessions.delete(connectionId);
@@ -1105,7 +1166,8 @@ async function main(): Promise<void> {
   });
   const controller = new NativeManagedController(journal, write,
     process.env.SYSTEMONE_MANAGED_HEADLESS === '1', worker,
-    value => { process.stdout.write(`${JSON.stringify(value)}\n`); }, portalStore);
+    value => { process.stdout.write(`${JSON.stringify(value)}\n`); }, portalStore,
+    process.env.SYSTEMONE_HOST_LIFECYCLE_REQUIRED === '1');
   write('startup', controller.startupPhase());
   let pending = Buffer.alloc(0);
   process.stdin.on('data', chunk => {
