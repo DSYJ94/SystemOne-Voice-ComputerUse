@@ -1,5 +1,43 @@
 # Initial foundation validation
 
+## First CLM local GPU smoke on the owner M5, 2 October 2026
+
+`codex/mac-first-validation` at `362434a`, owner's OneDrive checkout, macOS
+26.6 arm64, Apple M5 / 32 GB unified memory, MPS, Torch 2.8.0 +
+Transformers 4.57.6 per `requirements-macos.lock` (hash-verified), pinned
+Qwen3-8B revision and CLM head, 15 GB artifacts re-hashed by both Node
+preflight and the worker. First real CLM inference on any host.
+
+The run surfaced two macOS-specific defects, both fixed on this branch:
+
+1. `reference_backend.py` compared whole `stat_result` objects, whose
+   equality includes `st_atime`; the worker's own reads (inventory hashing,
+   model load) updated access time on APFS and tripped "artifact changed;
+   restart refused" after every successful load. Linux CI never saw this
+   because relatime/noatime hides it. Now compares size, mode, inode, device,
+   mtime and ctime, mirroring the Node preflight precedent (a22fc40).
+2. The native manifest validator hardcoded `pythonVersion '3.12.14'`, which
+   python-build-standalone does not ship for macOS aarch64; every
+   `createVerifiedCLMReferenceBackend` call was refused before spawn. It now
+   validates the 3.12 patch line and passes the declared value through; the
+   worker still binds the exact running interpreter (362434a).
+
+Result at manifest digest `6c95793e…` (private report
+`private-traces/clm-macos-smoke.json`, mode 0600): startup **39.2 s**;
+per-request latency cold 4.08 s then **767 ms / 992 ms / 868 ms** warm
+(95–122 input tokens, three fixtures, two repetitions); GPU **15.21 GB
+allocated, ~16.25 GB driver** against the 70% allocator cap (~22.4 GB),
+leaving ~6 GB unified-memory headroom. Repeated fixtures reproduced
+byte-identical probability distributions. Expected choices matched on
+`browser-open-exact-invoice` (exact, p 0.924) and `missing-target-abstention`
+(help, p 0.99998); `native-locate-documents` chose help (0.517) over the
+expected documents (0.099), deterministically.
+
+This is a six-request synthetic smoke on real Metal hardware. It does not
+establish full-encoder parity with the pinned Linux/vLLM recipe, calibration
+(the document miss is unexamined), warm p95 at target, coexistence with
+speech, or any v1 or beta gate.
+
 ## First Mac host validation, 2 October 2026
 
 `codex/native-field-replacement` at
