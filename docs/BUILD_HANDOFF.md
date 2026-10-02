@@ -7,14 +7,13 @@ the [fixture test](FIXTURE_COMPUTER_USE_TEST.md),
 [backlog](specification/BACKLOG.md). Keep this file and the README aligned as
 each implementation slice lands.
 
-**Owner-run Mac pull, 2 October 2026:** use the standalone
-[Mac continuation handoff](MAC_CONTINUATION_HANDOFF.md) for the exact OneDrive
-checkout path, safe branch sync, current PR stack, source evidence and laptop GPU
-and Mac qualification steps. The owner will pull from GitHub; this cloud session
-has not synced or accessed that Mac checkout. Latest source is on
-`codex/native-field-replacement`, not `main`. The consolidated v1 position and
-remaining path live in [V1_PLAN.md](V1_PLAN.md). The owner-run first Mac host
-validation passed: see [validation](VALIDATION.md).
+**Latest source, 2 October 2026:** `codex/mac-first-validation`. Use the
+[Mac GPU smoke continuation handoff](MAC_GPU_HANDOFF.md) for the exact OneDrive
+checkout path, safe branch sync, prepared local runtime/artifacts, the first
+CLM Metal smoke results and the ordered next steps. Latest source is on that
+branch, not `main`. The consolidated v1 position and remaining path live in
+[V1_PLAN.md](V1_PLAN.md); the first Mac host validation and GPU smoke are
+recorded in [validation](VALIDATION.md).
 
 ## New-chat resume checkpoint — 1 October 2026
 

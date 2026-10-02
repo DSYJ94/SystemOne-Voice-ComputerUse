@@ -2,7 +2,7 @@
 
 ## First CLM local GPU smoke on the owner M5, 2 October 2026
 
-`codex/mac-first-validation` at `362434a`, owner's OneDrive checkout, macOS
+`codex/mac-first-validation` at `6a14dd8`, owner's OneDrive checkout, macOS
 26.6 arm64, Apple M5 / 32 GB unified memory, MPS, Torch 2.8.0 +
 Transformers 4.57.6 per `requirements-macos.lock` (hash-verified), pinned
 Qwen3-8B revision and CLM head, 15 GB artifacts re-hashed by both Node
@@ -15,12 +15,12 @@ The run surfaced two macOS-specific defects, both fixed on this branch:
    model load) updated access time on APFS and tripped "artifact changed;
    restart refused" after every successful load. Linux CI never saw this
    because relatime/noatime hides it. Now compares size, mode, inode, device,
-   mtime and ctime, mirroring the Node preflight precedent (a22fc40).
+   mtime and ctime, mirroring the Node preflight precedent (0af36e4).
 2. The native manifest validator hardcoded `pythonVersion '3.12.14'`, which
    python-build-standalone does not ship for macOS aarch64; every
    `createVerifiedCLMReferenceBackend` call was refused before spawn. It now
    validates the 3.12 patch line and passes the declared value through; the
-   worker still binds the exact running interpreter (362434a).
+   worker still binds the exact running interpreter (f17a91f).
 
 Result at manifest digest `6c95793e…` (private report
 `private-traces/clm-macos-smoke.json`, mode 0600): startup **39.2 s**;
