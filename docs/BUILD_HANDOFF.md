@@ -9,7 +9,41 @@ each implementation slice lands.
 
 ## New-chat resume checkpoint — 1 October 2026
 
-**Latest continuation, 2 October 2026:** branch `codex/clm-reference-backend`,
+**Latest continuation, 2 October 2026:** branch `codex/host-lifecycle-interruption`,
+from reference adapter #73 at `ec2735bca614c40c575114f2b0ef914c32e7e16e`.
+Implementation `dc641538487e036982f72f03421ab0a00f3bdb63`,
+[draft PR #74](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/74)
+targets `codex/clm-reference-backend`. [Host lifecycle interruption](HOST_LIFECYCLE_INTERRUPTION.md)
+uses monotonic full snapshots to block intake/recovery, Stop active or retained
+paused execution and revoke retained Chrome host grants. Wake never resumes a
+task. Failed fences and unknown effects remain blocked, checkpoint/completion
+history stays durable, and shutdown waits for lifecycle cleanup.
+AppKit publishes sleep/wake/session notifications and clears voice capture,
+recovery presentation and captured targets on interruption.
+
+Latest validation: typecheck; **452 passed, zero failed, two Mac-only skips
+(454 total)**; Python oracle **115/115**; inventory consistency and **7/7** checks;
+`git diff --check`. Ten added regressions and expanded real Chromium pipe coverage
+pass. Swift/AppKit remains uncompiled; actual sleep/lock and session qualification,
+same-task recovery across sessions, general execution/correction and release
+gates remain open. Native Stop permanently cancels task IDs; do not reconstruct
+a stopped task or present old Resume authority after wake.
+
+The owner selected **laptop GPU first**. No Mac SSH/CI connection is bound here;
+the [prepared Metal commands](CLM_LOCAL_GPU_EXPERIMENT.md) need that connection
+or an owner-run report. All 17 model artifacts and 27 hash-locked macOS wheels
+are retained and verified, but no full encoder/GPU inference or Mac execution
+has occurred. Preserve Package managers and the saved network hosts; actual
+connectivity was verified. No billable resource, owner-app action or TCC/Keychain
+change was performed. The previous owner goal stays dropped. V1 is not ready.
+
+Next: compile/qualify on Mac and run the prepared GPU experiment, then full
+encoder/reference parity, calibration and supported primary-CLM integration.
+Independent source work remains general/active correction, restart recovery,
+separately authorized worker leases across sessions and qualified lock detection.
+Keep B17 open until real acceptance evidence exists.
+
+**Previous continuation, 2 October 2026:** branch `codex/clm-reference-backend`,
 from `codex/clm-serving-boundary` at
 `4d9891156988dfe2f02c671eebb3bb8fd25f7d76`. Implementation
 `407a036302288b6c178f68dac27ae247a5a7245e`,
