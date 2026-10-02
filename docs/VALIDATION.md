@@ -1,5 +1,35 @@
 # Initial foundation validation
 
+## Native field replacement admission, 2 October 2026
+
+`codex/native-field-replacement`, based on host interruption #74 at
+`b215bf7e5cd330e8bf2f14342536ec751c043b71`.
+`make test`: typecheck, **466 passed, zero failed, two Mac-only skips (468 total)**
+and Python oracle **115/115**. Release inventory consistency and **7/7** checks
+pass; `git diff --check` passes. Dependency declarations, locks and inventory
+remain unchanged. The focused authority/controller suite passes **32/32**.
+
+Fourteen added synthetic regressions cover changed field/value with fresh
+completion and durable lineage, unchanged/invalid/non-final commands, captured
+process binding, exclusive pending fences, Stop during child observation and
+setter, repeated correction/parent aliases, failed fences, unknown edits,
+session interruption, final voice metadata/empty literals, restart refusal,
+child Resume and caller mutation while awaiting Stop. No physical Mac or voice
+execution occurred.
+
+Validation caught an overly broad recovery guard rejecting ordinary safe paused
+actors; corrected to reject unresolved effects while retaining paused-actor
+ownership checks. It also exposed the scoped text parser's empty-value refusal;
+replacement submission now uses canonical literal suffix text. Initial test
+fixtures needed a foreign UUID and permission for the constructor's public-key
+frame. All resulting typecheck and full suite failures are resolved.
+
+The Foundation intake check now covers exact original process retention, invalid
+and failed delivery, concurrent correction, handoff/revision validation, changed
+child goals and empty literals. Linux has no Swift compiler/AppKit, so these
+checks and the new sheet remain uncompiled source. Live Mac/GPU, general/active
+correction, restart reconstruction, primary CLM and release gates remain open.
+
 ## Host lifecycle interruption, 2 October 2026
 
 `codex/host-lifecycle-interruption`, based on reference adapter #73 at

@@ -45,6 +45,9 @@ setup, live permission recovery and physical multi-monitor use remain pending.
 - [Native field fills](docs/NATIVE_FIELD_ACTOR.md) now use the persistent actor,
   budgeted eligibility checkpoints and independent terminal value verification.
   Retained field actors support fresh Check recovery / explicit Resume and Stop.
+  [Explicit field correction](docs/NATIVE_FIELD_REPLACEMENT.md) fences a paused
+  actor before admitting a changed field/value for the original target, with
+  durable lineage and fresh verification.
   Linux checks pass; Swift and live Mac qualification remain open.
 
 - The [native fixture controller](docs/NATIVE_CONTROLLER_ACTOR.md) now runs
@@ -245,6 +248,9 @@ is tracked in `docs/IMPLEMENTATION_STATUS.md`; the reviewed product specificatio
 is under `docs/specification/`.
 
 ## Development checks
+
+For the latest cloud-to-Mac continuation and owner-run pull instructions, see
+the [Mac handoff](docs/MAC_CONTINUATION_HANDOFF.md).
 
 Use Node **26.5.0**, Python **3.14.6**, and Swift **6.4** on macOS for the environment
 tested here. Browser tests launch a fresh headless Chromium profile against the

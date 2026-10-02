@@ -1,5 +1,27 @@
 # Implementation status
 
+## Native field replacement admission, 2 October 2026
+
+`codex/native-field-replacement`, stacked on host interruption #74 at
+`b215bf7e5cd330e8bf2f14342536ec751c043b71`.
+[Field correction](NATIVE_FIELD_REPLACEMENT.md) accepts an explicit changed field
+or value only for the retained settled paused actor and its original target
+binding. The old worker Stop must settle before fresh child observation/admission.
+Unknown edits block correction, accepted parameters are frozen before awaiting
+Stop, and the child retains durable provenance with fresh scope, limits, permits
+and independent completion. Source/child Stop ownership survives transition;
+only the immediate parent can alias its retained child. The developer panel
+preserves the original target and offers an explicit replacement sheet.
+
+Typecheck, **466 passed, zero failed, two Mac-only skips (468 total)**, Python
+oracle **115/115**, inventory consistency and **7/7** checks pass. Fourteen added
+Linux regressions cover changed and invalid goals, target/process binding,
+lineage/revisions, Stop and late effects, unknown edits, interruption, voice
+metadata/empty values, restart refusal, child Resume and accepted-request mutation.
+Extended Foundation intake checks and Swift/AppKit remain uncompiled here. Actual Mac
+execution, general/active correction, recovery across sessions, primary CLM
+integration and release gates remain open. V1 is not ready; the old goal stays dropped.
+
 ## Host lifecycle interruption, 2 October 2026
 
 `codex/host-lifecycle-interruption`, stacked on reference adapter #73.

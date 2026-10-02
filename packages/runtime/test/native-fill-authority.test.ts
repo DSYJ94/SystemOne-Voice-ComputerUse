@@ -326,3 +326,33 @@ test('Stop during independent terminal value read rejects late completion eviden
   assert.deepEqual(journal.getTaskProgress(input.requestId)!.checkpoints.map(c => c.stageRef), ['field_ready']);
   assert.equal(await authority.start(request()), 'uncertain');
 });
+
+test('field correction captures the final request before waiting for the old worker fence', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'systemone-field-correction-copy-'));
+  const journal = new AttemptJournal(join(root, 'journal.sqlite'));
+  const worker = new FakeWorker(); worker.prepareResult = 'unsupported';
+  const authority = new NativeFillAuthority(journal, worker);
+  try {
+    const source = { ...request(), targetPid: 123, targetLaunchMillis: 456 };
+    assert.equal(await authority.start(source), 'paused');
+    const replacement = { ...request(), targetPid: 123, targetLaunchMillis: 456, fieldLabel: 'Fixture Notes' };
+    replacement.command = { ...replacement.command, taskId: source.requestId, goalRevision: 2,
+      text: `Fill Fixture Notes in ${bundleId} with text: fixture-123` };
+    const acceptedID = replacement.requestId;
+    const stop = new Deferred<boolean>(); worker.stop = async () => { worker.stopCalls++; return stop.promise; };
+    const pending = authority.replace(source.requestId, replacement);
+    replacement.requestId = randomUUID(); replacement.targetPid = 124;
+    replacement.fieldLabel = 'unaccepted field'; replacement.value = 'unaccepted value';
+    replacement.command.text = 'unaccepted command';
+    worker.observation = { ...worker.observation,
+      controls: worker.observation.controls.map(control => ({ ...control, label: 'Fixture Notes' })) };
+    worker.prepareResult = 'ready'; stop.resolve(true);
+    assert.equal(await pending, 'verified');
+    assert.equal(worker.capturedPID, 123);
+    assert.equal(journal.getTaskState(acceptedID), 'completed');
+    assert.equal(journal.getTaskRecord(replacement.requestId), undefined);
+    assert.equal(journal.getTaskRecord(acceptedID)?.admission?.goal,
+      `Fill Fixture Notes in ${bundleId} with text: fixture-123`);
+    assert.deepEqual(journal.getTaskRecord(acceptedID)?.replaces, { taskId: source.requestId });
+  } finally { journal.close(); rmSync(root, { recursive: true, force: true }); }
+});

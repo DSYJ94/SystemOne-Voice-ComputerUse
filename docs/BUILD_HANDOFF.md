@@ -7,9 +7,54 @@ the [fixture test](FIXTURE_COMPUTER_USE_TEST.md),
 [backlog](specification/BACKLOG.md). Keep this file and the README aligned as
 each implementation slice lands.
 
+**Owner-run Mac pull, 2 October 2026:** use the standalone
+[Mac continuation handoff](MAC_CONTINUATION_HANDOFF.md) for the exact OneDrive
+checkout path, safe branch sync, current PR stack, source evidence and laptop GPU
+and Mac qualification steps. The owner will pull from GitHub; this cloud session
+has not synced or accessed that Mac checkout. Latest source is on
+`codex/native-field-replacement`, not `main`.
+
 ## New-chat resume checkpoint — 1 October 2026
 
-**Latest continuation, 2 October 2026:** branch `codex/host-lifecycle-interruption`,
+**Latest continuation, 2 October 2026:** branch `codex/native-field-replacement`,
+from host interruption #74 at `b215bf7e5cd330e8bf2f14342536ec751c043b71`.
+Implementation `9d4fe3df026a860b7803c7fdc993e2aaf3a62285`,
+[draft PR #75](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/75)
+targets `codex/host-lifecycle-interruption`.
+[Explicit native field correction](NATIVE_FIELD_REPLACEMENT.md) now validates a
+changed final field/value command for the original target, cancels and fences
+the retained paused source, then obtains a fresh child observation/admission.
+It preserves captured process identity, durable provenance and source/child Stop
+ownership; unknown edits block correction. Accepted parameters are frozen before
+awaiting Stop. The child needs fresh permits, limits and independent verification,
+and any Resume requires a fresh child prompt at the current goal revision.
+AppKit source adds a replacement sheet and retains the original target.
+
+Latest validation: typecheck; **466 passed, zero failed, two Mac-only skips
+(468 total)**; Python oracle **115/115**; focused authority/controller **32/32**;
+inventory consistency and **7/7** checks; `git diff --check`. Fourteen added
+synthetic regressions cover target/command guards, lineage, Stop/late effects,
+unknown edits, interruption, voice metadata/empty literals, restart refusal,
+child Resume and accepted-request mutation. Swift/AppKit and extended Foundation
+intake checks remain uncompiled. No physical Mac or live voice execution occurred.
+Dependency pins, lockfiles and release inventory are unchanged.
+
+Laptop GPU remains the selected next qualification target. This session still
+has no Mac connection, credentials or outbound infrastructure identity. The
+[prepared GPU experiment](CLM_LOCAL_GPU_EXPERIMENT.md) needs existing SSH/CI
+access or owner-run output; no full encoder/GPU inference is claimed. Actual
+GitHub/Hugging Face metadata and Docker registry/auth connectivity was rechecked
+successfully. Preserve the saved Package managers preset and network hosts.
+No billable provisioning, owner-app actions or TCC/Keychain changes occurred.
+The earlier owner goal remains dropped; v1 is not ready.
+
+Next: run the laptop experiment and compile/qualify the new field sheet, Stop,
+recovery and session races on Mac. Continue general/active correction and
+restart recovery source work, then full encoder/reference parity, calibration,
+supported primary-CLM execution and live native/voice/existing-profile Chrome,
+packaging and acceptance gates. Do not reconstruct stopped tasks after wake.
+
+**Previous continuation, 2 October 2026:** branch `codex/host-lifecycle-interruption`,
 from reference adapter #73 at `ec2735bca614c40c575114f2b0ef914c32e7e16e`.
 Implementation `dc641538487e036982f72f03421ab0a00f3bdb63`,
 [draft PR #74](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/74)
