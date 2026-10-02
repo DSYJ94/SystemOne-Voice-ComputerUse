@@ -103,6 +103,20 @@ Fast forward only. Never reset, clean or stash on this OneDrive checkout.
 Preserve the untracked review artifacts `EXECUTION_ASSESSMENT.md` and
 `approval-record.patch`.
 
+## Update, 3 October 2026: parity harness and first corpus capture
+
+`b43a927` adds [CLM_PARITY.md](CLM_PARITY.md): `parity.py` captures on MPS and
+on the reference (pinned upstream Engine plus vLLM), then compares the two.
+It also adds pre-registered candidate tolerances, which you have not yet
+accepted, 60 task-disjoint calibration cases and 11 diagnostic cases. The
+MPS capture ran (see [validation](VALIDATION.md)). The raw top choice was
+correct on 24/60 calibration cases. Wrong actions outnumber correct ones at
+every confidence level, so **CLM cannot be trusted to choose effects yet**.
+The Documents miss is sensitive to candidate wording and is not a proven
+encoder defect. The next decisive evidence is the Linux/vLLM reference
+capture on the same corpora. It separates model behavior from MPS drift, and
+it needs an NVIDIA host you approve.
+
 ## Next steps, in order
 
 1. **Full-encoder parity** against the pinned Linux/vLLM recipe

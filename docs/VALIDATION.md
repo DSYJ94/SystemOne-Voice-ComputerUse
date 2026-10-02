@@ -1,5 +1,45 @@
 # Initial foundation validation
 
+## First CLM calibration-corpus capture on the owner M5, 3 October 2026
+
+`codex/mac-first-validation` at `b43a927` (parity harness and corpora), clean
+tree, manifest re-materialized at that commit, Node preflight 17/17 files. The
+capture went through `parity.py capture-mps`, which calls `ReferenceBackend`
+directly. Private report `private-traces/clm-parity-mps-b43a927.json`. It ran
+74 synthetic cases (60 calibration, 11 diagnostic, 3 smoke) over 215 unique
+texts, at most 74 tokens each. Startup took 28.0 s. Per-request latency had a
+median of 1.21 s and p95 of 1.56 s; each request encodes 4–6 texts with no
+cache. GPU memory was 15.21 GB allocated (16.26 GB at the driver). Every
+repetition was byte-identical, and the captured vectors reproduce the served
+distributions exactly. All three smoke distributions matched the 2 October
+report bit for bit at a different commit.
+
+**Calibration corpus, raw top choice: 24/60.** By category: advance 9/26,
+identity 3/10, missing-target 5/10, scope 7/8, wait 0/6. Five of the six wait
+cases chose `request_help`, which is safe. One chose an offered Quit control
+at p 0.683. When the top choice is a concrete action, wrong actions outnumber
+correct ones at every probability level: at ≥0.5 it is 8 correct to 11 wrong,
+at ≥0.7 it is 2 to 3, and the most confident wrong action has p 0.770. No
+threshold in this run separates them. This is descriptive only; no threshold
+was fitted.
+
+**`native-locate-documents` miss.** Projected-space cosines are tightly
+compressed (documents 0.273, recents 0.286, help 0.289). The logit scale is
+clamped at 100, so a cosine gap of 0.01 is worth one logit. Single-factor
+edits move the outcome a lot. Rewriting only the Documents candidate in the
+host's invoke template flips the choice to documents at p 0.666. Removing
+"or pause if none is safe" from the question pushes help to 0.919. Adding the
+host's wait fallback makes wait the top choice at 0.603. The miss is
+therefore sensitive to wording. The fixture is not shaped like a host
+projection, so it is not by itself evidence of an encoder defect.
+
+Limits: there is no Linux/vLLM reference capture yet. So this run cannot tell
+whether the low accuracy is the model's own behavior on this projection style
+or MPS numerical drift. The tight cosine spread makes even small drift matter.
+Full-reference parity, calibration, B02/B14 and every v1 gate remain open.
+The corpus was written by one author and has not been reviewed; the
+expected labels are synthetic judgments.
+
 ## First CLM local GPU smoke on the owner M5, 2 October 2026
 
 `codex/mac-first-validation` at `6a14dd8`, owner's OneDrive checkout, macOS
