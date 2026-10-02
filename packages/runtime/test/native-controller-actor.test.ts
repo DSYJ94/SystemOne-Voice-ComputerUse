@@ -30,7 +30,7 @@ async function waitFor(predicate: () => boolean) {
   }
   throw new Error('controller actor status did not arrive');
 }
-function harness(t: TestContext, pausedAtStart = false) {
+function harness(t: TestContext, pausedAtStart = false, requireHostSnapshot = false) {
   const root = mkdtempSync(join(tmpdir(), 'systemone-controller-actor-'));
   const path = join(root, 'attempts.sqlite');
   const journal = new AttemptJournal(path);
@@ -38,7 +38,8 @@ function harness(t: TestContext, pausedAtStart = false) {
   const output: Record<string, JSONValue>[] = [];
   const phases: { id: string; phase: string }[] = [];
   const state = { title: HOME, duplicate: true, stalled: false, prepares: 0, commits: 0, stops: 0, observations: 0,
-    stopResult: true, holdStops: false, holdObservations: false, held: [] as (() => void)[], stopIDs: [] as string[] };
+    stopResult: true, holdStops: false, holdObservations: false, holdCommits: false,
+    held: [] as (() => void)[], stopIDs: [] as string[] };
   let expected = '';
   let worker!: NativeFieldPipeWorker;
   worker = new NativeFieldPipeWorker(message => {
@@ -63,11 +64,12 @@ function harness(t: TestContext, pausedAtStart = false) {
     }
     const reply = () => { worker.receive({ type: 'native_worker_reply', requestId: message.requestId!,
       operation: message.operation!, result }); };
-    if ((message.operation === 'stop' && state.holdStops)
+    if ((message.operation === 'commit_press' && state.holdCommits)
+      || (message.operation === 'stop' && state.holdStops)
       || (message.operation === 'observe_press' && state.holdObservations)) state.held.push(reply);
     else queueMicrotask(reply);
   });
-  const controller = new NativeManagedController(journal, (id, phase) => { phases.push({ id, phase }); }, true, worker, message => { output.push(message); });
+  const controller = new NativeManagedController(journal, (id, phase) => { phases.push({ id, phase }); }, true, worker, message => { output.push(message); }, undefined, requireHostSnapshot);
   let closed = false;
   async function close() { if (!closed) { closed = true; await controller.close(); } }
   t.after(async () => { await close(); rmSync(root, { recursive: true, force: true }); });
@@ -260,4 +262,112 @@ test('unchanged, malformed and wrong-source replacement requests preserve the or
   h.send({ ...replace(h.input.requestId), approval: true }); assert.equal(h.has('invalid', 'error'), true);
   assert.equal(h.journal.getTaskState(h.input.requestId), 'paused'); assert.equal(h.state.stops, 0);
   assert.equal(h.state.observations, before); assert.deepEqual(h.output, []);
+});
+
+function host(sequence: number, sleeping = false, sessionActive = true) {
+  return { type: 'host_lifecycle', requestId: randomUUID(), sequence, sleeping, sessionActive };
+}
+function settled(h: ReturnType<typeof harness>, sequence: number) {
+  return h.output.some(p => p.type === 'host_lifecycle_status' && p.sequence === sequence
+    && p.interruptionSettled === true);
+}
+test('required initial host snapshot blocks admission and unavailable Chrome grants', async t => {
+  const h = harness(t, false, true);
+  assert.equal(h.controller.startupPhase(), 'host_unavailable');
+  const input = start(); h.send(input);
+  assert.equal(h.has(input.requestId, 'host_unavailable'), true);
+  assert.equal(h.journal.getTaskRecord(input.requestId), undefined);
+  h.send({ type: 'chrome_port_open', connectionId: 'held-port' });
+  assert.equal(h.output.some(p => p.type === 'chrome_port_close'), true);
+  h.send(host(1)); assert.equal(h.controller.startupPhase(), 'ready');
+  assert.equal(h.state.observations, 0); assert.equal(h.state.commits, 0);
+  const fresh = start(); h.send(fresh);
+  await waitFor(() => h.has(fresh.requestId, 'blocked_recovery'));
+});
+test('wake and replay cannot release a pending native Stop or resume the old task', async t => {
+  const h = harness(t); h.state.holdObservations = true; h.state.holdStops = true;
+  const input = start(); h.send(input);
+  await waitFor(() => h.state.observations === 1);
+  h.send(host(2, true)); assert.equal(h.state.stops, 1);
+  h.send(host(3, false, false)); h.send(host(2));
+  const rejected = start(); h.send(rejected);
+  assert.equal(h.has(rejected.requestId, 'host_unavailable'), true);
+  h.send(host(4));
+  const early = start(); h.send(early);
+  assert.equal(h.has(early.requestId, 'host_unavailable'), true);
+  assert.equal(settled(h, 4), false);
+  h.state.holdObservations = false; h.state.holdStops = false;
+  for (const reply of h.state.held.splice(0)) reply();
+  await waitFor(() => settled(h, 4));
+  await waitFor(() => h.controller.startupPhase() === 'ready');
+  // The held first observation never admitted a durable task or effect.
+  assert.equal(h.journal.getTaskState(input.requestId), undefined);
+  assert.equal(h.state.commits, 0); assert.equal(h.state.observations, 1);
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(h.state.commits, 0);
+  const fresh = start(); h.send(fresh);
+  await waitFor(() => h.has(fresh.requestId, 'blocked_recovery'));
+  assert.equal(h.state.commits, 1);
+});
+test('session loss cancels retained recovery and preserves verified checkpoint history', async t => {
+  const h = await pausedController(t); const prompt = await prepare(h, h.input.requestId);
+  h.send(host(1, false, false));
+  await waitFor(() => settled(h, 1));
+  assert.equal(h.journal.getTaskState(h.input.requestId), 'cancelled');
+  assert.deepEqual(h.journal.getTaskProgress(h.input.requestId)?.checkpoints.map(c => c.stageRef), ['documents']);
+  assert.equal(h.state.stops, 1);
+  h.send(recoveryControl('resume_native_task', h.input.requestId, { intent: recoveryReply(prompt) }));
+  assert.equal(h.state.commits, 1);
+  h.send(host(2)); await waitFor(() => settled(h, 2));
+  assert.equal(h.state.commits, 1);
+  h.send(recoveryControl('resume_native_task', h.input.requestId, { intent: recoveryReply(prompt) }));
+  assert.equal(h.state.commits, 1); assert.equal(h.journal.getTaskState(h.input.requestId), 'cancelled');
+});
+test('interruption after completion preserves completion and requires no new native Stop', async t => {
+  const h = harness(t); h.state.duplicate = false;
+  const input = start(); h.send(input); await waitFor(() => h.has(input.requestId, 'ready'));
+  h.send(host(1, true)); await waitFor(() => settled(h, 1));
+  assert.equal(h.journal.getTaskState(input.requestId), 'completed');
+  assert.equal(h.state.stops, 0); assert.equal(h.state.commits, 3);
+  h.send(host(2)); assert.equal(h.controller.startupPhase(), 'ready');
+  assert.equal(h.state.commits, 3);
+});
+test('failed session interruption fence remains blocking after wake', async t => {
+  const h = harness(t); h.state.holdObservations = true; h.state.stopResult = false;
+  const input = start(); h.send(input); await waitFor(() => h.state.observations === 1);
+  h.send(host(1, true)); await waitFor(() => settled(h, 1));
+  for (const reply of h.state.held.splice(0)) reply();
+  h.send(host(2)); await waitFor(() => h.controller.startupPhase() === 'blocked_recovery');
+  const fresh = start(); h.send(fresh);
+  assert.equal(h.has(fresh.requestId, 'blocked_recovery'), true);
+  assert.equal(h.state.commits, 0);
+});
+test('session interruption retains a dispatched effect and excludes retries after late receipt', async t => {
+  const h = harness(t); h.state.holdCommits = true;
+  const input = start(); h.send(input); await waitFor(() => h.state.commits === 1);
+  h.send(host(1, true)); h.send(host(2));
+  const early = start(); h.send(early);
+  assert.equal(h.has(early.requestId, 'host_unavailable'), true);
+  await waitFor(() => settled(h, 2));
+  assert.equal(h.journal.getTaskState(input.requestId), 'cancelled');
+  assert.equal(h.journal.getTaskRecord(input.requestId)?.completion, null);
+  assert.equal(h.journal.attemptsForTask(input.requestId).length, 1);
+  h.state.held.splice(0).forEach(reply => reply());
+  await waitFor(() => h.has(input.requestId, 'blocked_recovery'));
+  const retry = start(); h.send(retry);
+  assert.equal(h.has(retry.requestId, 'blocked_recovery'), true);
+  assert.equal(h.state.commits, 1);
+  assert.deepEqual(h.journal.getTaskProgress(input.requestId)?.checkpoints, []);
+});
+test('shutdown settles a pending interruption before closing its durable history', async t => {
+  const h = await pausedController(t); h.state.holdStops = true;
+  h.send(host(1, true)); assert.equal(h.state.stops, 1);
+  const closing = h.close();
+  queueMicrotask(() => h.state.held.splice(0).forEach(reply => reply()));
+  await closing;
+  const reopened = new AttemptJournal(h.path);
+  try {
+    assert.equal(reopened.getTaskState(h.input.requestId), 'cancelled');
+    assert.deepEqual(reopened.getTaskProgress(h.input.requestId)?.checkpoints.map(c => c.stageRef), ['documents']);
+  } finally { reopened.close(); }
 });

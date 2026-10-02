@@ -94,11 +94,20 @@ test('native private pipe drives an admitted managed-browser fill and stays aliv
     const spoken = randomUUID();
     start(spoken, 'spoken-value', false, true);
     await waitStatus(spoken, 'verified_dom_fill');
-    const voiceStop = randomUUID();
-    child.stdin.write(`${JSON.stringify({ type: 'stop', requestId: voiceStop,
-      targetRequestId: spoken })}\n`);
-    await waitStatus(voiceStop, 'stopped');
-    await waitStatus(spoken, 'ready');
+    child.stdin.write(`${JSON.stringify({ type: 'host_lifecycle', requestId: randomUUID(),
+      sequence: 1, sleeping: true, sessionActive: true })}\n`);
+    await waitStatus(spoken, 'host_unavailable');
+    const held = randomUUID(); start(held, 'must-not-run');
+    await waitStatus(held, 'host_unavailable');
+    child.stdin.write(`${JSON.stringify({ type: 'host_lifecycle', requestId: randomUUID(),
+      sequence: 2, sleeping: false, sessionActive: true })}\n`);
+    const fresh = randomUUID(); start(fresh, 'explicit-after-wake');
+    await waitStatus(fresh, 'verified_dom_fill');
+    const finalStop = randomUUID();
+    child.stdin.write(`${JSON.stringify({ type: 'stop', requestId: finalStop,
+      targetRequestId: fresh })}\n`);
+    await waitStatus(finalStop, 'stopped');
+    await waitStatus(fresh, 'ready');
     child.stdin.end();
     const exitCode = await new Promise<number | null>(resolve => child.once('exit', resolve));
     assert.equal(exitCode, 0);
@@ -107,6 +116,8 @@ test('native private pipe drives an admitted managed-browser fill and stays aliv
       assert.equal(journal.getTaskState(first), 'completed');
       assert.equal(journal.getTaskState(second), 'completed');
       assert.equal(journal.getTaskState(spoken), 'completed');
+      assert.equal(journal.getTaskRecord(held), undefined);
+      assert.equal(journal.getTaskState(fresh), 'completed');
       assert.deepEqual(journal.unresolvedAttempts(), []);
     } finally { journal.close(); }
   } finally {

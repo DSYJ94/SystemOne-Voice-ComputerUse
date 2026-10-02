@@ -16,7 +16,9 @@ const binding = {
   connected: false,
 };
 
-test('controller private pipe accepts one scoped Chrome read, then revokes on replay', async () => {
+for (const sessionLoss of [false, true]) test(sessionLoss
+  ? 'controller private pipe revokes Chrome reads on session loss and refuses stale observations'
+  : 'controller private pipe accepts one scoped Chrome read, then revokes on replay', async () => {
   const root = mkdtempSync(join(tmpdir(), 'systemone-chrome-pipe-'));
   const source = fileURLToPath(new URL('../src/native-managed-controller.ts', import.meta.url));
   const child = spawn(process.execPath, [source, join(root, 'attempts.sqlite')],
@@ -67,12 +69,25 @@ test('controller private pipe accepts one scoped Chrome read, then revokes on re
     assert.equal(observed.grantId, 'grant-1');
     assert.equal(observed.url, binding.url);
     assert.equal((observed.elements as unknown[]).length, 1);
+    if (sessionLoss) {
+      send({ type: 'host_lifecycle', requestId: randomUUID(), sequence: 1,
+        sleeping: false, sessionActive: false });
+      await waitFor(() => messages.some(message => message.type === 'chrome_port_close'));
+    }
     sendChrome({ type: 'observation', requestId,
         binding: { ...binding, connected: true },
         snapshot: { observationId: 'observation-1', title: 'Synthetic account',
           url: binding.url, complete: true, elements: [] } });
     await waitFor(() => messages.some(message => message.type === 'chrome_port_close'));
+    assert.equal(messages.filter(message => message.type === 'chrome_observation').length, 1);
     assert.equal(messages.some(message => message.type === 'native_worker_request'), false);
+    if (sessionLoss) {
+      send({ type: 'chrome_port_open', connectionId: 'held-port', extensionId });
+      await waitFor(() => messages.some(message => message.type === 'chrome_port_close'
+        && message.connectionId === 'held-port'));
+      send({ type: 'host_lifecycle', requestId: randomUUID(), sequence: 2,
+        sleeping: false, sessionActive: true });
+    }
     send({ type: 'chrome_port_open', connectionId: 'connection-2', extensionId });
     const duplicate = '{"type":"hello","type":"hello","challenge":"c"}';
     send({ type: 'chrome_port_message', connectionId: 'connection-2',

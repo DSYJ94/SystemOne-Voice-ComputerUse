@@ -98,6 +98,16 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var stopRequestID: String?
     private var quitPending = false
     private var identityCheckSupport: URL?
+    private var lifecycleObservers: [NSObjectProtocol] = []
+    private var hostSleeping = false
+    private var hostSessionActive = true
+    private var hostSequence = 0
+    private var hostAcknowledgedSequence = 0
+    private var hostInterruptionSettled = false
+    private var hostActionsAvailable: Bool {
+        !hostSleeping && hostSessionActive && hostSequence > 0
+            && hostAcknowledgedSequence == hostSequence && hostInterruptionSettled
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if CommandLine.arguments.contains("--check-accessibility-recovery") {
@@ -198,6 +208,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         makePanel()
         makeCommandPanel()
         registerGlobalHotkeys()
+        observeHostLifecycle()
         startController()
         startChromeListener()
         openPanel()
@@ -210,6 +221,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        for observer in lifecycleObservers {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
         unregisterGlobalHotkeys()
         speech.cancel()
         if nativeActionActive, let activeRequestID {
@@ -251,7 +265,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let enableVoice = NSButton(title: "Enable Voice", target: self,
                                    action: #selector(enableVoice))
         let talk = HoldToTalkButton(title: "Hold Talk", target: nil, action: nil)
-        talk.onPress = { [weak self] in self?.speech.start() }
+        talk.onPress = { [weak self] in
+            guard let self, self.hostActionsAvailable else { return }
+            self.speech.start()
+        }
         talk.onRelease = { [weak self] in self?.speech.stop() }
         let run = NSButton(title: "Run request", target: self,
                            action: #selector(runTaskRequest))
@@ -485,6 +502,63 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.orderOut(nil)
     }
 
+    // Documented workspace session notifications are separate from ordinary
+    // app deactivation: switching to the target app must not cancel a task.
+    // These notifications alone do not establish physical screen-lock coverage.
+    private func observeHostLifecycle() {
+        if let session = CGSessionCopyCurrentDictionary() as? [String: Any] {
+            hostSessionActive = session["kCGSessionOnConsoleKey"] as? Bool == true
+                && session["kCGSessionLoginDoneKey"] as? Bool == true
+        } else { hostSessionActive = false }
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification,
+                     NSWorkspace.sessionDidResignActiveNotification,
+                     NSWorkspace.sessionDidBecomeActiveNotification] {
+            lifecycleObservers.append(center.addObserver(forName: name, object: nil,
+                queue: .main) { [weak self] notification in
+                let name = notification.name
+                Task { @MainActor [weak self] in self?.hostLifecycleChanged(name) }
+            })
+        }
+    }
+
+    private func hostLifecycleChanged(_ name: Notification.Name) {
+        switch name {
+        case NSWorkspace.willSleepNotification: hostSleeping = true
+        case NSWorkspace.didWakeNotification: hostSleeping = false
+        case NSWorkspace.sessionDidResignActiveNotification: hostSessionActive = false
+        case NSWorkspace.sessionDidBecomeActiveNotification: hostSessionActive = true
+        default: return
+        }
+        hostInterruptionSettled = false
+        if hostSleeping || !hostSessionActive {
+            speech.cancel()
+            finalSpeechText = nil
+            dismissRecoverySheet()
+            capturedApp = nil
+            chromeConnectionID = nil; chromeGrantID = nil; chromeURL = nil
+            if nativeActionActive, let activeRequestID { nativeWorker.requestLocalStop(activeRequestID) }
+            inspectionEpoch += 1
+            let epoch = inspectionEpoch
+            Task { [weak self] in
+                guard let self else { return }
+                await self.nativeInspector.cancel()
+                if self.inspectionEpoch == epoch { self.inspectionPending = false }
+            }
+            commandStatus?.stringValue = "Session interrupted. The active task will be stopped."
+        }
+        publishHostLifecycle()
+    }
+
+    private func publishHostLifecycle() {
+        guard hostSequence < Int.max, let input = controllerInput else { return }
+        hostSequence += 1
+        hostInterruptionSettled = false
+        _ = send(["type": "host_lifecycle", "requestId": UUID().uuidString.lowercased(),
+                  "sequence": hostSequence, "sleeping": hostSleeping,
+                  "sessionActive": hostSessionActive], through: input)
+    }
+
     private func startController() {
         nativePermitKeyAccepted = false
         nativeWorker.invalidateHostPublicKey()
@@ -531,11 +605,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let output = Pipe()
             process.executableURL = URL(fileURLWithPath: node)
             process.arguments = [script, support.appendingPathComponent("attempts.sqlite").path]
-            if bundled, let browsers {
-                var environment = ProcessInfo.processInfo.environment
-                environment["PLAYWRIGHT_BROWSERS_PATH"] = browsers
-                process.environment = environment
-            }
+            var environment = ProcessInfo.processInfo.environment
+            environment["SYSTEMONE_HOST_LIFECYCLE_REQUIRED"] = "1"
+            if bundled, let browsers { environment["PLAYWRIGHT_BROWSERS_PATH"] = browsers }
+            process.environment = environment
             process.standardInput = input
             process.standardOutput = output
             process.standardError = FileHandle.nullDevice
@@ -563,6 +636,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 let code = ended.terminationStatus
                 Task { @MainActor [weak self] in self?.controllerExited(code) }
             }
+            publishHostLifecycle()
         } catch {
             statusField?.stringValue = "Controller identity or launch failed. Rebuild and retry."
         }
@@ -664,6 +738,19 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 statusField?.stringValue = "Controller returned invalid data. Stop and relaunch."
                 continue
             }
+            if object["type"] as? String == "host_lifecycle_status" {
+                guard Set(object.keys) == ["type", "sequence", "sessionAvailable", "interruptionSettled"],
+                      let sequence = object["sequence"] as? Int, sequence == hostSequence,
+                      let available = object["sessionAvailable"] as? Bool,
+                      available == (!hostSleeping && hostSessionActive),
+                      let settled = object["interruptionSettled"] as? Bool else { continue }
+                hostAcknowledgedSequence = sequence
+                hostInterruptionSettled = settled
+                if hostActionsAvailable {
+                    commandStatus?.stringValue = "Session available. Submit a new task explicitly."
+                }
+                continue
+            }
             if object["type"] as? String == "native_worker_request" {
                 guard nativePermitKeyAccepted else {
                     statusField?.stringValue = "Native permit key unavailable; outcome uncertain."
@@ -709,6 +796,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                let title = object["title"] as? String,
                let url = object["url"] as? String,
                let elements = object["elements"] as? [[String: Any]] {
+                guard hostActionsAvailable else { continue }
                 let labels = elements.prefix(12).compactMap { item -> String? in
                     guard let role = item["role"] as? String,
                           let label = item["label"] as? String else { return nil }
@@ -727,6 +815,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 continue
             }
             if object["type"] as? String == "native_recovery_prompt" {
+                guard hostActionsAvailable else { continue }
                 presentNativeRecovery(object)
                 continue
             }
@@ -743,7 +832,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func showStatus(requestID: String, phase: String) {
         if requestID == "startup" {
-            statusField?.stringValue = phase == "ready"
+            statusField?.stringValue = phase == "host_unavailable"
+                ? "Waiting for the active session and interruption fence."
+                : phase == "ready"
                 ? "Ready. Only the approved page origin can load."
                 : "Earlier task unresolved. Inspect the private task record before starting again."
             return
@@ -764,6 +855,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         switch phase {
+        case "host_unavailable":
+            statusField?.stringValue = "Session interrupted. Waiting for Stop to settle; wake will not resume the task."
+            if requestID == activeRequestID { stopRequestID = nil }
+            taskIntake.releaseIfReady(requestID: requestID)
         case "starting": statusField?.stringValue = "Opening a fresh managed Chromium profile…"
         case "observing": statusField?.stringValue = activeSurface == .managedNavigation
             ? "Checking the exact visible link and destination…"
@@ -911,7 +1006,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.makeFirstResponder(urlField)
     }
 
-    @objc private func enableVoice() { speech.requestPermissions() }
+    @objc private func enableVoice() {
+        guard hostActionsAvailable else { return }
+        speech.requestPermissions()
+    }
 
     @objc private func showCapturedFields() {
         guard let capturedApp else {
@@ -919,6 +1017,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 "Focus a target app, then reopen SystemOne before showing fields."
             return
         }
+        guard hostActionsAvailable else { return }
         guard let app = NSRunningApplication.runningApplications(
                 withBundleIdentifier: capturedApp.bundleID).first,
               app.processIdentifier == capturedApp.pid,
@@ -1427,6 +1526,13 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func send(_ object: [String: Any], through pipe: Pipe,
                       limit: Int = 16_384) -> Bool {
         guard controllerIdentityValid() else { return false }
+        if let type = object["type"] as? String,
+           (type.hasPrefix("start_") || type == "replace_native_fixture"
+            || type == "prepare_native_recovery" || type == "native_recovery_presented"
+            || type == "resume_native_task"), !hostActionsAvailable {
+            commandStatus?.stringValue = "Waiting for the active session and interruption fence."
+            return false
+        }
         guard let data = try? JSONSerialization.data(withJSONObject: object),
               data.count <= limit else { return false }
         do {
@@ -1450,6 +1556,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func inspectNativeApp() {
+        guard hostActionsAvailable else { return }
         guard !inspectionPending, activeRequestID == nil else {
             nativeOutput?.string = "Another task is active. Stop it first."
             return
@@ -1496,6 +1603,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func inspectNativeRegion() {
+        guard hostActionsAvailable else { return }
         guard !inspectionPending, activeRequestID == nil else {
             nativeOutput?.string = "Another task is active. Stop it first."
             return

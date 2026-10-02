@@ -1,5 +1,33 @@
 # Initial foundation validation
 
+## Host lifecycle interruption, 2 October 2026
+
+`codex/host-lifecycle-interruption`, based on reference adapter #73 at
+`ec2735bca614c40c575114f2b0ef914c32e7e16e`.
+`make test`: typecheck, **452 passed, zero failed, two Mac-only skips (454 total)**
+and Python oracle **115/115**. Release inventory consistency and **7/7** checks
+pass; `git diff --check` passes. Dependencies and frozen inventory are unchanged.
+
+Ten added regressions cover strict full snapshots, stale wake rejection,
+initial snapshot admission, delayed/failed native Stop, retained checkpoint and
+recovery cancellation, completed history, late dispatched effects, pending
+shutdown cleanup and private-pipe Chrome grant revocation. The existing real
+headless Chromium pipe test now also proves interruption cleanup, completed
+history preservation and fresh explicit task intake after wake.
+
+The first focused run incorrectly expected a durable cancelled record before the
+initial observation admitted a task; corrected to assert no record or effect.
+The late-effect test initially checked recovery while the old run still owned
+its slot; it now waits for actual run settlement. Final full suite passes.
+Swift/AppKit changes remain uncompiled; notifications, actual sleep/lock, voice,
+owner apps and existing-profile Chrome require Mac qualification. Same-task
+recovery across host sessions is not implemented. B17 and v1 gates remain open.
+
+Separately, all 27 macOS runtime wheels for #73 were downloaded with
+`--require-hashes --only-binary=:all:` and their license metadata/files inspected
+without executing Mac binaries. This verifies experiment distributions, not
+runtime compatibility, a release SBOM or release-wide license clearance.
+
 ## Owned CLM serving boundary, 1 October 2026
 
 `codex/clm-serving-boundary`, based on native field actor #71 at `7727da0`.

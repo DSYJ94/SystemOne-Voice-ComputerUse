@@ -1,5 +1,38 @@
 # Implementation status
 
+## Host lifecycle interruption, 2 October 2026
+
+`codex/host-lifecycle-interruption`, stacked on reference adapter #73.
+[Host snapshots](HOST_LIFECYCLE_INTERRUPTION.md) synchronously hold admission,
+cancel active or retained paused actors through existing Stop barriers, preserve
+checkpoint/effect history and revoke Chrome host grants. Delayed worker replies
+retain ownership; wake never reconstructs a task or Resume authority. Shutdown
+settles pending lifecycle cleanup before closing durable stores. AppKit now
+publishes documented workspace notifications and waits for their acknowledgment.
+
+Typecheck; **452 passed, zero failed, two Mac-only skips (454 total)**; Python
+oracle 115/115; inventory consistency and seven checks. Ten added regressions
+cover host snapshots, native cancellation/recovery, cleanup and Chrome grants;
+the existing real Chromium pipe test also exercises interruption and fresh intake.
+Swift/AppKit remains uncompiled. Actual sleep/lock and session behavior, same-task
+recovery across sessions, general execution/correction and release gates stay open.
+
+## Offline reference adapter and laptop experiment, 2 October 2026
+
+[Draft #73](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/73) implements
+the offline tokenizer/Qwen3/head backend and bounded worker behind #72's serving
+boundary. Immutable model revisions, all 17 files (16,473,033,415 bytes), license
+texts and 27 hash-locked macOS runtime wheels are verified. Actual tokenizer and
+head CPU component parity passed. The owner selected the laptop GPU first; the
+[Metal experiment](CLM_LOCAL_GPU_EXPERIMENT.md) is prepared. No full encoder/GPU
+run, Mac connection, deployed endpoint or live qualification exists here.
+
+At #73: typecheck, 442 passed/two Mac-only skips, Python oracle 115/115, ten CPU
+adapter checks and seven inventory checks. Network additions were saved in the
+new environment preserving Package managers; actual GitHub, Playwright, Hugging
+Face/artifact CDN and Docker auth/registry requests succeeded. Earlier blocked
+access/configuration records below are historical. The previous goal stays dropped.
+
 ## Owned CLM serving boundary, 1 October 2026
 
 `codex/clm-serving-boundary`, based on native field actor #71 at `7727da0`.

@@ -29,6 +29,11 @@ setup, live permission recovery and physical multi-monitor use remain pending.
 
 ## Current implementation
 
+- [Host session interruption](docs/HOST_LIFECYCLE_INTERRUPTION.md) now blocks
+  intake, stops active execution and revokes retained Chrome grants. Wake never
+  resumes a task. Linux regressions pass; AppKit compilation, physical lock
+  coverage and recovery across sessions remain open.
+
 - An [owned CLM serving boundary](docs/CLM_SERVING_BOUNDARY.md) now enforces
   authentication, bounded exact requests, token-overflow rejection and validated
   redacted replies. Startup verifies local bytes before opening a loopback
