@@ -28,6 +28,18 @@ try {
   const nodeVersion = read('.node-version').trim();
   const bundle = read('scripts/build-bundled-dev.sh');
   const clm = JSON.parse(read('packages/providers/fixtures/clm-artifact-manifest.pending.json'));
+  const metal = JSON.parse(read('packages/providers/fixtures/clm-artifact-manifest.macos.pending.json'));
+  const metalRequirements = read('packages/providers/python/requirements-macos.lock');
+  const metalLockHash = createHash('sha256').update(metalRequirements).digest('hex');
+  requireCondition(metal.runtime.requirementsSha256 === metalLockHash, 'Metal runtime lock hash drift');
+  const metalPackages = metalRequirements.replace(/\\\r?\n\s*/g, ' ').split(/\r?\n/)
+    .map(line => line.trim()).filter(line => line && !line.startsWith('#')).map(line => {
+      const match = /^([\w.-]+)==(\d+(?:\.\d+)+(?:\.post\d+)?)(\s+--hash=sha256:[a-f0-9]{64})+$/.exec(line);
+      requireCondition(match, 'Unpinned or unhashed Metal runtime dependency');
+      return { name: match[1], version: match[2], artifactHashes: [...line.matchAll(/--hash=sha256:([a-f0-9]{64})/g)].map(m => m[1]),
+        scope: 'owned-local-inference-experiment', declaredLicense: null,
+        reviewStatus: 'pending-wheel-bytes-notices-and-native-runtime-qualification' };
+    });
   const declarations = JSON.parse(read('docs/release/dependencies.pending.json'));
   const dependencyRecord = read('docs/DEPENDENCIES.md');
   const publishedHeadSha256 = /Published head SHA-256: `([a-f0-9]{64})`/.exec(dependencyRecord)?.[1];
@@ -84,6 +96,8 @@ try {
     pythonTests,
     nonNpm: declarations,
     clm: { location: 'owned-private-server-planned', declarations: clm,
+      metalExperiment: { declarations: metal, requirementsSha256: metalLockHash, packages: metalPackages,
+        executedOnMac: false, inferenceQualified: false },
       artifactBytesVerified: false, inferenceQualified: false,
       publishedHeadSha256,
       publishedHeadHashStatus: 'upstream-reported-not-local-byte-verification',

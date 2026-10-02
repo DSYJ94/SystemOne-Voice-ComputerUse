@@ -1751,3 +1751,51 @@ bundle and an exact executable-path process check found PID 47288 still running.
 The two 28 September incidents remained the newest SystemOne Dev crash reports
 at that check. This is a startup-only observation; Enable Voice, Talk and task
 execution were not invoked.
+# Reference tensor adapter and laptop experiment, 2 October 2026
+
+Started from `codex/clm-serving-boundary` at
+`4d9891156988dfe2f02c671eebb3bb8fd25f7d76`, in the existing isolated Linux
+checkout. The previous owner goal remains dropped. The owner selected the
+laptop GPU first; no Mac connection or GPU is available in this session.
+
+- Node 26.5.0 and Python 3.14.6 retained; locked npm installation and official
+  Playwright 1.63.0 Chromium/headless-shell revision 1243 restored. The complete
+  reusable install script executed successfully without changing existing
+  dependency declarations, lockfile, fixtures or test assertions.
+- `make test`: typecheck passed; **442 passed, zero failed, two Mac-only skips
+  (444 total)**; Python oracle **115/115** passed. The initial baseline before
+  network/browser restoration had 25 browser-dependent failures; after actual
+  pinned downloads and cache activation those failures are resolved.
+- Ten CPU Python adapter tests passed, including a real tiny Qwen3 model,
+  fast-tokenizer fixture, head architecture/finite-value checks, weights-only
+  rejection, token overflow before encoder invocation and download integrity.
+  Nine Node process/CLI tests and one native-runtime declaration regression
+  are included in the full suite. No assertions or tests were disabled.
+- Release inventory consistency and **seven** checks passed. The source
+  inventory now includes the Metal runtime's exact pins/distribution hashes
+  and detects declaration/lock drift. Wheel/native notices and release SBOM
+  remain pending. `git diff --check` passed.
+- GitHub API, actual Playwright downloads, Hugging Face metadata/artifacts and
+  Docker registry/auth requests succeeded after additive settings changes.
+  Package managers preset was preserved. Artifact redirects required the
+  additional `us.aws.cdn.hf.co` host. Runtime policy observation remains unknown;
+  these access claims are based on actual requests. No cloud identity is bound.
+- Qwen3-8B/tokenizer revision resolved to
+  `b968826d9c46dd6066d109eabc6255188de91218`. All **17 declared artifact files**,
+  **16,473,033,415 bytes**, independently passed streaming size/SHA-256
+  verification in `/workspace/.artifacts/clm`. The head matches published
+  `b2b4a8c9c2d39263eff78a351eb909a342ce9b3bf21a3f07c1d1bf15f1c4eda5`.
+  Both exact model repositories supply Apache-2.0 license text/card declarations;
+  release-wide redistribution clearance is not established.
+- `check_components.py`: thirteen exact downloaded-tokenizer fast/slow cases
+  passed, including 2048/2049 token counts. The actual published head safely
+  loaded and passed twelve CPU ranking comparisons to pinned upstream, maximum
+  probability difference **2.22045e-16**. The first comparison diagnosed Torch
+  versus NumPy normalization rounding; using the reference NumPy float32
+  reduction fixed it without relaxing tolerance.
+
+No full encoder inference, deployed endpoint, MPS/CUDA run, Swift/AppKit compile,
+live voice/native/browser/owner-profile action, signing/TCC/Keychain change or
+billable provisioning occurred. The laptop commands and 70% MPS memory allowance
+are prepared settings, not measured hardware capability. Full encoder/vLLM parity,
+calibration, live Mac and release/acceptance gates remain open. V1 is not ready.

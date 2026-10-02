@@ -46,17 +46,20 @@ header and access-log controls. Ignore forwarded headers as authority. The
 manifest response header names the validated declaration; it is not remote
 attestation of the executing GPU or proof of inference fidelity.
 
-A concrete backend adapter remains required. It must bind the verified read-only
-artifact mount to the loaded tokenizer/encoder/head, implement the exact reference
-pooling/normalization/head computation, disable downloads/hot reload/trust-remote-
-code and logs, safely load the checkpoint, and namespace caches by artifact
-identity. The unmodified upstream service is insufficient: authentication is
+The [reference tensor adapter](CLM_REFERENCE_ADAPTER.md) now binds verified local
+bytes to offline tokenizer/encoder/head loading and implements reference
+pooling/normalization/head computation. It disables downloads, hot reload,
+remote code and persistent inference caches, and loads the head with explicit
+weights-only safety. Full encoder/runtime qualification remains required.
+The unmodified upstream service is insufficient: authentication is
 optional and its embedder silently truncates. Do not substitute an approximate
 token count or return synthetic rankings from a production adapter.
 
-The pending manifest deliberately fails startup. No container pin, exact encoder
-revision, completed licenses, GPU memory/latency benchmark or costed launch has
-been established. The [deployment plan](CLM_DEPLOYMENT_PLAN.md) and
+The original container manifest deliberately fails startup. The native Metal
+artifact plan now resolves the encoder/tokenizer revision and artifact hashes;
+its exact server commit must still be materialized before the local experiment.
+Model license texts are recorded, while runtime/release license review and GPU
+memory/latency qualification remain open. The [deployment plan](CLM_DEPLOYMENT_PLAN.md) and
 [offline preflight](CLM_ARTIFACT_PREFLIGHT.md) remain mandatory before live use.
 
 Fifteen synthetic ingress/transport tests cover authentication, identities,

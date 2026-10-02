@@ -27,6 +27,23 @@ function directory(t: TestContext) {
   t.after(() => rmSync(root, { recursive: true, force: true })); return root;
 }
 
+test('native Metal declarations require explicit versioned platform and runtime pins', () => {
+  const value = manifest();
+  value.schemaVersion = 'systemone-clm-artifacts-v2';
+  value.runtime = { platform: 'macos-arm64', pythonVersion: '3.12.14', requirementsSha256: 'a'.repeat(64),
+    serverRevision: '3'.repeat(40) };
+  const checked = validateCLMArtifactManifest(value);
+  assert.equal(checked.schemaVersion, 'systemone-clm-artifacts-v2');
+  assert.ok('platform' in checked.runtime); assert.ok(Object.isFrozen(checked.runtime));
+  for (const change of [
+    (v: any) => { v.runtime.pythonVersion = '3.12'; },
+    (v: any) => { v.runtime.platform = 'linux'; },
+    (v: any) => { v.runtime.requirementsSha256 = 'latest'; },
+    (v: any) => { v.runtime.image = 'unused-container'; },
+    (v: any) => { v.schemaVersion = 'systemone-clm-artifacts-v1'; },
+  ]) { const changed = structuredClone(value); change(changed); assert.throws(() => validateCLMArtifactManifest(changed)); }
+});
+
 test('artifact manifest accepts immutable declarations without claiming verified bytes or inference', () => {
   const value = manifest(); const checked = validateCLMArtifactManifest(value);
   assert.ok(Object.isFrozen(checked)); assert.ok(Object.isFrozen(checked.encoder.files[0]));
