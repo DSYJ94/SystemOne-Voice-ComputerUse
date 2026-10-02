@@ -46,9 +46,15 @@ These are prepared commands, **not a verified Mac run**. Use an existing checkou
 of this source milestone and the pinned Node 26.5.0. Run in the repository root.
 Use `uv` with normal TLS/checksum verification; do not replace an existing venv.
 
+**Interpreter amendment, 2 October 2026 (owner Mac):** python-build-standalone
+publishes no CPython 3.12.14 build for macOS aarch64, so `uv python install
+3.12.14` fails with "No download found". Use uv's 3.12.13 instead (same minor
+line). The hash-locked requirements carry no Python-version markers, so every
+pin installs unchanged, and the manifest records the actual interpreter
+version at startup. The prepared venv on the owner Mac used:
+
 ```sh
-uv python install 3.12.14
-uv venv .build/clm-macos-venv --python 3.12.14
+uv venv .build/clm-macos-venv --python 3.12.13
 uv pip install --python .build/clm-macos-venv/bin/python \
   --require-hashes --only-binary=:all: \
   -r packages/providers/python/requirements-macos.lock
