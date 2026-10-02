@@ -49,9 +49,13 @@ These are founder decisions and are not reopened by proposals or agents:
    the user's current profile, data and tabs**. A fresh or copied profile does
    not satisfy the third. B19 and G4 remain beta gates; B20 keeps its B19
    dependency.
-2. **CLM is the primary decision model.** Laya is a separately qualified
-   option; Jev is an explicitly enabled external fallback. No substitute is
-   silently enabled.
+2. **CLM is the primary decision model.** Jev — TypeSafe's System One model,
+   consumed over its hosted API — is the designated external fallback (owner
+   decision, 2 October 2026): enabled only explicitly, with disclosed data
+   transfer and a hard spending limit, never active in offline/privacy mode
+   (build plan §9). Laya remains a separately qualified open-weight
+   alternative. No substitute is silently enabled, and a fallback provider is
+   never a substitute for the primary model passing its own gates.
 3. **The previous owner goal stays dropped.** Do not resume or reconstruct it.
 4. **No billable infrastructure without a pinned, cost-capped, approved plan.**
    The owner selected laptop-GPU-first CLM qualification (2 October 2026),
@@ -84,7 +88,7 @@ These are founder decisions and are not reopened by proposals or agents:
 | M2 deterministic adapters | Adapter tests pass with NO model; stale targets rejected | **Source-complete for fixture workflows; first Mac compile/tests 2 Oct.** No-model tests green everywhere | Physical AX/managed-browser qualification, real-app observation coverage, headed browser, live Stop barriers |
 | M3 CLM multi-hop | Closed-loop Finder and portal tasks pass with CLM; no repeated side effects on timeout/restart | **Deepest built area, none of it live.** Persistent actor, durable journals, checkpoints, recovery/Resume, correction/replacement lineage, CLM decision boundary + offline adapter + serving boundary | Zero CLM inference ever run; no full encoder/GPU parity; no calibration (≥50 task-disjoint cases); recovery across sessions unimplemented |
 | M4 seamless hybrid | Cross-surface tasks retain session and target; regular Chrome needs no insecure debug setup | **Extension/native-host fixtures only**; owner-profile continuity untouched | B19 qualification on the owner's actual profile: grants, tab/document identity, navigation invalidation, reconnect/revocation; B18 transitions |
-| M5 optional qualification | Only enabled modes pass their own gates | **Not started** (evaluation-only tracks documented) | Nothing, unless these modes ship |
+| M5 optional qualification | Only enabled modes pass their own gates | **Jev via the TypeSafe API designated as the external fallback** (2 Oct 2026); adapter and qualification not started | B22: Jev provider adapter, egress disclosure, spending cap, latency and policy gates; Laya and other M5 tracks stay optional |
 | M6 production release | Fresh-Mac install without developer tools; notarization and rollback pass | **Bundled-runtime foundation only** (ad-hoc signed, sealing cycle known) | Developer ID + notarization, SBOM/licenses, update/rollback, clean-Mac matrix, B26 adversarial CI, acceptance corpus |
 
 Public beta may begin after M4 and its security/packaging gates. M2 must
@@ -140,6 +144,18 @@ headed managed browser workflows (B12/B13 candidate recall); existing Chrome on
 the owner's current profile — grants, identity, Stop, reconnect, revocation
 (B19/G4). Physical toolbar click, full AppKit integration and installed Google
 Chrome together remain untested.
+
+Parallel provider-fallback track (B22; must never block the baseline):
+implement the Jev provider adapter against TypeSafe's System One HTTP API —
+`POST /v1/systemone` with bearer auth, one `choice` question over the minimized
+provider view, the full probability distribution (not just the top answer)
+consumed by the existing host decision boundary with its threshold, tie and
+malformed-output fences. Explicit user enablement per session, disclosed
+egress, a hard spending cap, exponential backoff on 429/529, and automatic
+deactivation in offline/privacy mode. Pin the exact API contract and model
+revision at implementation time — `jev-latest` is a moving pin — and clear
+TypeSafe's data-handling terms in the privacy review before any real
+observation leaves the machine.
 
 ### Phase 5 — release
 
