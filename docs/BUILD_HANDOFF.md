@@ -7,6 +7,13 @@ the [fixture test](FIXTURE_COMPUTER_USE_TEST.md),
 [backlog](specification/BACKLOG.md). Keep this file and the README aligned as
 each implementation slice lands.
 
+**Owner-run Mac pull, 2 October 2026:** use the standalone
+[Mac continuation handoff](MAC_CONTINUATION_HANDOFF.md) for the exact OneDrive
+checkout path, safe branch sync, current PR stack, source evidence and laptop GPU
+and Mac qualification steps. The owner will pull from GitHub; this cloud session
+has not synced or accessed that Mac checkout. Latest source is on
+`codex/native-field-replacement`, not `main`.
+
 ## New-chat resume checkpoint — 1 October 2026
 
 **Latest continuation, 2 October 2026:** branch `codex/native-field-replacement`,

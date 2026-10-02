@@ -249,6 +249,9 @@ is under `docs/specification/`.
 
 ## Development checks
 
+For the latest cloud-to-Mac continuation and owner-run pull instructions, see
+the [Mac handoff](docs/MAC_CONTINUATION_HANDOFF.md).
+
 Use Node **26.5.0**, Python **3.14.6**, and Swift **6.4** on macOS for the environment
 tested here. Browser tests launch a fresh headless Chromium profile against the
 local synthetic portal; they do not touch existing Chrome or real accounts.
