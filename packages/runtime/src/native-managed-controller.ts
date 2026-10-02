@@ -14,7 +14,8 @@ import { bindCommandValue } from './command-value-span.ts';
 import { parseScopedManagedFill } from './scoped-native-command.ts';
 import { AttemptJournal } from './attempt-journal.ts';
 import { TaskAdmissionRegistry } from './task-authority.ts';
-import { NativeFillAuthority } from './native-fill-authority.ts';
+import { NativeFillAuthority, validNativeFillRequest } from './native-fill-authority.ts';
+import type { NativeFillRequest } from './native-fill-authority.ts';
 import type { NativeFixtureMode } from './native-fixture-authority.ts';
 import type { NativePressRequest, NativeLocateRequest } from './native-press-authority.ts';
 import { NativeFixtureAuthority } from './native-fixture-authority.ts';
@@ -120,6 +121,12 @@ interface ReplaceNativeFixture {
   readonly mode: NativeFixtureMode;
   readonly replacement: NativePressRequest | NativeLocateRequest;
 }
+interface ReplaceNativeField {
+  readonly type: 'replace_native_field';
+  readonly requestId: string;
+  readonly targetRequestId: string;
+  readonly replacement: NativeFillRequest;
+}
 
 interface NativeRecoveryControl {
   readonly type: 'prepare_native_recovery' | 'native_recovery_presented' | 'resume_native_task' | 'cancel_native_recovery';
@@ -131,7 +138,7 @@ interface NativeRecoveryControl {
   readonly intent?: Record<string, JSONValue>;
 }
 
-type NativeRequest = ReplaceNativeFixture | NativeRecoveryControl | StartFill | StartNavigate | StartNativeFill | StartNativePress
+type NativeRequest = ReplaceNativeField | ReplaceNativeFixture | NativeRecoveryControl | StartFill | StartNavigate | StartNativeFill | StartNativePress
   | StartNativeLocate | StartNativeOpen
   | StartChromeFill | StartPortalWorkflow | Stop;
 type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
@@ -154,6 +161,21 @@ function requestFromLine(line: Uint8Array): NativeRequest {
   const value = parseJSON(line);
   if (!isRecord(value) || !ID.test(String(value.requestId ?? ''))) {
     throw new ContractError('invalid native request');
+  }
+  if (value.type === 'replace_native_field') {
+    const replacement = value.replacement;
+    if (Object.keys(value).sort().join(',') !== 'replacement,requestId,targetRequestId,type'
+      || typeof value.requestId !== 'string' || typeof value.targetRequestId !== 'string' || !ID.test(value.targetRequestId)
+      || !replacement || !isRecord(replacement)
+      || Object.keys(replacement).sort().join(',') !== (replacement.targetPid === undefined
+        ? 'bundleId,command,fieldLabel,value' : 'bundleId,command,fieldLabel,targetLaunchMillis,targetPid,value')
+      || !replacement.command || !isRecord(replacement.command)
+      || !validNativeFillRequest({ ...replacement, requestId: value.requestId } as unknown as NativeFillRequest)) {
+      throw new ContractError('invalid field replacement request');
+    }
+    return { type: 'replace_native_field', requestId: value.requestId,
+      targetRequestId: value.targetRequestId,
+      replacement: { ...replacement, requestId: value.requestId } as unknown as NativeFillRequest };
   }
   if (value.type === 'replace_native_fixture') {
     const replacement = value.replacement;
@@ -505,7 +527,7 @@ export class NativeManagedController {
     if (this.#hostHeld && request.type !== 'cancel_native_recovery') {
       this.#send(request.requestId, 'host_unavailable'); return;
     }
-    if (request.type === 'replace_native_fixture') {
+    if (request.type === 'replace_native_fixture' || request.type === 'replace_native_field') {
       this.#replaceNative(request); return;
     }
     if ('targetRequestId' in request) {
@@ -620,8 +642,8 @@ export class NativeManagedController {
     });
   }
 
-  #replaceNative(request: ReplaceNativeFixture): void {
-    const authority = this.#pressAuthority;
+  #replaceNative(request: ReplaceNativeFixture | ReplaceNativeField): void {
+    const authority = request.type === 'replace_native_field' ? this.#nativeAuthority : this.#pressAuthority;
     if (this.#runs.active) { this.#send(request.requestId, 'busy'); return; }
     if (!authority || !this.#chromeOutput || this.#workerFenceFailed
       || authority.taskId !== request.targetRequestId || this.#journal.getTaskState(request.targetRequestId) !== 'paused') {
@@ -630,7 +652,9 @@ export class NativeManagedController {
     const active: NativeActiveTask = { requestId: request.targetRequestId, authority, done: Promise.resolve() };
     const run: ControllerRun = { requestId: active.requestId, surface: 'native', task: active };
     this.#runs.claim(run); this.#send(active.requestId, 'replacing_native_task');
-    active.done = authority.replace(active.requestId, request.replacement, request.mode).then(result => {
+    active.done = (request.type === 'replace_native_field'
+      ? this.#nativeAuthority!.replace(active.requestId, request.replacement)
+      : this.#pressAuthority!.replace(active.requestId, request.replacement, request.mode)).then(result => {
       const record = this.#journal.getTaskRecord(request.requestId);
       if (record) {
         // Keep the old UI Stop target valid until the run settles. Then transfer
@@ -639,8 +663,9 @@ export class NativeManagedController {
         active.statusTaskId = request.requestId;
         this.#chromeOutput!({ type: 'native_replacement_task', requestId: request.requestId,
           targetRequestId: active.requestId, taskId: record.taskId, taskEpoch: record.taskEpoch,
-          goalRevision: record.goalRevision, mode: request.mode });
-        if (result !== 'stopped') this.#send(record.taskId, result === 'verified_navigation' ? 'verified_native_navigation'
+          goalRevision: record.goalRevision, mode: request.type === 'replace_native_field' ? 'fill' : request.mode });
+        if (result !== 'stopped') this.#send(record.taskId, result === 'verified' ? 'verified_native_fill'
+          : result === 'verified_navigation' ? 'verified_native_navigation'
           : result === 'verified_locate' ? 'verified_native_locate' : result === 'verified_open' ? 'verified_native_open'
           : result === 'paused' ? 'native_paused' : result);
       } else {
@@ -1056,8 +1081,9 @@ export class NativeManagedController {
     const run = this.#runs.active;
     // A paused actor has settled its run and released the dispatch slot, but
     // remains the durable owner. Explicit Stop must fence that exact task too.
-    const retainedAuthority = this.#nativeAuthority?.taskId === request.targetRequestId
-      ? this.#nativeAuthority : this.#pressAuthority;
+    const retainedAuthority = [this.#nativeAuthority, this.#pressAuthority].find(authority => authority?.taskId
+      && (authority.taskId === request.targetRequestId
+        || this.#journal.getTaskRecord(request.targetRequestId)?.replacement?.taskId === authority.taskId));
     const retainedId = retainedAuthority?.taskId;
     const targetMatchesRetained = retainedId && (retainedId === request.targetRequestId
       || this.#journal.getTaskRecord(request.targetRequestId)?.replacement?.taskId === retainedId);

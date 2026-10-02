@@ -171,6 +171,40 @@ struct DevTaskIntakeCheck {
         precondition(intake.replacementRequestID == nil && intake.activeRequestID == replacementID)
         intake.releaseIfReady(requestID: replacementID)
         precondition(intake.activeGoalRevision == 1)
+        precondition(!intake.replaceField(field: "Name", value: "new", send: { _ in fatalError("no retained target") }))
+        precondition(intake.submit(native, send: { request in sent.append(request); return true }))
+        let fieldSourceID = intake.activeRequestID!
+        precondition(!intake.replaceField(field: "Fixture Name", value: "fixture-123", send: { _ in fatalError("unchanged field goal") }))
+        precondition(!intake.replaceField(field: "", value: "new", send: { _ in fatalError("empty field") }))
+        precondition(!intake.replaceField(field: "Name", value: String(repeating: "a", count: 1025), send: { _ in fatalError("overflow") }))
+        precondition(!intake.replaceField(field: "Name", value: "new", send: { _ in false }))
+        precondition(intake.replacementRequestID == nil && intake.activeRequestID == fieldSourceID)
+        precondition(intake.replaceField(field: "Fixture Notes", value: "changed 😀", send: { request in sent.append(request); return true }))
+        let fieldChildID = intake.replacementRequestID!
+        let fieldRequest = sent.last!
+        precondition(fieldRequest["type"] as? String == "replace_native_field")
+        let fieldPayload = fieldRequest["replacement"] as! [String: Any]
+        precondition(fieldPayload["bundleId"] as? String == "com.example.target")
+        precondition(fieldPayload["targetPid"] as? Int == 123 && fieldPayload["targetLaunchMillis"] as? Int64 == 4567)
+        let fieldCommand = fieldPayload["command"] as! [String: Any]
+        precondition(fieldCommand["taskId"] as? String == fieldSourceID && fieldCommand["goalRevision"] as? Int == 2)
+        precondition(fieldCommand["text"] as? String == "Fill Fixture Notes in com.example.target with text: changed 😀")
+        precondition(!intake.replaceField(field: "Name", value: "other", send: { _ in fatalError("concurrent correction") }))
+        var fieldHandoff: [String: Any] = ["type": "native_replacement_task", "requestId": fieldChildID,
+            "targetRequestId": fieldSourceID, "taskId": fieldChildID, "taskEpoch": 1, "goalRevision": 2, "mode": "locate"]
+        precondition(!intake.acceptReplacement(fieldHandoff))
+        fieldHandoff["mode"] = "fill"
+        precondition(intake.acceptReplacement(fieldHandoff))
+        intake.releaseIfReady(requestID: fieldSourceID)
+        precondition(intake.activeRequestID == fieldChildID && intake.activeGoalRevision == 2)
+        precondition(!intake.replaceField(field: "Fixture Notes", value: "changed 😀", send: { _ in fatalError("unchanged child goal") }))
+        precondition(intake.replaceField(field: "Fixture Notes", value: "", send: { request in sent.append(request); return true }))
+        let nextFieldPayload = sent.last!["replacement"] as! [String: Any]
+        precondition(nextFieldPayload["value"] as? String == "" && nextFieldPayload["targetPid"] as? Int == 123)
+        precondition((nextFieldPayload["command"] as! [String: Any])["goalRevision"] as? Int == 3)
+        intake.rejectReplacement(requestID: intake.replacementRequestID!)
+        intake.releaseIfReady(requestID: fieldChildID)
+        precondition(!intake.replaceField(field: "Name", value: "new", send: { _ in fatalError("released field target") }))
         print("task intake keeps one writer and binds committed command bytes")
     }
 }

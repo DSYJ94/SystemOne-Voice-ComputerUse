@@ -3,6 +3,7 @@ import { ContractError, digest } from '../../protocol/src/json.ts';
 import { bindEndpoint } from '../../protocol/src/session.ts';
 import { AttemptJournal } from './attempt-journal.ts';
 import { CommittedInputSession } from './committed-input.ts';
+import type { CommittedInput } from './committed-input.ts';
 import { bindCommandValue } from './command-value-span.ts';
 import { parseScopedNativeFill } from './scoped-native-command.ts';
 import { TaskAdmissionRegistry } from './task-authority.ts';
@@ -78,7 +79,8 @@ export type NativeFillResult = 'verified' | 'already_matched' | 'unsupported'
   | 'uncertain' | 'stopped' | 'error';
 
 export function validNativeFillRequest(request: NativeFillRequest): boolean {
-  return ID.test(request.requestId) && BUNDLE_ID.test(request.bundleId)
+  return typeof request.requestId === 'string' && ID.test(request.requestId)
+    && typeof request.bundleId === 'string' && BUNDLE_ID.test(request.bundleId)
     && (request.targetPid === undefined && request.targetLaunchMillis === undefined
       || Number.isSafeInteger(request.targetPid) && request.targetPid! > 0
         && Number.isSafeInteger(request.targetLaunchMillis)
@@ -110,7 +112,7 @@ export function validNativeFieldObservation(value: NativeFieldObservation, bundl
 
 
 interface Pending {
-  readonly requestId: string;
+  requestId: string;
   readonly abort: AbortController;
   stopped: boolean;
   touched: boolean;
@@ -126,6 +128,7 @@ export class NativeFillAuthority {
   readonly #seen = new Set<string>();
   #pending: Pending | undefined;
   #actor: PersistentTaskActor | undefined;
+  #request: NativeFillRequest | undefined;
   #recovery: NativeActorRecovery | undefined;
   #recovering = false;
   #fenceFailed = false;
@@ -147,45 +150,94 @@ export class NativeFillAuthority {
     this.#pending = pending; this.#stopPromise = undefined; this.#actor = undefined;
     this.#recovery?.close(); this.#recovery = undefined;
     try {
-      const command = request.command;
-      const canonicalPrefix = `Fill ${request.fieldLabel} in ${request.bundleId} with text: `;
-      const scoped = typeof command.text === 'string' && !command.text.startsWith(canonicalPrefix)
-        ? parseScopedNativeFill(command.text) : undefined;
-      const valuePrefix = scoped?.prefix ?? canonicalPrefix;
-      if ((scoped && (request.targetPid === undefined || request.targetLaunchMillis === undefined))
-        || !['text', 'voice'].includes(String(command.source)) || command.mode !== 'command'
-        || command.taskId !== request.requestId || command.taskEpoch !== 1 || command.goalRevision !== 1
-        || (scoped ? scoped.fieldLabel !== request.fieldLabel || scoped.value !== request.value
-          : command.text !== canonicalPrefix + request.value)
-        || !command.originSurface || typeof command.originSurface !== 'object' || Array.isArray(command.originSurface)
-        || command.originSurface.appBundleId !== 'com.aurium.systemone.dev') return 'error';
-      const revision = { taskId: request.requestId, taskEpoch: 1, goalRevision: 1 };
-      const endpoint = bindEndpoint(['command']); const session = new CommittedInputSession(endpoint, revision);
-      const route = session.accept(endpoint, Buffer.from(JSON.stringify(command)));
-      if (route.kind !== 'interpret_command') return 'error';
-      const valueParameter = bindCommandValue(route.input, 'fill-value', valuePrefix, request.value);
-      const captured = Object.freeze({ ...request, command: route.input });
-      pending.touched = true;
-      const observed = await this.#worker.observe({ taskId: request.requestId, bundleId: request.bundleId,
-        ...(request.targetPid === undefined ? {} : { targetPid: request.targetPid, targetLaunchMillis: request.targetLaunchMillis! }),
-        signal: pending.abort.signal });
+      const accepted = this.#acceptCommand(request, request.requestId, 1);
+      return await this.#execute(pending, request, accepted.session, accepted.input);
+    } catch { return pending.stopped ? 'stopped' : this.#journal.unresolvedAttempts().length ? 'uncertain' : 'error'; }
+    finally {
+      if (pending.touched && !pending.actor && !pending.stopped) await this.#fence(pending.requestId);
+      if (this.#pending === pending) this.#pending = undefined;
+    }
+  }
+  #acceptCommand(request: NativeFillRequest, taskId: string, goalRevision: number): {
+    session: CommittedInputSession; input: CommittedInput;
+  } {
+    const command = request.command;
+    const canonicalPrefix = `Fill ${request.fieldLabel} in ${request.bundleId} with text: `;
+    const scoped = typeof command.text === 'string' && !command.text.startsWith(canonicalPrefix)
+      ? parseScopedNativeFill(command.text) : undefined;
+    if ((scoped && (request.targetPid === undefined || request.targetLaunchMillis === undefined))
+      || !['text', 'voice'].includes(String(command.source)) || command.mode !== 'command'
+      || command.taskId !== taskId || command.taskEpoch !== 1 || command.goalRevision !== goalRevision
+      || (scoped ? scoped.fieldLabel !== request.fieldLabel || scoped.value !== request.value
+        : command.text !== canonicalPrefix + request.value)
+      || !command.originSurface || typeof command.originSurface !== 'object' || Array.isArray(command.originSurface)
+      || command.originSurface.appBundleId !== 'com.aurium.systemone.dev') throw new ContractError('invalid native field command');
+    const endpoint = bindEndpoint(['command']);
+    const session = new CommittedInputSession(endpoint, { taskId, taskEpoch: 1, goalRevision });
+    const route = session.accept(endpoint, Buffer.from(JSON.stringify(command)));
+    if (route.kind !== 'interpret_command') throw new ContractError('expected final command');
+    bindCommandValue(route.input, 'fill-value', scoped?.prefix ?? canonicalPrefix, request.value);
+    return { session, input: route.input };
+  }
+  async #execute(pending: Pending, source: NativeFillRequest, session: CommittedInputSession,
+    input: CommittedInput): Promise<NativeFillResult | 'paused'> {
+    const request = Object.freeze({ ...source, command: input });
+    pending.touched = true;
+    const observed = await this.#worker.observe({ taskId: request.requestId, bundleId: request.bundleId,
+      ...(request.targetPid === undefined ? {} : { targetPid: request.targetPid, targetLaunchMillis: request.targetLaunchMillis! }),
+      signal: pending.abort.signal });
+    if (pending.stopped) return 'stopped';
+    if (!validNativeFieldObservation(observed, request.bundleId)) return 'error';
+    const matching = observed.controls.filter(c => c.label === request.fieldLabel && c.enabled && !c.secure && c.canSetValue);
+    const offered = buildActionCandidates({ source: fromNativeObservation(observed),
+      text: { textRef: 'fill-value', source: 'final_command', allowedTargetRefs: matching.map(c => c.id) },
+      policyRevision: 'native-ax-policy-v1' });
+    if (!selectBoundCandidate(offered, 'set_value', matching.map(c => c.id)) || matching.length !== 1) return 'unsupported';
+    const registry = new TaskAdmissionRegistry({ taskId: input.taskId, taskEpoch: input.taskEpoch,
+      goalRevision: input.goalRevision }, session);
+    const prefix = `Fill ${request.fieldLabel} in ${request.bundleId} with text: `;
+    const valuePrefix = input.text.startsWith(prefix) ? prefix : parseScopedNativeFill(input.text)?.prefix;
+    if (!valuePrefix) throw new ContractError('invalid field value binding');
+    const admission = registry.admit(input, { admissionId: randomUUID(), goal: input.text,
+      outcomeKind: 'FILL', scopeRef: observed.scopeRef, completionVerifierRef: 'native-ax-value-v1',
+      policyRevision: 'native-ax-policy-v1', approvedEffects: ['READ', 'LOCAL_EDIT'], parameters: [
+        bindCommandValue(input, 'fill-value', valuePrefix, request.value),
+        { parameterRef: 'fill-field', sourceRef: `utterance.${input.utteranceId}.r${input.utteranceRevision}`,
+          valueDigest: digest(request.fieldLabel), sourceStart: 5, sourceEnd: 5 + Buffer.byteLength(request.fieldLabel), offsetUnit: 'utf8_bytes' }] });
+    const workflow = NativeFieldTask.start(this.#journal, this.#worker, registry, admission, request, observed, this.#limits);
+    const actor = new PersistentTaskActor(this.#journal, workflow, 3000);
+    pending.actor = actor; this.#actor = actor; this.#request = request; this.#recovery = new NativeActorRecovery(actor);
+    return this.#result(await actor.run(), pending.stopped);
+  }
+  /** Explicit correction of the settled retained actor, within the same target
+   * process binding. Fresh input, scope, limits and permits replace the goal;
+   * the old command, handles and recovery authority are never reissued. */
+  async replace(taskId: string, request: NativeFillRequest): Promise<NativeFillResult | 'paused'> {
+    if (this.#journal.unresolvedAttempts().length) throw new ContractError('field correction requires reconciled effects');
+    this.#require(taskId);
+    const actor = this.#actor!; const previous = this.#request!;
+    if (!validNativeFillRequest(request) || request.requestId === taskId || this.#seen.has(request.requestId)
+      || this.#seen.size >= 1000 || this.#journal.getTaskRecord(request.requestId)
+      || request.bundleId !== previous.bundleId || request.targetPid !== previous.targetPid
+      || request.targetLaunchMillis !== previous.targetLaunchMillis
+      || request.fieldLabel === previous.fieldLabel && request.value === previous.value) {
+      throw new ContractError('invalid or unchanged field correction');
+    }
+    const accepted = this.#acceptCommand(request, taskId, actor.snapshot.goalRevision + 1);
+    const captured = Object.freeze({ ...request, command: accepted.input });
+    this.#seen.add(request.requestId); this.#recovery?.close();
+    const pending: Pending = { requestId: taskId, abort: new AbortController(), stopped: false, touched: false, actor };
+    this.#pending = pending; this.#stopPromise = undefined;
+    try {
+      const report = await actor.correct(accepted.session, accepted.input);
+      if (!report.workerFenced) this.#fenceFailed = true;
       if (pending.stopped) return 'stopped';
-      if (!validNativeFieldObservation(observed, request.bundleId)) return 'error';
-      const matching = observed.controls.filter(c => c.label === request.fieldLabel && c.enabled && !c.secure && c.canSetValue);
-      const offered = buildActionCandidates({ source: fromNativeObservation(observed),
-        text: { textRef: 'fill-value', source: 'final_command', allowedTargetRefs: matching.map(c => c.id) },
-        policyRevision: 'native-ax-policy-v1' });
-      if (!selectBoundCandidate(offered, 'set_value', matching.map(c => c.id)) || matching.length !== 1) return 'unsupported';
-      const registry = new TaskAdmissionRegistry(revision, session);
-      const admission = registry.admit(route.input, { admissionId: randomUUID(), goal: route.input.text,
-        outcomeKind: 'FILL', scopeRef: observed.scopeRef, completionVerifierRef: 'native-ax-value-v1',
-        policyRevision: 'native-ax-policy-v1', approvedEffects: ['READ', 'LOCAL_EDIT'], parameters: [valueParameter,
-          { parameterRef: 'fill-field', sourceRef: `utterance.${route.input.utteranceId}.r${route.input.utteranceRevision}`,
-            valueDigest: digest(request.fieldLabel), sourceStart: 5, sourceEnd: 5 + Buffer.byteLength(request.fieldLabel), offsetUnit: 'utf8_bytes' }] });
-      const workflow = NativeFieldTask.start(this.#journal, this.#worker, registry, admission, captured, observed, this.#limits);
-      const actor = new PersistentTaskActor(this.#journal, workflow, 3000);
-      pending.actor = actor; this.#actor = actor; this.#recovery = new NativeActorRecovery(actor);
-      return this.#result(await actor.run(), pending.stopped);
+      if (!report.workerFenced || !report.operationSettled || report.unresolvedExecutionIds.length
+        || this.#journal.unresolvedAttempts().length || this.#journal.pendingTaskIds().length) return 'uncertain';
+      const transfer = accepted.session.transferClaimedCorrection(accepted.input,
+        { taskId: captured.requestId, taskEpoch: 1, goalRevision: accepted.input.goalRevision });
+      pending.requestId = captured.requestId; delete pending.actor;
+      return await this.#execute(pending, captured, transfer.session, transfer.input);
     } catch { return pending.stopped ? 'stopped' : this.#journal.unresolvedAttempts().length ? 'uncertain' : 'error'; }
     finally {
       if (pending.touched && !pending.actor && !pending.stopped) await this.#fence(pending.requestId);

@@ -119,7 +119,10 @@ final class DevTaskIntake {
     private(set) var activeRequestID: String?
     private(set) var activeSurface: Surface?
     private(set) var activeGoalRevision = 1
-    private var replacement: (taskID: String, sourceID: String, surface: Surface, mode: String, revision: Int)?
+    private var nativeFieldTarget: NativeTarget?
+    private var nativeFieldGoal: (field: String, value: String)?
+    private var replacement: (taskID: String, sourceID: String, surface: Surface, mode: String, revision: Int,
+                              fieldGoal: (field: String, value: String)?)?
     var replacementRequestID: String? { replacement?.taskID }
 
     @discardableResult
@@ -143,6 +146,9 @@ final class DevTaskIntake {
         guard send(intent.request(taskID: taskID, command: command)) else { return false }
         activeRequestID = taskID
         activeSurface = intent.surface
+        if case .nativeFill(let target, let field, let value) = intent {
+            nativeFieldTarget = target; nativeFieldGoal = (field, value)
+        }
         return true
     }
 
@@ -174,7 +180,39 @@ final class DevTaskIntake {
         payload.removeValue(forKey: "type"); payload.removeValue(forKey: "requestId")
         guard send(["type": "replace_native_fixture", "requestId": taskID,
             "targetRequestId": sourceID, "mode": mode, "replacement": payload]) else { return false }
-        replacement = (taskID, sourceID, intent.surface, mode, revision)
+        replacement = (taskID, sourceID, intent.surface, mode, revision, nil)
+        return true
+    }
+
+    /// The retained target comes from original intake, never a new foreground
+    /// capture. Correction is an explicit final text command for that target.
+    func replaceField(field: String, value: String, send: ([String: Any]) -> Bool) -> Bool {
+        guard let sourceID = activeRequestID, activeSurface == .native, replacement == nil,
+              let target = nativeFieldTarget, let oldGoal = nativeFieldGoal,
+              !field.isEmpty, field.utf16.count <= 160, value.utf8.count <= 1024,
+              field != oldGoal.field || value != oldGoal.value else { return false }
+        let intent = Intent.nativeFill(target: target, field: field, value: value)
+        let bundleID: String
+        switch target {
+        case .captured(let bundle, _, _): bundleID = bundle
+        case .explicit(let bundle): bundleID = bundle
+        }
+        let taskID = UUID().uuidString.lowercased()
+        let revision = activeGoalRevision + 1
+        let command: [String: Any] = ["type": "command", "protocolVersion": "2.0",
+            "messageId": UUID().uuidString.lowercased(), "taskId": sourceID,
+            "taskEpoch": 1, "goalRevision": revision, "source": "text", "mode": "command",
+            "utteranceId": UUID().uuidString.lowercased(), "utteranceRevision": 1,
+            "text": "Fill \(field) in \(bundleID) with text: \(value)", "isFinal": true,
+            "createdAt": ISO8601DateFormatter().string(from: Date()),
+            "originSurface": ["adapter": "native", "surfaceId": "systemone-panel",
+                "appBundleId": "com.aurium.systemone.dev", "windowId": "command-panel",
+                "contentRevision": sourceID]]
+        var payload = intent.request(taskID: taskID, command: command)
+        payload.removeValue(forKey: "type"); payload.removeValue(forKey: "requestId")
+        guard send(["type": "replace_native_field", "requestId": taskID,
+            "targetRequestId": sourceID, "replacement": payload]) else { return false }
+        replacement = (taskID, sourceID, .native, "fill", revision, (field, value))
         return true
     }
 
@@ -189,6 +227,7 @@ final class DevTaskIntake {
               object["goalRevision"] as? Int == pending.revision,
               object["mode"] as? String == pending.mode else { return false }
         activeRequestID = pending.taskID; activeSurface = pending.surface
+        if let goal = pending.fieldGoal { nativeFieldGoal = goal }
         activeGoalRevision = pending.revision; replacement = nil
         return true
     }
@@ -202,6 +241,7 @@ final class DevTaskIntake {
         activeRequestID = nil
         activeSurface = nil
         activeGoalRevision = 1
+        nativeFieldTarget = nil; nativeFieldGoal = nil
         replacement = nil
     }
 

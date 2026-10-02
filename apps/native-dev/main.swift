@@ -428,7 +428,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             action: #selector(checkNativeRecovery))
         let fixtureReplacement = NSButton(title: "Replace fixture goal…", target: self,
             action: #selector(replaceNativeFixture))
-        let fixtureRecoveryActions = NSStackView(views: [fixtureRecovery, fixtureReplacement])
+        let fieldReplacement = NSButton(title: "Replace field goal…", target: self,
+            action: #selector(replaceNativeField))
+        let fixtureRecoveryActions = NSStackView(views: [fixtureRecovery, fixtureReplacement, fieldReplacement])
         fixtureRecoveryActions.orientation = .horizontal
         fixtureRecoveryActions.spacing = 8
         let fixtureActions = NSStackView(views: [fixtureDocuments, fixtureLocate,
@@ -1374,6 +1376,41 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusField?.stringValue = "Existing Chrome request sent to the local controller…"
     }
 
+    @objc private func replaceNativeField() {
+        guard hostActionsAvailable, activeSurface == .native, let target = activeRequestID,
+              let window = panel, let input = controllerInput, fixtureTaskPaused,
+              stopRequestID == nil, taskIntake.replacementRequestID == nil else { return }
+        dismissRecoverySheet()
+        let alert = NSAlert()
+        alert.messageText = "Replace the paused field goal?"
+        alert.informativeText = "Enter an exact field label and literal value for the original target app. The old task will be cancelled and stopped first. Earlier edits remain; the changed goal needs a fresh observation and verification."
+        alert.addButton(withTitle: "Keep Paused")
+        alert.addButton(withTitle: "Replace Goal")
+        let field = NSTextField(string: "")
+        field.placeholderString = "Exact field label"
+        field.setAccessibilityLabel("Replacement field label")
+        let value = NSTextField(string: "")
+        value.placeholderString = "Literal value (may be empty)"
+        value.setAccessibilityLabel("Replacement literal value")
+        let fields = NSStackView(views: [field, value])
+        fields.orientation = .vertical; fields.spacing = 8
+        fields.frame = NSRect(x: 0, y: 0, width: 360, height: 64)
+        field.widthAnchor.constraint(equalToConstant: 360).isActive = true
+        value.widthAnchor.constraint(equalToConstant: 360).isActive = true
+        alert.accessoryView = fields
+        recoveryAlert = alert
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self, self.recoveryAlert === alert else { return }
+            self.recoveryAlert = nil
+            guard response == .alertSecondButtonReturn, self.activeRequestID == target,
+                  self.hostActionsAvailable, self.stopRequestID == nil else { return }
+            if !self.taskIntake.replaceField(field: field.stringValue, value: value.stringValue,
+                send: { self.send($0, through: input) }) {
+                self.commandStatus?.stringValue = "Replacement was unchanged, invalid or could not be delivered. Check the current task state."
+            }
+        }
+    }
+
     @objc private func replaceNativeFixture() {
         guard let surface = activeSurface,
               [DevTaskIntake.Surface.nativeNavigation, .nativeLocate, .nativeOpen].contains(surface),
@@ -1528,7 +1565,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard controllerIdentityValid() else { return false }
         if let type = object["type"] as? String,
            (type.hasPrefix("start_") || type == "replace_native_fixture"
-            || type == "prepare_native_recovery" || type == "native_recovery_presented"
+            || type == "replace_native_field" || type == "prepare_native_recovery" || type == "native_recovery_presented"
             || type == "resume_native_task"), !hostActionsAvailable {
             commandStatus?.stringValue = "Waiting for the active session and interruption fence."
             return false
