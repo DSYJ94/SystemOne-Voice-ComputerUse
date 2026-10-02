@@ -60,13 +60,15 @@ uv pip install --python .build/clm-macos-venv/bin/python \
   -r packages/providers/python/requirements-macos.lock
 python3 packages/providers/python/fetch_artifacts.py .build/clm-artifacts
 mkdir -p private-traces
-python3 - <<'PY'
-import json, pathlib, subprocess
+.build/clm-macos-venv/bin/python - <<'PY'
+import json, pathlib, platform, subprocess
 if subprocess.check_output(['git', 'status', '--porcelain'], text=True).strip():
     raise SystemExit('Use a clean source commit for this experiment.')
 p = pathlib.Path('packages/providers/fixtures/clm-artifact-manifest.macos.pending.json')
 m = json.loads(p.read_text())
 m['runtime']['serverRevision'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+# Bind the interpreter that will actually run the experiment.
+m['runtime']['pythonVersion'] = platform.python_version()
 path = pathlib.Path('.build/clm-macos-manifest.json')
 with path.open('x') as f:
     json.dump(m, f, indent=2)
