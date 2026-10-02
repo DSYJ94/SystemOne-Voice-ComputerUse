@@ -23,11 +23,14 @@ export interface CLMArtifactFile {
   readonly bytes: number;
 }
 export interface CLMArtifactManifest {
-  readonly schemaVersion: 'systemone-clm-artifacts-v1';
+  readonly schemaVersion: 'systemone-clm-artifacts-v1' | 'systemone-clm-artifacts-v2';
   readonly referenceRevision: string;
   readonly encoder: { readonly repository: 'Qwen/Qwen3-8B'; readonly revision: string; readonly files: readonly CLMArtifactFile[] };
   readonly heads: { readonly repository: 'Contrastive-LM/CLM-v0.1-8B'; readonly revision: string; readonly files: readonly CLMArtifactFile[] };
-  readonly runtime: { readonly image: string; readonly serverRevision: string };
+  readonly runtime: { readonly image: string; readonly serverRevision: string } | {
+    readonly platform: 'macos-arm64'; readonly pythonVersion: '3.12.14';
+    readonly requirementsSha256: string; readonly serverRevision: string;
+  };
   readonly recipe: typeof RECIPE;
   readonly security: typeof SECURITY;
   readonly licenseReviewRef: string;
@@ -80,23 +83,29 @@ export function validateCLMArtifactManifest(value: unknown): CLMArtifactManifest
   const manifest = object(value, ['schemaVersion', 'referenceRevision', 'encoder', 'heads', 'runtime', 'recipe', 'security', 'licenseReviewRef']);
   const encoder = object(manifest.encoder, ['repository', 'revision', 'files']);
   const heads = object(manifest.heads, ['repository', 'revision', 'files']);
-  const runtime = object(manifest.runtime, ['image', 'serverRevision']);
+  const native = manifest.schemaVersion === 'systemone-clm-artifacts-v2';
+  const runtime = object(manifest.runtime, native
+    ? ['platform', 'pythonVersion', 'requirementsSha256', 'serverRevision'] : ['image', 'serverRevision']);
   const recipe = object(manifest.recipe, Object.keys(RECIPE));
   const security = object(manifest.security, Object.keys(SECURITY));
-  if (manifest.schemaVersion !== 'systemone-clm-artifacts-v1' || manifest.referenceRevision !== CLM_REFERENCE_REVISION
+  if ((!native && manifest.schemaVersion !== 'systemone-clm-artifacts-v1') || manifest.referenceRevision !== CLM_REFERENCE_REVISION
     || encoder.repository !== 'Qwen/Qwen3-8B' || typeof encoder.revision !== 'string' || !REVISION.test(encoder.revision)
     || heads.repository !== 'Contrastive-LM/CLM-v0.1-8B' || heads.revision !== CLM_HEAD_REVISION
-    || typeof runtime.image !== 'string' || !/^[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}$/.test(runtime.image)
+    || (native ? runtime.platform !== 'macos-arm64' || runtime.pythonVersion !== '3.12.14'
+      || typeof runtime.requirementsSha256 !== 'string' || !HASH.test(runtime.requirementsSha256)
+      : typeof runtime.image !== 'string' || !/^[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}$/.test(runtime.image))
     || typeof runtime.serverRevision !== 'string' || !REVISION.test(runtime.serverRevision)
     || Object.entries(RECIPE).some(([key, expected]) => recipe[key] !== expected)
     || Object.entries(SECURITY).some(([key, expected]) => security[key] !== expected)
     || typeof manifest.licenseReviewRef !== 'string' || !/^[A-Za-z0-9_.:-]{1,160}$/.test(manifest.licenseReviewRef)) {
     throw new ContractError('unresolved artifact pin or incompatible serving declaration');
   }
-  return Object.freeze({ schemaVersion: 'systemone-clm-artifacts-v1', referenceRevision: CLM_REFERENCE_REVISION,
+  return Object.freeze({ schemaVersion: native ? 'systemone-clm-artifacts-v2' : 'systemone-clm-artifacts-v1', referenceRevision: CLM_REFERENCE_REVISION,
     encoder: Object.freeze({ repository: 'Qwen/Qwen3-8B', revision: encoder.revision, files: files(encoder.files, 'encoder') }),
     heads: Object.freeze({ repository: 'Contrastive-LM/CLM-v0.1-8B', revision: CLM_HEAD_REVISION, files: files(heads.files, 'heads') }),
-    runtime: Object.freeze({ image: runtime.image, serverRevision: runtime.serverRevision }),
+    runtime: Object.freeze(native ? { platform: 'macos-arm64' as const, pythonVersion: '3.12.14' as const,
+      requirementsSha256: runtime.requirementsSha256 as string, serverRevision: runtime.serverRevision }
+      : { image: runtime.image as string, serverRevision: runtime.serverRevision }),
     recipe: RECIPE, security: SECURITY, licenseReviewRef: manifest.licenseReviewRef });
 }
 

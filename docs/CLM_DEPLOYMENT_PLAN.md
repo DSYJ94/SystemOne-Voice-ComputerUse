@@ -1,5 +1,15 @@
 # CLM serving and preparation
 
+**Current experiment, 2 October 2026:** the owner selected the laptop GPU first.
+Follow the [pinned Metal experiment](CLM_LOCAL_GPU_EXPERIMENT.md), using the
+[reference tensor adapter](CLM_REFERENCE_ADAPTER.md). Qwen3-8B and tokenizer are
+resolved to `b968826d9c46dd6066d109eabc6255188de91218`; published head/tokenizer
+component bytes and reference head math have been checked. Full encoder/GPU
+inference and a usable Mac connection remain outstanding. Later Linux/vLLM
+numerical comparison is still needed. No cloud provisioning is authorized by
+these source changes; any future paid launch still requires its concrete cap
+and approval. The earlier Linux-first plan below is historical ordering.
+
 The owner selected self-hosted testing on premise or AWS/GCP. CLM will be
 served through an owned private HTTP API; the repository has a [bounded decision client](CLM_DECISION_BOUNDARY.md),
 an opt-in synthetic native selector and a separate fixture probe. It has no
@@ -100,15 +110,27 @@ The package-manager network preset was preserved; no GPU or paid deployment ran.
 
 The [owned serving boundary](CLM_SERVING_BOUNDARY.md) now provides mandatory
 authentication, exact SystemOne requests, pre-ranking overflow checks, redacted
-validated replies and bounded outstanding ownership. It needs a concrete pinned
-reference tokenizer/ranking adapter; synthetic ingress tests are not live
+validated replies and bounded outstanding ownership. The concrete offline
+tokenizer/ranking adapter is implemented; synthetic ingress tests are not live
 inference evidence. Production listener startup rejects the pending manifest
 and missing local weights before opening a loopback socket.
 
-The network draft save for `huggingface.co`, `registry-1.docker.io` and
+The previous session's network draft save for `huggingface.co`, `registry-1.docker.io` and
 `auth.docker.io` failed with a configuration-conflict error. A reread confirmed
 revision 3 and the previous allowlist unchanged; persistence of these additions
 is unconfirmed. Add those hosts in environment settings while preserving GitHub,
 Playwright, Google Storage and the package-manager preset. Actual access must
 be retested after application. No credential variable bindings, cloud account or
 Mac SSH/CI runner are available in this task.
+
+This new session saved the requested seven hosts while preserving the package
+manager preset. GitHub API, actual pinned Playwright downloads, Hugging Face
+model metadata and Docker registry/auth manifest requests now work. Artifact
+downloads redirected to `us.aws.cdn.hf.co`; that additional host was saved and
+verified by successful tokenizer/head downloads. Runtime status still reports
+network state as unknown, so these are actual-request results, not a claim that
+all desired policy observations are current. No infrastructure identity or Mac
+connection is bound. A CUDA image candidate was resolved through authenticated
+read-only registry metadata to
+`pytorch/pytorch@sha256:e05438443ae3c407e8d04447091a959dbb6757b6290b128770c3c787d4bd442b`;
+it was not pulled, run or qualified and is deferred for the laptop-first plan.

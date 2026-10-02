@@ -32,7 +32,10 @@ setup, live permission recovery and physical multi-monitor use remain pending.
 - An [owned CLM serving boundary](docs/CLM_SERVING_BOUNDARY.md) now enforces
   authentication, bounded exact requests, token-overflow rejection and validated
   redacted replies. Startup verifies local bytes before opening a loopback
-  listener. A pinned tokenizer/ranking adapter and live qualification remain.
+  listener. An [offline reference tensor adapter](docs/CLM_REFERENCE_ADAPTER.md)
+  now implements exact tokenizer bounds and checkpoint ranking, with a
+  [laptop-first Metal experiment](docs/CLM_LOCAL_GPU_EXPERIMENT.md). Published
+  tokenizer/head component checks pass; full encoder/GPU and live qualification remain.
 
 - [Native field fills](docs/NATIVE_FIELD_ACTOR.md) now use the persistent actor,
   budgeted eligibility checkpoints and independent terminal value verification.

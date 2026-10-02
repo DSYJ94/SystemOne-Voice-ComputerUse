@@ -1,0 +1,145 @@
+{
+  "schemaVersion": "systemone-clm-artifacts-v2",
+  "referenceRevision": "bb42c6c5bf914fd449bed2f6ca65be80602cb1f7",
+  "encoder": {
+    "repository": "Qwen/Qwen3-8B",
+    "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+    "files": [
+      {
+        "path": "encoder/config.json",
+        "role": "config",
+        "sha256": "f7c4eadfbbf522470667b797a3c89be2524832d2d599797248dc304fff447c30",
+        "bytes": 728
+      },
+      {
+        "path": "encoder/tokenizer.json",
+        "role": "tokenizer",
+        "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+        "bytes": 11422654
+      },
+      {
+        "path": "encoder/tokenizer_config.json",
+        "role": "tokenizer",
+        "sha256": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101",
+        "bytes": 9732
+      },
+      {
+        "path": "encoder/merges.txt",
+        "role": "tokenizer",
+        "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+        "bytes": 1671853
+      },
+      {
+        "path": "encoder/vocab.json",
+        "role": "tokenizer",
+        "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+        "bytes": 2776833
+      },
+      {
+        "path": "encoder/model.safetensors.index.json",
+        "role": "config",
+        "sha256": "f9fdbcb91c23971c13ec5d5f2573d2349e8f61f2f049371ec699281748fdb1bc",
+        "bytes": 32878
+      },
+      {
+        "path": "encoder/LICENSE",
+        "role": "license",
+        "sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e",
+        "bytes": 11343
+      },
+      {
+        "path": "encoder/README.md",
+        "role": "license",
+        "sha256": "0f36caaff9c2516411a7738db384606263ba653c1e63e61d72f511606164d5a6",
+        "bytes": 16660
+      },
+      {
+        "path": "encoder/model-00001-of-00005.safetensors",
+        "role": "weights",
+        "sha256": "31d6a825ae35f11fb85b195b4c42c146c051e446433125a215336abdf95cbf5f",
+        "bytes": 3996250744
+      },
+      {
+        "path": "encoder/model-00002-of-00005.safetensors",
+        "role": "weights",
+        "sha256": "5991236cea6fe21f3d43cab0f0e84448734fbbe0789816202989f2ddc9d18282",
+        "bytes": 3993160032
+      },
+      {
+        "path": "encoder/model-00003-of-00005.safetensors",
+        "role": "weights",
+        "sha256": "c5185c4794be2d8a9784d5753c9922db38df478ce11f9ed0b415b7304d896836",
+        "bytes": 3959604768
+      },
+      {
+        "path": "encoder/model-00004-of-00005.safetensors",
+        "role": "weights",
+        "sha256": "b5ee7de71fbf17db3d5704e0c8f2bc7d005ca9e1d7ca2aeb19827b0cfcaa917a",
+        "bytes": 3187841392
+      },
+      {
+        "path": "encoder/model-00005-of-00005.safetensors",
+        "role": "weights",
+        "sha256": "20c2d6366ab85c90786ccdd829cd2b9e7d30ef3b2ebbb998280e7e4014b542ff",
+        "bytes": 1244659840
+      }
+    ]
+  },
+  "heads": {
+    "repository": "Contrastive-LM/CLM-v0.1-8B",
+    "revision": "e939398d4556fcd9400c76fa8c5a513202f42b0a",
+    "files": [
+      {
+        "path": "heads/CLM_v0.1-8B.pt",
+        "role": "weights",
+        "sha256": "b2b4a8c9c2d39263eff78a351eb909a342ce9b3bf21a3f07c1d1bf15f1c4eda5",
+        "bytes": 75557149
+      },
+      {
+        "path": "heads/LICENSE",
+        "role": "license",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        "bytes": 11358
+      },
+      {
+        "path": "heads/README.md",
+        "role": "license",
+        "sha256": "4e738e65332f1cd55fb2767c37e634f1f650388cf42c2675b38291a1bedfb660",
+        "bytes": 5144
+      },
+      {
+        "path": "heads/config.json",
+        "role": "config",
+        "sha256": "d0ffb4df6eded7faab6e0df4ec3187e605ee3089adcbc36af6f41a1a24f4abe1",
+        "bytes": 307
+      }
+    ]
+  },
+  "runtime": {
+    "platform": "macos-arm64",
+    "pythonVersion": "3.12.14",
+    "requirementsSha256": "f5df58c393d302770ff7694c8769334612b799336412a652d20b4a2fb4bbdcc0",
+    "serverRevision": null
+  },
+  "recipe": {
+    "pooling": "last_token",
+    "inputDimension": 4096,
+    "normalizeEncoder": true,
+    "normalizeHeads": true,
+    "maxLogitScale": 100,
+    "maxTokensPerText": 2048,
+    "overflow": "reject",
+    "precision": "bfloat16"
+  },
+  "security": {
+    "transport": "tls",
+    "authentication": "bearer",
+    "encoderAccess": "private",
+    "requestLogging": "disabled",
+    "downloads": "disabled",
+    "hotReload": "disabled",
+    "checkpointLoading": "weights_only",
+    "trustRemoteCode": false
+  },
+  "licenseReviewRef": "clm-artifact-review-2026-10-02"
+}

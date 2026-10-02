@@ -13,7 +13,7 @@ until their actual acceptance evidence exists.
 | Requirement | Current evidence | Remaining gate |
 |---|---|---|
 | Persistent execution and Stop | Durable admission/effect/checkpoint journals; bounded actor; native fixture and field controllers, independent field completion, explicit Resume and bounded replacement admission; synthetic native and real headless portal continuation | General semantic actions, general/active replacement admission, restart/general controller recovery, unknown-effect and sleep/lock integration |
-| Primary CLM | Bounded decision client/transport; synthetic closed-loop native proposals; offline immutable artifact preflight; bounded owned serving ingress | Resolved and verified encoder/head/container/server artifacts, owned inference, calibration, at least 50 task-disjoint cases and supported controller integration |
+| Primary CLM | Bounded owned serving ingress; offline tensor adapter; resolved Qwen/tokenizer/head plan and hash-locked Metal runtime; published tokenizer/head component checks | Verified full encoder/runtime, actual laptop GPU experiment and full-reference parity, calibration, at least 50 task-disjoint cases and supported controller integration |
 | Voice and input | One owner-reported editable held-Talk transcript; typed/final-input source guards | Representative speech corpus, on-device/offline assets, repeated capture/permission lifecycle, voice through the qualified task actor |
 | Native Mac execution | Previous fixture action and build evidence | Stable signing/TCC attribution, physical AX actions, permission revocation/rebuild, focus/Spaces/multi-monitor, actual supported applications |
 | Existing Chrome | Isolated extension/native-host fixture checks | Owner-profile tabs/data continuity, authentication/grants, Stop, routing and live qualification |
@@ -36,6 +36,12 @@ provisioning. Credentials belong in a secret manager, never chat or git.
 Local CLM feasibility, alternative providers and OCR/VLM remain separate tracks;
 they are not a prerequisite if not shipped. No substitute for primary CLM or the
 mandatory existing-profile Chrome scope is silently enabled.
+
+On 2 October the owner selected the laptop GPU first, superseding the previous
+Linux/NVIDIA-first experiment order. The [Metal experiment](CLM_LOCAL_GPU_EXPERIMENT.md)
+is prepared for the reported M5/32 GB Mac; no connection or actual run exists in
+this Linux session. Source and component parity evidence does not qualify MPS,
+full encoder inference, Mac actions or release gates. Cloud provisioning stays deferred.
 
 The next source milestones and exact evidence live in [handoff](BUILD_HANDOFF.md),
 [implementation status](IMPLEMENTATION_STATUS.md) and [validation](VALIDATION.md).

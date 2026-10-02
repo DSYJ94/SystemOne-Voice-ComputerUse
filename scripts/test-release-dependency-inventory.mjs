@@ -10,6 +10,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const files = ['scripts/release-dependency-inventory.mjs', 'package.json', 'package-lock.json',
   'requirements-test.txt', '.node-version', 'scripts/build-bundled-dev.sh', 'docs/DEPENDENCIES.md',
   'packages/providers/fixtures/clm-artifact-manifest.pending.json',
+  'packages/providers/fixtures/clm-artifact-manifest.macos.pending.json', 'packages/providers/python/requirements-macos.lock',
   'docs/release/dependencies.pending.json', 'docs/release/dependency-inventory.json',
   'node_modules/playwright-core/browsers.json', 'node_modules/playwright-core/package.json'];
 function fixture(t) {
@@ -30,6 +31,14 @@ function changeJSON(directory, file, update) {
   update(data);
   writeFileSync(path, JSON.stringify(data, null, 2) + '\n');
 }
+
+test('changed Metal dependency pins cannot retain a previous runtime declaration', t => {
+  const directory = fixture(t);
+  const path = resolve(directory, 'packages/providers/python/requirements-macos.lock');
+  writeFileSync(path, readFileSync(path, 'utf8').replace('torch==2.8.0', 'torch==2.8.1'));
+  const result = run(directory, '--write');
+  assert.notEqual(result.status, 0); assert.match(result.stderr, /Metal runtime lock hash drift/);
+});
 
 test('repeated generation is byte-stable and retains unresolved release gates', t => {
   const directory = fixture(t);
