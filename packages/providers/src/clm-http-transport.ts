@@ -30,7 +30,11 @@ export function createCLMHTTPTransport(options: {
     const response = await fetcher(endpoint, { method: 'POST', redirect: 'error', signal,
       headers: { 'content-type': 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}) },
       body: Buffer.from(body) });
-    if (!response.ok) { await response.body?.cancel(); throw new ContractError(`CLM HTTP ${response.status}`); }
+    if (!response.ok) {
+      await response.body?.cancel();
+      // Status only (never the body) so callers can back off on 429/529.
+      throw Object.assign(new ContractError(`CLM HTTP ${response.status}`), { status: response.status });
+    }
     if (response.headers.get('content-type')?.split(';')[0]?.trim() !== 'application/json') {
       await response.body?.cancel(); throw new ContractError('CLM response type mismatch');
     }
