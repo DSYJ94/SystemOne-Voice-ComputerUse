@@ -140,6 +140,16 @@ def encode_last_token(model, row, device):
     return hidden[0, -1].float()
 
 
+def write_signature(st):
+    """Identity and mutation fields; reads may legitimately update atime.
+
+    macOS updates st_atime when artifacts are read (inventory hashing, model
+    loading), so whole-stat_result equality false-positives there; Linux CI
+    passed only because relatime/noatime mounts hide the same behavior.
+    """
+    return (st.st_size, st.st_mode, st.st_ino, st.st_dev, st.st_mtime_ns, st.st_ctime_ns)
+
+
 def verify_inventory(root, manifest):
     """Recheck local bytes in the worker before any tensor deserialization.
 
@@ -166,7 +176,7 @@ def verify_inventory(root, manifest):
             while chunk := handle.read(1024 * 1024):
                 digest.update(chunk)
         after = path.stat()
-        if before != after or digest.hexdigest() != file["sha256"]:
+        if write_signature(before) != write_signature(after) or digest.hexdigest() != file["sha256"]:
             raise ValueError("artifact changed or hash mismatch")
         fingerprints[path] = after
     return root, fingerprints
@@ -226,7 +236,7 @@ class ReferenceBackend:
 
     def unchanged(self):
         for path, stat in self.fingerprints.items():
-            if path.is_symlink() or path.stat() != stat:
+            if path.is_symlink() or write_signature(path.stat()) != write_signature(stat):
                 raise ValueError("artifact changed; restart refused")
 
     def count(self, texts):
