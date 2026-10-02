@@ -1,6 +1,6 @@
 # Build handoff
 
-Updated 1 October 2026. This is the current implementation handoff, not a
+Updated 2 October 2026. This is the current implementation handoff, not a
 release claim. Read this with [implementation status](IMPLEMENTATION_STATUS.md),
 the [fixture test](FIXTURE_COMPUTER_USE_TEST.md),
 [managed-browser status](MANAGED_BROWSER.md), and the reviewed
@@ -9,7 +9,43 @@ each implementation slice lands.
 
 ## New-chat resume checkpoint — 1 October 2026
 
-**Latest continuation:** branch `codex/clm-serving-boundary`, based on
+**Latest continuation, 2 October 2026:** branch `codex/clm-reference-backend`,
+from `codex/clm-serving-boundary` at
+`4d9891156988dfe2f02c671eebb3bb8fd25f7d76`. Implementation
+`407a036302288b6c178f68dac27ae247a5a7245e`,
+[draft PR #73](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/73)
+targets #72. The [offline reference adapter](CLM_REFERENCE_ADAPTER.md) now has
+exact tokenizer bounds, Qwen3 last-token pooling, safe checkpoint loading,
+reference normalization/ranking and process settlement on cancellation. The
+owner selected the **laptop GPU first**, superseding Linux/NVIDIA-first ordering;
+the [pinned Metal experiment](CLM_LOCAL_GPU_EXPERIMENT.md) is prepared for the
+reported M5/32 GB Mac. Qwen/tokenizer revision
+`b968826d9c46dd6066d109eabc6255188de91218`; all 17 artifact files
+(16,473,033,415 bytes) and exact model license texts are downloaded and verified
+in `/workspace/.artifacts/clm`. Published tokenizer/head component parity passed.
+The native pending manifest needs a local copy binding the exact clean source
+commit before startup. No full encoder/GPU inference or Mac run occurred.
+
+Latest validation: typecheck; **442 passed, zero failed, two Mac-only skips
+(444 total)**; Python oracle 115/115, CPU adapter 10/10, inventory consistency
+and seven checks. Browser cache is `/workspace/.cache/ms-playwright` and must be
+activated. GitHub API, pinned Playwright downloads, Hugging Face and Docker
+registry/auth requests now work in this new session. The requested network hosts
+and required artifact CDN `us.aws.cdn.hf.co` were saved, preserving Package
+managers. Runtime network observation remains unknown; actual requests establish
+the reported access. No Mac connection or infrastructure identity is bound.
+Do not provision paid resources; prepare/review a capped plan if cloud testing
+is reconsidered. No owner app action, TCC/Keychain change or previous-goal resume
+occurred. V1 remains not ready.
+
+Next: run the prepared laptop experiment through an available Mac connection or
+owner-run commands, measure memory/latency and qualify full encoder/reference
+parity; then calibration and supported primary-CLM controller integration.
+Continue lifecycle/general execution, restart recovery and correction source
+work, followed by actual Mac/native/voice/existing-profile Chrome and release
+acceptance gates. Preserve the previous owner goal as dropped.
+
+**Previous continuation:** branch `codex/clm-serving-boundary`, based on
 `codex/native-field-actor` (#71) at `7727da0`. Implementation `7158cb4`,
 [draft PR #72](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/72)
 targets `codex/native-field-actor`. The
