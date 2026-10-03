@@ -25,28 +25,37 @@ First time after setting up signing:
 
 ## Use the bar
 
-Press **Control-Option-Space**. Click the mic, speak, click it again (or type), for example:
+**Hold Control-Option-Space and speak; release to run.** A quick tap just
+opens the bar. You can also click the mic (click again to finish), or type
+and press Return. The first time, allow Microphone and Speech Recognition.
 
-- `go to wikipedia and search for Alan Turing` (a bare name means wikipedia.org; other single words mean <name>.com)
-- `search github.com for playwright`
-- `go to en.wikipedia.org`
+Examples:
 
-The first mic click asks for Microphone and Speech Recognition permission. A spoken request starts as soon as the transcript is final. A typed one
-starts on Return. A private, isolated Chromium window opens on that site
-only: the site and its subdomains, HTTPS, GET requests.
+- `go to wikipedia and search for Alan Turing` (a bare name means
+  wikipedia.org; other single words mean <name>.com)
+- `search github for playwright`
+- then, while that page is open: `change the page to German` or
+  `now search for Enigma`. A follow-up continues in the same window. A new
+  "go to …" closes it and starts fresh.
+
+A private, isolated Chromium window opens on that site and its subdomains
+only, using HTTPS and GET requests.
 
 For each step Jev proposes one action under the bar, for example
-`Step 2: Jev wants to press “Search”`:
+`Step 2: Jev wants to press “Search”`, with three buttons:
 
-- **Return**, or say **“yes”**: allow this one step. It runs, then is checked.
-- **Esc**, say **“stop”**, or **Control-Option-Escape**: stop. The browser closes.
+- **Allow** (Return, or say **"yes"** with the hotkey): run this one step.
+- **Allow all for this task**: Jev continues without asking; each step is
+  still checked.
+- **Stop** (Esc, say **"stop"**, or Control-Option-Escape): stop; the browser
+  closes.
 
-Jev chooses only from what the page shows: links on the site, the search
-field (filled with your own words, nothing else), and search buttons. It
-never invents URLs or text. When Jev thinks the goal is met it proposes
-**finish**; your yes completes the task and the result stays open. A new
-request closes it first. **⚙ Settings** has the Jev switch with its data
-disclosure, voice and Accessibility status, and developer tools.
+**⚙ Settings → Auto-allow steps** turns on auto mode for the whole session.
+Jev chooses only from what the page offers: on-site links (including ones in
+collapsed menus), the search field (filled only with your own words), search
+buttons and ordinary buttons such as tabs or "show more". It never invents
+URLs or text. When the goal looks done it proposes **finish**; the result
+stays open for a follow-up.
 
 ## What leaves the Mac
 

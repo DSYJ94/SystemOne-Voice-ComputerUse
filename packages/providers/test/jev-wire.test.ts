@@ -35,6 +35,10 @@ test('Jev request is the documented choice shape with a pinned version and no te
 
 test('Jev replies need the pinned model, exact keys, a normalized distribution and a consistent choice', () => {
   assert.equal(decodeJevChoice(reply(), view).choice, 'c0');
+  // Two-decimal rounding (sum 0.99) is accepted and renormalized.
+  const rounded = decodeJevChoice(reply({ c0: 0.57, c1: 0.39, request_help: 0.03 }), view);
+  assert.ok(Math.abs(Object.values(rounded.probabilities).reduce((a, b) => a + b, 0) - 1) < 1e-12);
+  assert.throws(() => decodeJevChoice(reply({ c0: 0.57, c1: 0.30, request_help: 0.03 }), view));
   const bad = [
     { ...reply(), model: 'jev-latest' },
     reply({ c0: 0.8, c1: 0.2 } as never),

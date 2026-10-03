@@ -61,7 +61,9 @@ export function decodeJevChoice(raw: unknown, view: CLMProviderView, model = JEV
     }
     total += probability;
   }
-  if (Math.abs(total - 1) > 0.001) throw new ContractError('distribution does not sum to one');
+  // Jev reports two-decimal probabilities, so a valid reply can total 0.99 or
+  // 1.01. Accept rounding only, then renormalize for host thresholds.
+  if (Math.abs(total - 1) > 0.02 || total <= 0) throw new ContractError('distribution does not sum to one');
   if (!expected.includes(answer.choice) || Math.abs((distribution[answer.choice] as number)
     - Math.max(...expected.map(id => distribution[id] as number))) > 0.000001) {
     throw new ContractError('choice disagrees with distribution');
@@ -69,7 +71,7 @@ export function decodeJevChoice(raw: unknown, view: CLMProviderView, model = JEV
   const tokens = object(envelope.usage).input_tokens;
   if (!Number.isSafeInteger(tokens) || (tokens as number) < 0) throw new ContractError('invalid token accounting');
   return Object.freeze({ model, inputTokens: tokens as number, choice: answer.choice, confidence,
-    probabilities: Object.freeze(Object.fromEntries(expected.map(id => [id, distribution[id] as number]))) });
+    probabilities: Object.freeze(Object.fromEntries(expected.map(id => [id, (distribution[id] as number) / total]))) });
 }
 
 function object(value: unknown): Record<string, unknown> {

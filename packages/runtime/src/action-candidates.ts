@@ -56,6 +56,11 @@ export interface CandidateBuildInput {
   readonly invocations?: readonly BoundInvocation[];
   /** Managed GET-form submit buttons the host admitted for this step. */
   readonly submissions?: readonly string[];
+  /** Managed button-like controls the host admitted for clicking this step. */
+  readonly clicks?: readonly string[];
+  /** Destinations already scope-checked by the driver may leave the current
+   * origin (e.g. en.wikipedia.org → de.wikipedia.org within one named site). */
+  readonly crossOriginDestinations?: boolean;
   /** Multi-step browsing only: real pages are rarely fully observed. Offered
    * candidates are still exact observed controls; each step is user-confirmed. */
   readonly allowPartialCoverage?: boolean;
@@ -151,7 +156,7 @@ function checkedSource(source: ActionSource): void {
 }
 
 function destinationMap(bindings: readonly BoundDestination[],
-  source: ActionSource): Map<string, string> {
+  source: ActionSource, crossOrigin = false): Map<string, string> {
   if (bindings.length > MAX_CONTROLS) throw new ContractError('too many destination bindings');
   if (source.surface !== 'managed' && bindings.length) {
     throw new ContractError('destination bindings require managed browser');
@@ -169,7 +174,7 @@ function destinationMap(bindings: readonly BoundDestination[],
       || url.username || url.password
       || (url.protocol !== 'https:'
         && !(url.protocol === 'http:' && url.hostname === '127.0.0.1'))
-      || url.origin !== new URL(source.currentUrl!).origin
+      || (!crossOrigin && url.origin !== new URL(source.currentUrl!).origin)
       || urls.has(binding.exactUrl)) {
       throw new ContractError('unapproved destination URL');
     }
@@ -208,7 +213,7 @@ export function buildActionCandidates(input: CandidateBuildInput): BuiltCandidat
     throw new ContractError('unbound candidate text');
   }
   const textTargets = new Set(input.text?.allowedTargetRefs ?? []);
-  const destinations = destinationMap(input.destinations ?? [], source);
+  const destinations = destinationMap(input.destinations ?? [], source, input.crossOriginDestinations === true);
   const invocations = new Map<string, BoundInvocation>();
   if ((input.invocations?.length ?? 0) > MAX_CONTROLS) {
     throw new ContractError('too many native invocation bindings');
@@ -223,12 +228,14 @@ export function buildActionCandidates(input: CandidateBuildInput): BuiltCandidat
     }
     invocations.set(binding.targetRef, binding);
   }
-  if ((input.submissions?.length ?? 0) > MAX_CONTROLS
-    || (input.submissions ?? []).some(ref => !ID.test(ref))
-    || (input.submissions?.length && source.surface !== 'managed')) {
-    throw new ContractError('invalid submit bindings');
+  for (const refs of [input.submissions, input.clicks]) {
+    if ((refs?.length ?? 0) > MAX_CONTROLS || (refs ?? []).some(ref => !ID.test(ref))
+      || (refs?.length && source.surface !== 'managed')) {
+      throw new ContractError('invalid submit or click bindings');
+    }
   }
   const submissions = new Set(input.submissions ?? []);
+  const clicks = new Set(input.clicks ?? []);
   const candidates: Record<string, JSONValue>[] = [];
   const resolutions = new Map<string, ResolvedCandidate>();
   const labelCounts = new Map<string, number>();
@@ -239,7 +246,9 @@ export function buildActionCandidates(input: CandidateBuildInput): BuiltCandidat
     labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1);
   }
   let ambiguous = false;
-  if (source.complete) {
+  // Browsing accepts partial coverage explicitly; everything else still needs it complete.
+  const covered = source.complete || input.allowPartialCoverage === true;
+  if (covered) {
     for (const control of source.controls) {
       if (!control.visible || !control.enabled) continue;
       const label = normalizedText(control.label, 160, 'control label');
@@ -293,7 +302,9 @@ export function buildActionCandidates(input: CandidateBuildInput): BuiltCandidat
         && destinations.has(control.destinationUrl)) {
         const urlRef = destinations.get(control.destinationUrl)!;
         const candidateId = `c${candidates.length}`;
-        const description = `Follow the visible link “${label}”${context
+        const description = context === 'collapsed menu'
+          ? `Follow the link “${label}” from a collapsed menu to the approved destination ${control.destinationUrl}, then verify arrival.`
+          : `Follow the visible link “${label}”${context
           ? ` in ${context}` : ''} to the approved destination ${control.destinationUrl}, then verify exact URL arrival.`;
         const candidate: Record<string, JSONValue> = frozenCandidate({ candidateId,
           description, operation: 'navigate', targetRef: control.targetRef,
@@ -309,11 +320,13 @@ export function buildActionCandidates(input: CandidateBuildInput): BuiltCandidat
           operation: 'navigate', targetRef: control.targetRef,
           parameterRef: urlRef }));
       }
-      if (source.surface === 'managed' && control.invokable === true && submissions.has(control.targetRef)) {
+      const submit = submissions.has(control.targetRef);
+      if (source.surface === 'managed' && control.invokable === true && (submit || clicks.has(control.targetRef))) {
         const candidateId = `c${candidates.length}`;
         const candidate: Record<string, JSONValue> = frozenCandidate({ candidateId,
-          description: `Submit the form with the visible button “${label}”${context
-            ? ` in ${context}` : ''}, then verify the page changes within the approved site.`,
+          description: submit ? `Submit the form with the visible button “${label}”${context
+            ? ` in ${context}` : ''}, then verify the page changes within the approved site.`
+            : `Click the ${control.role} “${label}”${context ? ` in ${context}` : ''}, then verify the page visibly changes.`,
           operation: 'invoke', targetRef: control.targetRef, parameters: {},
           preconditions: ['target_exists', 'target_visible', 'target_enabled',
             'origin_approved', 'fresh_observation'],
@@ -323,12 +336,11 @@ export function buildActionCandidates(input: CandidateBuildInput): BuiltCandidat
         validateCandidate(candidate);
         candidates.push(candidate);
         resolutions.set(candidateId, Object.freeze({ candidateId,
-          operation: 'invoke', targetRef: control.targetRef, parameterRef: 'submit' }));
+          operation: 'invoke', targetRef: control.targetRef, parameterRef: submit ? 'submit' : 'click' }));
       }
       if (candidates.length > MAX_ACTIONS) break;
     }
   }
-  const covered = source.complete || input.allowPartialCoverage === true;
   const abstained = !covered || candidates.length > MAX_ACTIONS;
   if (abstained) { candidates.length = 0; resolutions.clear(); }
   const reason = !covered ? 'unsupported'
@@ -395,7 +407,7 @@ export function fromManagedObservation(value: ManagedObservation): ActionSource 
     controls: value.controls.map(control => ({ targetRef: control.id,
       role: control.role, label: control.label, context: control.context,
       enabled: control.enabled, visible: true, editable: control.editable,
-      invokable: control.submittable, destinationUrl: control.destinationUrl })) };
+      invokable: control.submittable || control.clickable, destinationUrl: control.destinationUrl })) };
 }
 
 export function fromChromeObservation(value: ChromeReadSnapshot): ActionSource {

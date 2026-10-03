@@ -10,9 +10,12 @@ import { JEV_CODEC, JEV_ENDPOINT, JEV_MODEL } from './jev-wire.ts';
 const PROVIDER: ProviderRegistration = Object.freeze({ id: 'typesafe-jev', name: 'jev',
   location: 'external_service', revision: JEV_MODEL });
 const POLICY: EgressPolicy = Object.freeze({ mode: 'external_opt_in', enabledProviderIds: [PROVIDER.id] });
-// Development thresholds, NOT calibrated; every step is also user-confirmed.
-const CALIBRATION = Object.freeze({ revision: 'jev-browse-dev-uncalibrated', temperature: 1,
-  minProbability: 0.5, minMargin: 0.1 });
+// Development thresholds, NOT calibrated. Browsing often has two reasonable
+// next steps (type in the search box, or follow a matching link); every step
+// is user-confirmed or explicitly auto-allowed and verified, so a near-tie
+// takes the top choice. An exact tie or a weak top choice still abstains.
+const CALIBRATION = Object.freeze({ revision: 'jev-browse-dev-uncalibrated-2', temperature: 1,
+  minProbability: 0.35, minMargin: 0.000001 });
 const QUESTION = 'Choose the one offered action that best advances the goal on this page. '
   + 'Choose finish only if the goal is already achieved on the current page.';
 
@@ -26,13 +29,24 @@ export function createJevBrowseDecision(options: {
   const transport = options.transport ?? createCLMHTTPTransport({ endpoint: JEV_ENDPOINT,
     ...(options.apiKey ? { apiKey: options.apiKey } : {}), timeoutMs: 15_000 });
   const client = new CLMDecisionClient(POLICY, PROVIDER, CALIBRATION, transport, JEV_CODEC);
-  const decision: BrowseDecision = { async select(set, observed, signal, history) {
+  const project = (set: Parameters<BrowseDecision['select']>[0], observed: Parameters<BrowseDecision['select']>[1],
+    history: readonly string[]) => {
     const stateText = `Goal: ${options.goal}. Current page: “${observed.title || 'untitled'}” at ${observed.url}.`
       + (history.length ? ` Done so far: ${history.join(' ')}` : ' Nothing has been done yet.')
       + ' Scope: stay on this site; only follow offered links, type the user\'s own search words, or submit a search.';
-    const approved = approveCandidateProjection({ set, stateText: stateText.slice(0, 24_000),
+    return approveCandidateProjection({ set, stateText: stateText.slice(0, 24_000),
       questionText: QUESTION, provider: PROVIDER, disclosureReview: () => true });
-    const proposal = await client.decide(set, approved, signal);
+  };
+  const decision: BrowseDecision = {
+    /** Preliminary round: up to two plausible effect candidates, unreported. */
+    async bestActions(set, observed, signal, history) {
+      const proposal = await client.decide(set, project(set, observed, history), signal);
+      return Object.entries(proposal.probabilities ?? {})
+        .filter(([id, probability]) => probability >= 0.05 && set.resolve(id, set.observationId, set.candidateSetDigest))
+        .sort((a, b) => b[1] - a[1]).slice(0, 2).map(([id]) => id);
+    },
+    async select(set, observed, signal, history) {
+    const proposal = await client.decide(set, project(set, observed, history), signal);
     const binding = proposal.candidateId
       && set.resolve(proposal.candidateId, set.observationId, set.candidateSetDigest);
     const label = binding ? observed.controls.find(c => c.id === binding.targetRef)?.label ?? null

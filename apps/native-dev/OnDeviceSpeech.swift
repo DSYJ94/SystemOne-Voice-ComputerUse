@@ -5,6 +5,8 @@ import Speech
 final class OnDeviceSpeech {
     var onText: ((String, Bool) -> Void)?
     var onStatus: ((String) -> Void)?
+    /// Fires after every listening-state change, once the state is settled.
+    var onCaptureChange: ((Bool) -> Void)?
 
     private let engine = AVAudioEngine()
     private var recognizer: SFSpeechRecognizer?
@@ -13,6 +15,8 @@ final class OnDeviceSpeech {
     private var epoch = 0
     private var listening = false
     private var finishing = false
+    /// Latest partial words; used only when the user explicitly ended capture.
+    private var lastPartial: String?
     private let speechAuthorization: (@escaping @Sendable (SFSpeechRecognizerAuthorizationStatus) -> Void) -> Void
     private let microphoneAuthorization: (@escaping @Sendable (Bool) -> Void) -> Void
     var isCapturing: Bool { listening || finishing }
@@ -96,17 +100,31 @@ final class OnDeviceSpeech {
             let failed = error != nil
             Task { @MainActor [weak self] in
                 guard let self, self.epoch == currentEpoch else { return }
-                if let text, !text.isEmpty { self.onText?(text, isFinal) }
+                if let text, !text.isEmpty {
+                    if !isFinal { self.lastPartial = text }
+                    self.onText?(text, isFinal)
+                }
                 if isFinal {
                     self.onStatus?("Got it. Press Return to run, or edit first.")
                     self.reset()
                 } else if failed {
-                    self.onStatus?("Speech recognition stopped without a final transcript. Try again.")
-                    self.reset()
+                    self.finishWithPartialOrFail()
                 }
             }
         }
         onStatus?("Listening on this Mac… click the mic again when you are done.")
+        onCaptureChange?(true)
+    }
+
+    /// The user ended capture, so their last heard words are the transcript.
+    private func finishWithPartialOrFail() {
+        if finishing, let words = lastPartial, !words.isEmpty {
+            onText?(words, true)
+            onStatus?("Got it. Press Return to run, or edit first.")
+        } else {
+            onStatus?("Didn't catch that. Click the mic and try again.")
+        }
+        reset()
     }
 
     func stop() {
@@ -121,8 +139,7 @@ final class OnDeviceSpeech {
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(4))
             guard let self, self.epoch == currentEpoch, self.finishing else { return }
-            self.onStatus?("No final transcript arrived. Nothing was submitted.")
-            self.reset()
+            self.finishWithPartialOrFail()
         }
     }
 
@@ -142,6 +159,8 @@ final class OnDeviceSpeech {
         recognizer = nil
         listening = false
         finishing = false
+        lastPartial = nil
+        onCaptureChange?(false)
     }
 
     // AVAudioEngine invokes tap blocks on an audio queue. Form the block in a

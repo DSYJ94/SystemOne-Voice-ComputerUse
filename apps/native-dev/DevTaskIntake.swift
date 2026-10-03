@@ -159,6 +159,30 @@ final class DevTaskIntake {
         return true
     }
 
+    /// A follow-up goal for a finished browse whose window is still open. The
+    /// controller admits it as a new task in the same session; the old one
+    /// stays completed. The active request switches only after delivery.
+    func continueBrowse(text: String, voice: Bool, send: ([String: Any]) -> Bool) -> Bool {
+        guard let previous = activeRequestID, activeSurface == .browse, replacement == nil else { return false }
+        let taskID = UUID().uuidString.lowercased()
+        let command: [String: Any] = [
+            "type": "command", "protocolVersion": "2.0",
+            "messageId": UUID().uuidString.lowercased(),
+            "taskId": taskID, "taskEpoch": 1, "goalRevision": 1,
+            "source": voice ? "voice" : "text", "mode": "command",
+            "utteranceId": UUID().uuidString.lowercased(), "utteranceRevision": 1,
+            "text": text, "isFinal": true,
+            "createdAt": ISO8601DateFormatter().string(from: Date()),
+            "originSurface": ["adapter": "native", "surfaceId": "systemone-panel",
+                "appBundleId": "com.aurium.systemone.dev",
+                "windowId": "command-panel", "contentRevision": taskID],
+        ]
+        guard send(["type": "continue_browse", "requestId": taskID, "targetRequestId": previous,
+                    "command": command, "decisionProvider": "jev"]) else { return false }
+        activeRequestID = taskID
+        return true
+    }
+
     /// A correction keeps the old writer until the host returns a linked task.
     /// Delivery is a final explicit command, not a Resume intent or admission.
     func replaceFixture(_ intent: Intent, send: ([String: Any]) -> Bool) -> Bool {

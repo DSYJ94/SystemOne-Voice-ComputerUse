@@ -114,3 +114,34 @@ test('browse parsing resolves bare spoken site names deterministically and binds
     assert.throws(() => parseScopedBrowse(bad), bad);
   }
 });
+
+test('a follow-up goal continues in the same open browser as a new task; misuse is refused', async t => {
+  let calls = 0;
+  const h = await harness(t, async (requestId, goal) => {
+    calls++;
+    return calls === 1 ? scripted(['set_value', 'invoke', 'finish'])(requestId, goal)
+      : scripted(['navigate', 'finish'])(requestId, goal);
+  });
+  const first = randomUUID();
+  h.send(browse(first, `go to ${h.host} and search for April`));
+  await waitFor(() => h.has(first, 'verified_browse'));
+  const wrong = randomUUID();
+  h.send({ type: 'continue_browse', requestId: wrong, targetRequestId: randomUUID(), decisionProvider: 'jev',
+    command: browse(wrong, 'open the first result').command });
+  await waitFor(() => h.has(wrong, 'error'));
+  const next = randomUUID();
+  h.send({ type: 'continue_browse', requestId: next, targetRequestId: first, decisionProvider: 'jev',
+    command: browse(next, 'open the first result').command });
+  await waitFor(() => h.has(next, 'verified_browse'));
+  assert.equal(h.journal.getTaskState(first), 'completed');
+  assert.equal(h.journal.getTaskState(next), 'completed');
+  const proposals = h.output.filter(m => m.type === 'browse_proposal' && m.requestId === next);
+  assert.deepEqual(proposals.map(m => m.kind), ['navigate', 'finish']);
+  assert.match(String(proposals[0]?.pageUrl), /\/invoices\?q=April/u);
+  const again = randomUUID();
+  h.send({ type: 'continue_browse', requestId: again, targetRequestId: first, decisionProvider: 'jev',
+    command: browse(again, 'go back').command });
+  await waitFor(() => h.has(again, 'error'));
+  const stop = randomUUID(); h.send({ type: 'stop', requestId: stop, targetRequestId: next });
+  await waitFor(() => h.has(stop, 'stopped'));
+});

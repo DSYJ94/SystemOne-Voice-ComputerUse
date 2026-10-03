@@ -80,3 +80,20 @@ export function parseScopedBrowse(text: string): {
   }
   return Object.freeze({ site: host, startUrl: `https://${host}/`, searchText, prefix });
 }
+
+/** A follow-up goal for an open browse session, e.g. "change the page to
+ * German" or "now search for Enigma". Only words after search/look up/find/type
+ * become typeable text; the site scope stays the session's. */
+export function parseBrowseFollowUp(text: string): {
+  readonly searchText: string | null;
+  readonly prefix: string | null;
+} {
+  if (!text.isWellFormed() || !text.trim() || text.trim() !== text || Buffer.byteLength(text, 'utf8') > 1_300) {
+    throw new ContractError('follow-up goal empty, padded or too large');
+  }
+  const match = /^(.*?\b(?:search|look up|find|type)(?: for)? )(.+)$/i.exec(text);
+  if (!match || match[2]!.trim() !== match[2] || Buffer.byteLength(match[2]!, 'utf8') > 512) {
+    return Object.freeze({ searchText: null, prefix: null });
+  }
+  return Object.freeze({ searchText: match[2]!, prefix: match[1]! });
+}

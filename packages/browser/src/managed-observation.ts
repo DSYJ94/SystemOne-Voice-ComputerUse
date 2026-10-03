@@ -6,7 +6,7 @@ import { chromium } from 'playwright';
 import type { BrowserContext, ElementHandle, Page } from 'playwright';
 
 const MAX_ORIGINS = 16;
-const MAX_CONTROLS = 80;
+const MAX_CONTROLS = 200;
 const MAX_SCAN_NODES = 5_000;
 
 export interface ManagedObservationOptions {
@@ -33,6 +33,12 @@ export interface ManagedControl {
   readonly destinationUrl: string | null;
   /** Submit button of a GET form whose action stays in approved scope. */
   readonly submittable: boolean;
+  /** Visible non-submit button, tab, disclosure or toggle. Clicking runs page
+   * script, but the session still blocks out-of-scope and non-GET requests. */
+  readonly clickable: boolean;
+  /** A plain in-scope link inside a collapsed menu. It can only be followed by
+   * direct in-scope navigation, never clicked or edited. */
+  readonly hidden: boolean;
 }
 
 export interface ManagedObservation {
@@ -62,6 +68,12 @@ export interface PreparedManagedFill {
 }
 
 export interface PreparedManagedSubmit {
+  readonly controlId: string;
+  send(): Promise<boolean>;
+  release(): void;
+}
+
+export interface PreparedManagedClick {
   readonly controlId: string;
   send(): Promise<boolean>;
   release(): void;
@@ -218,7 +230,7 @@ export class ManagedObservationSession {
             target.hostname === site || target.hostname.endsWith('.' + site)));
         const controls: { role: string; label: string; context: string;
           enabled: boolean; editable: boolean; destinationUrl: string | null;
-          submittable: boolean }[] = [];
+          submittable: boolean; clickable: boolean; hidden: boolean }[] = [];
         const nodes: Element[] = [];
         const walker = document.createTreeWalker(document.documentElement, NodeFilter.SHOW_ELEMENT);
         let scanned = 0;
@@ -231,8 +243,13 @@ export class ManagedObservationSession {
           if (!element.matches('button,a,input,select,textarea,[role]')
             || element.closest('[contenteditable]')) continue;
           const style = getComputedStyle(element);
-          if (style.display === 'none' || style.visibility === 'hidden'
-            || element.getClientRects().length === 0) continue;
+          const hidden = style.display === 'none' || style.visibility === 'hidden'
+            || element.getClientRects().length === 0;
+          const hiddenLink = hidden && element instanceof HTMLAnchorElement
+            && !element.hasAttribute('download') && (!element.target || element.target === '_self')
+            && (() => { try { const target = new URL(element.href);
+              return scoped(target) && !target.username && !target.password; } catch { return false; } })();
+          if (hidden && !hiddenLink) continue;
           const tag = element.tagName.toLowerCase();
           const inputType = element instanceof HTMLInputElement
             ? element.type.toLowerCase() : '';
@@ -245,15 +262,15 @@ export class ManagedObservationSession {
           const label = (element.getAttribute('aria-label')
             || formLabel || element.getAttribute('title')
             || element.getAttribute('placeholder')
-            || (['input', 'textarea', 'select'].includes(tag) ? '' : html.innerText)
+            || (['input', 'textarea', 'select'].includes(tag) ? '' : hidden ? element.textContent : html.innerText)
             || '').replace(/\s+/gu, ' ').trim().slice(0, 160);
           if (!label) continue;
           const container = element.closest('tr,li,fieldset,form,section,article,dialog,[role="row"],[role="dialog"]');
-          const context = ((container as HTMLElement | null)?.innerText ?? '')
+          const context = hidden ? 'collapsed menu' : ((container as HTMLElement | null)?.innerText ?? '')
             .replace(/\s+/gu, ' ').trim().slice(0, 160);
           const enabled = !element.matches(':disabled')
             && element.getAttribute('aria-disabled') !== 'true';
-          const editable = enabled && (tag === 'textarea'
+          const editable = !hidden && enabled && (tag === 'textarea'
             || (tag === 'input' && ['text', 'search', 'email', 'url', 'tel']
               .includes(inputType))) && !element.hasAttribute('readonly');
           let destinationUrl: string | null = null;
@@ -268,7 +285,7 @@ export class ManagedObservationSession {
             } catch { /* Unsupported link destination. */ }
           }
           let submittable = false;
-          if (enabled && (element instanceof HTMLButtonElement || element instanceof HTMLInputElement)
+          if (!hidden && enabled && (element instanceof HTMLButtonElement || element instanceof HTMLInputElement)
             && element.type === 'submit' && element.form && element.form.method.toLowerCase() === 'get'
             && !element.formAction.startsWith('javascript:')) {
             try {
@@ -276,8 +293,15 @@ export class ManagedObservationSession {
               submittable = scoped(action) && !action.username && !action.password;
             } catch { /* Unsupported form action. */ }
           }
-          controls.push({ role: (element.getAttribute('role') || tag).slice(0, 40),
-            label, context, enabled, editable, destinationUrl, submittable });
+          const role = (element.getAttribute('role') || tag).slice(0, 40);
+          const inputKind = element instanceof HTMLInputElement ? element.type.toLowerCase() : '';
+          const clickable = !hidden && enabled && !submittable && destinationUrl === null && !editable
+            && (tag === 'button' || tag === 'summary'
+              || ['button', 'tab', 'menuitem', 'switch', 'option', 'checkbox', 'radio'].includes(role)
+              || ['checkbox', 'radio', 'button'].includes(inputKind) || element.hasAttribute('aria-expanded'))
+            // A <button> defaults to type=submit; only one inside a form submits it.
+            && !(element instanceof HTMLButtonElement && element.type === 'submit' && element.form);
+          controls.push({ role, label, context, enabled, editable, destinationUrl, submittable, clickable, hidden });
           nodes.push(element);
         }
         return { title: document.title.slice(0, 160),
@@ -290,7 +314,7 @@ export class ManagedObservationSession {
       let description: { title: string; url: string;
         controls: { role: string; label: string; context: string;
           enabled: boolean; editable: boolean; destinationUrl: string | null;
-          submittable: boolean }[];
+          submittable: boolean; clickable: boolean; hidden: boolean }[];
         truncated: boolean; hasOpenShadowRoots: boolean };
       const observationId = randomUUID();
       const nextHandles = new Map<string, ElementHandle<Element>>();
@@ -461,10 +485,11 @@ export class ManagedObservationSession {
         const context = ((container as HTMLElement | null)?.innerText ?? '')
           .replace(/\s+/gu, ' ').trim().slice(0, 160);
         const html = element as HTMLElement;
-        const label = (element.getAttribute('aria-label')
-          || element.getAttribute('title') || html.innerText || '')
-          .replace(/\s+/gu, ' ').trim().slice(0, 160);
         const style = getComputedStyle(element);
+        const shown = style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0;
+        const label = (element.getAttribute('aria-label')
+          || element.getAttribute('title') || (shown ? html.innerText : element.textContent) || '')
+          .replace(/\s+/gu, ' ').trim().slice(0, 160);
         return { connected: element.isConnected && element.ownerDocument === document,
           role: (element.getAttribute('role') || element.tagName.toLowerCase()).slice(0, 40),
           label, context, href: element instanceof HTMLAnchorElement ? element.href : null,
@@ -477,9 +502,9 @@ export class ManagedObservationSession {
             && element.getAttribute('aria-disabled') !== 'true' };
       });
       if (this.#closed || signal.aborted || !current.connected || !current.plain
-        || !current.visible || !current.enabled || current.href !== destinationUrl
+        || (!current.visible && !control.hidden) || !current.enabled || current.href !== destinationUrl
         || current.role !== control.role || current.label !== control.label
-        || current.context !== control.context
+        || (!control.hidden && current.context !== control.context)
         || this.#navigationRevision !== observed.navigationRevision
         || this.#page.url() !== observed.url) {
         throw new Error('managed link changed during preflight');
@@ -497,6 +522,7 @@ export class ManagedObservationSession {
           try {
             const response = await this.#page.goto(destinationUrl,
               { waitUntil: 'domcontentloaded', timeout: 10_000 });
+            if (options.acceptInScopeRedirect === true) await this.settle();
             return !this.#closed && !signal.aborted && response?.ok() === true
               && (this.#page.url() === destinationUrl || (options.acceptInScopeRedirect === true
                 && allowedRequest(this.#page.url(), 'GET', this.#allowedOrigins)));
@@ -566,7 +592,7 @@ export class ManagedObservationSession {
               button.form?.requestSubmit(button);
             });
             await navigated;
-            await this.#page.waitForLoadState('domcontentloaded', { timeout: 10_000 });
+            await this.settle();
             return !this.#closed && !signal.aborted && this.#navigationRevision > before
               && allowedRequest(this.#page.url(), 'GET', this.#allowedOrigins);
           } finally { this.#actionPending = false; }
@@ -578,6 +604,78 @@ export class ManagedObservationSession {
     } catch (error) {
       this.#actionPending = false;
       throw error;
+    }
+  }
+
+  /** Clicks one observed button-like control. Success needs a visible change:
+   * a new in-scope document, or a changed DOM signature on the same page. */
+  async prepareClick(observationId: string, controlId: string,
+    signal: AbortSignal): Promise<PreparedManagedClick> {
+    if (this.#closed || this.#observing || this.#actionPending) {
+      throw new Error('managed browser is stopped or busy');
+    }
+    const observed = this.#lastObservation;
+    const control = observed?.controls.find(item => item.id === controlId);
+    const handle = this.#handles.get(controlId);
+    if (!observed || observed.observationId !== observationId || !control || !handle
+      || !control.enabled || !control.clickable || signal.aborted) {
+      throw new Error('managed click target is stale or unsupported');
+    }
+    this.#actionPending = true;
+    try {
+      const signature = () => this.#page.evaluate(() => `${location.href}|${document.querySelectorAll('*').length}|`
+        + `${document.body?.innerText.length ?? 0}|${[...document.querySelectorAll('[aria-expanded],[aria-selected],[open],:checked')]
+          .map(e => `${e.getAttribute('aria-expanded')}${e.getAttribute('aria-selected')}${e.hasAttribute('open')}`
+            + `${(e as HTMLInputElement).checked ?? ''}`).join('')}`);
+      const current = await handle.evaluate(element => {
+        const style = getComputedStyle(element);
+        return { connected: element.isConnected && element.ownerDocument === document,
+          visible: style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0,
+          enabled: !element.matches(':disabled') && element.getAttribute('aria-disabled') !== 'true' };
+      });
+      if (this.#closed || signal.aborted || !current.connected || !current.enabled
+        || this.#navigationRevision !== observed.navigationRevision || this.#page.url() !== observed.url) {
+        throw new Error('managed click target changed during preflight');
+      }
+      const before = await signature();
+      let sent = false;
+      let released = false;
+      return Object.freeze({ controlId,
+        send: async () => {
+          if (sent || released || this.#closed || signal.aborted
+            || this.#navigationRevision !== observed.navigationRevision) {
+            throw new Error('managed click was revoked or replayed');
+          }
+          sent = true;
+          try {
+            const revision = this.#navigationRevision;
+            // Hidden toggles (e.g. a checkbox behind its label) are clicked via the DOM.
+            if (current.visible) await handle.click({ timeout: 3_000 });
+            else await handle.evaluate(element => (element as HTMLElement).click());
+            await this.#page.waitForTimeout(400);
+            await this.settle();
+            if (this.#closed || signal.aborted || !allowedRequest(this.#page.url(), 'GET', this.#allowedOrigins)) return false;
+            return this.#navigationRevision > revision || await signature() !== before;
+          } finally { this.#actionPending = false; }
+        },
+        release: () => {
+          if (!sent && !released) { released = true; this.#actionPending = false; }
+        },
+      });
+    } catch (error) {
+      this.#actionPending = false;
+      throw error;
+    }
+  }
+
+  /** Waits until the main frame stops navigating (redirect chains, client-side
+   * routing), bounded to about 6 s. Verification reads the settled page. */
+  async settle(): Promise<void> {
+    for (let i = 0; i < 12 && !this.#closed; i++) {
+      const revision = this.#navigationRevision;
+      await this.#page.waitForLoadState('domcontentloaded', { timeout: 5_000 }).catch(() => {});
+      await this.#page.waitForTimeout(350);
+      if (revision === this.#navigationRevision) return;
     }
   }
 

@@ -15,18 +15,27 @@ import type { ManagedObservation } from './managed-observation.ts';
 
 export const BROWSE_POLICY = 'managed-browse-confirmed-v1';
 export const BROWSE_VERIFIER = 'user-confirmed-browse-goal-v1';
-const MAX_LINKS = 40;
+const FILLER = new Set(['and', 'the', 'for', 'search', 'look', 'find', 'open', 'visit', 'navigate',
+  'then', 'page', 'please', 'www', 'com', 'org', 'net', 'http', 'https']);
+
+/** Options per decision round; larger pages are judged in rounds. */
+const ROUND_SIZE = 45;
+const MAX_OPTIONS = 270;
 
 /** Chooses one offered candidate ID, or null to abstain. Never supplies URLs or text. */
 export interface BrowseDecision {
   /** history: host-written summaries of verified steps, oldest first. */
   select(set: BuiltCandidateSet, observed: ManagedObservation, signal: AbortSignal,
     history: readonly string[]): Promise<string | null>;
+  /** Optional preliminary-round ranking: the most plausible effect candidates
+   * (at most two) even when a non-effect choice scores higher. */
+  bestActions?(set: BuiltCandidateSet, observed: ManagedObservation, signal: AbortSignal,
+    history: readonly string[]): Promise<readonly string[]>;
 }
 
 export interface BrowseProposal {
   readonly step: number;
-  readonly kind: 'navigate' | 'fill' | 'submit' | 'finish';
+  readonly kind: 'navigate' | 'fill' | 'submit' | 'click' | 'finish';
   /** Exact observed text shown to the user; never model-authored. */
   readonly label: string;
   readonly destinationUrl: string | null;
@@ -61,7 +70,9 @@ export class ManagedBrowseTask implements PersistentTaskWorkflow {
   static start(journal: AttemptJournal, registry: TaskAdmissionRegistry, admission: TaskAdmission,
     session: ManagedObservationSession, options: { readonly searchText: string | null;
       readonly decision: BrowseDecision; readonly confirmation: BrowseConfirmation;
-      readonly limits?: TaskProgressLimits }): ManagedBrowseTask {
+      readonly limits?: TaskProgressLimits;
+      /** Words of the site name (e.g. "wikipedia") never count as goal words. */
+      readonly siteWords?: readonly string[] }): ManagedBrowseTask {
     const search = admission.parameters.find(item => item.parameterRef === 'search-text');
     if (admission.outcomeKind !== 'USER_CONFIRMATION' || admission.policyRevision !== BROWSE_POLICY
       || admission.completionVerifierRef !== BROWSE_VERIFIER || admission.scopeRef !== session.scopeRef
@@ -72,16 +83,18 @@ export class ManagedBrowseTask implements PersistentTaskWorkflow {
     journal.startAdmittedTask(registry, admission);
     try { journal.enableTaskProgress(admission.taskId, admission.scopeRef, admission.completionVerifierRef, options.limits); }
     catch (error) { journal.pauseTask(admission.taskId, 'browse_progress_failed'); throw error; }
-    return new ManagedBrowseTask(journal, admission, session, options);
+    return new ManagedBrowseTask(journal, admission, session, { ...options,
+      siteWords: (options.siteWords ?? []).map(word => word.toLowerCase()) });
   }
 
   private constructor(journal: AttemptJournal, admission: TaskAdmission, session: ManagedObservationSession,
     options: { readonly searchText: string | null; readonly decision: BrowseDecision;
-      readonly confirmation: BrowseConfirmation }) {
+      readonly confirmation: BrowseConfirmation; readonly siteWords: readonly string[] }) {
     this.taskId = admission.taskId; this.#journal = journal; this.#session = session;
     this.#decision = options.decision; this.#confirmation = options.confirmation;
     this.#searchText = options.searchText;
-    this.#goalWords = Object.freeze(admission.goal.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(w => w.length > 2));
+    this.#goalWords = Object.freeze(admission.goal.toLowerCase().split(/[^\p{L}\p{N}]+/u)
+      .filter(word => word.length > 2 && !FILLER.has(word) && !options.siteWords.includes(word)));
   }
 
   async advance(): Promise<void> {
@@ -92,15 +105,13 @@ export class ManagedBrowseTask implements PersistentTaskWorkflow {
     let executionId: string | undefined;
     try {
       const ticket = this.#journal.reserveTaskObservation(this.taskId);
-      const observed = await this.#session.observe();
+      const observed = await this.#observeSettled(generation);
       this.#active(generation);
       this.#journal.recordTaskObservation(this.taskId, ticket, { observationId: observed.observationId,
         scopeRef: admission.scopeRef, stateDigest: digest(semantic(observed)) });
       this.#journal.consumeTaskDecision(this.taskId, observed.observationId);
       const step = ++this.#step;
-      const set = this.#candidates(observed, step);
-      const chosenId = await this.#decision.select(set, observed, this.#abort.signal, [...this.#history]);
-      this.#active(generation);
+      const { set, chosenId } = await this.#choose(observed, step, generation);
       const candidate = chosenId ? set.candidates.find(item => item.candidateId === chosenId) : undefined;
       if (!candidate) throw new ContractError('no confident browse step');
       if (candidate.operation === 'finish') {
@@ -118,7 +129,8 @@ export class ManagedBrowseTask implements PersistentTaskWorkflow {
       const resolved = chosenId ? set.resolve(chosenId, observed.observationId, set.candidateSetDigest) : undefined;
       const control = observed.controls.find(item => item.id === resolved?.targetRef);
       if (!resolved || !control) throw new ContractError('browse choice does not resolve');
-      const kind = resolved.operation === 'navigate' ? 'navigate' : resolved.operation === 'set_value' ? 'fill' : 'submit';
+      const kind = resolved.operation === 'navigate' ? 'navigate' : resolved.operation === 'set_value' ? 'fill'
+        : resolved.parameterRef === 'click' ? 'click' : 'submit';
       if ((kind === 'fill' && this.#searchText === null) || (kind === 'navigate' && !control.destinationUrl)) {
         throw new ContractError('browse choice lacks a bound value');
       }
@@ -142,7 +154,9 @@ export class ManagedBrowseTask implements PersistentTaskWorkflow {
             this.#abort.signal, { acceptInScopeRedirect: true })
           : kind === 'fill'
             ? await this.#session.prepareFill(observed.observationId, control.id, this.#searchText!, this.#abort.signal)
-            : await this.#session.prepareSubmit(observed.observationId, control.id, this.#abort.signal);
+            : kind === 'click'
+              ? await this.#session.prepareClick(observed.observationId, control.id, this.#abort.signal)
+              : await this.#session.prepareSubmit(observed.observationId, control.id, this.#abort.signal);
       } catch (error) {
         this.#journal.recordNotDispatched(permit.executionId); executionId = undefined;
         throw error;
@@ -162,6 +176,7 @@ export class ManagedBrowseTask implements PersistentTaskWorkflow {
       if (kind === 'fill') this.#filled.add(`${observed.url}\n${control.label}`);
       this.#history.push(kind === 'fill' ? `Typed the user's search words into “${control.label}” on ${observed.url}.`
         : kind === 'submit' ? `Submitted the form with “${control.label}” on ${observed.url}.`
+          : kind === 'click' ? `Clicked “${control.label}” on ${observed.url}; the page changed.`
           : `Followed the link “${control.label}” to ${control.destinationUrl}.`);
       const verifyTicket = this.#journal.reserveTaskObservation(this.taskId, false);
       const verificationId = randomUUID();
@@ -179,30 +194,85 @@ export class ManagedBrowseTask implements PersistentTaskWorkflow {
     } finally { this.#advancing = false; }
   }
 
-  #candidates(observed: ManagedObservation, step: number): BuiltCandidateSet {
-    const origin = new URL(observed.url).origin;
+  /** A late redirect can change the page mid-read; settle and retry briefly. */
+  async #observeSettled(generation: number): Promise<ManagedObservation> {
+    for (let attempt = 0; ; attempt++) {
+      try { return await this.#session.observe(); }
+      catch (error) {
+        this.#active(generation);
+        if (attempt >= 2 || !String(error).includes('changed during observation')) throw error;
+        await this.#session.settle();
+      }
+    }
+  }
+
+  /** Every eligible observed control, best lexical matches first. Ranking only
+   * orders rounds; the model judges all of them. */
+  #options(observed: ManagedObservation) {
     const seen = new Set<string>([observed.url]);
-    const links = observed.controls.filter(control => {
-      if (!control.enabled || !control.destinationUrl || seen.has(control.destinationUrl)
-        || new URL(control.destinationUrl).origin !== origin || control.destinationUrl.length > 512) return false;
-      seen.add(control.destinationUrl);
-      return true;
+    const score = (text: string) => this.#goalWords.filter(word => text.toLowerCase().includes(word)).length;
+    const ranked = observed.controls.filter(control => {
+      if (!control.enabled) return false;
+      if (control.destinationUrl) {
+        if (seen.has(control.destinationUrl) || control.destinationUrl.length > 512) return false;
+        seen.add(control.destinationUrl);
+        return true;
+      }
+      return control.clickable || control.submittable
+        || (control.editable && this.#searchText !== null && !this.#filled.has(`${observed.url}\n${control.label}`));
     }).map((control, index) => ({ control, index,
-      score: this.#goalWords.filter(word => `${control.label} ${control.destinationUrl}`.toLowerCase()
-        .includes(word)).length }))
-      .sort((a, b) => b.score - a.score || a.index - b.index).slice(0, MAX_LINKS).map(item => item.control);
-    const editable = observed.controls.filter(control => control.editable && control.enabled
-      && !this.#filled.has(`${observed.url}\n${control.label}`));
+      score: score(`${control.label} ${control.destinationUrl ?? ''}`) + (control.editable || control.submittable ? 2 : 0)
+        - (control.hidden ? 1 : 0) }))
+      .sort((a, b) => b.score - a.score || a.index - b.index).slice(0, MAX_OPTIONS).map(item => item.control);
+    return ranked;
+  }
+
+  #set(observed: ManagedObservation, step: number, controls: readonly ManagedObservation['controls'][number][]): BuiltCandidateSet {
+    const ids = new Set(controls.map(control => control.id));
+    const source = fromManagedObservation(observed);
+    // One label per editable field keeps set_value unambiguous inside a round.
+    const editable = controls.filter(control => control.editable);
     return buildActionCandidates({ policyRevision: BROWSE_POLICY, allowPartialCoverage: true,
-      source: { ...fromManagedObservation(observed),
-        controls: fromManagedObservation(observed).controls.filter(control =>
-          links.some(link => link.id === control.targetRef) || control.invokable
-          || editable.some(field => field.id === control.targetRef)) },
-      destinations: links.map((link, index) => ({ urlRef: `u${index}`, exactUrl: link.destinationUrl! })),
-      ...(this.#searchText !== null ? { text: { textRef: 'search-text', source: 'final_command' as const,
+      crossOriginDestinations: true,
+      source: { ...source, controls: source.controls.filter(control => ids.has(control.targetRef)) },
+      destinations: controls.filter(control => control.destinationUrl)
+        .map((control, index) => ({ urlRef: `u${index}`, exactUrl: control.destinationUrl! })),
+      ...(this.#searchText !== null && editable.length ? { text: { textRef: 'search-text', source: 'final_command' as const,
         allowedTargetRefs: editable.map(control => control.id) } } : {}),
-      submissions: observed.controls.filter(control => control.submittable).map(control => control.id),
+      submissions: controls.filter(control => control.submittable).map(control => control.id),
+      clicks: controls.filter(control => control.clickable).map(control => control.id),
       finishEvidenceRef: `browse-finish-${step}` });
+  }
+
+  /** Judge every option: one round for small pages, otherwise rounds of
+   * ROUND_SIZE whose winners meet in a final round. */
+  async #choose(observed: ManagedObservation, step: number, generation: number) {
+    const options = this.#options(observed);
+    const rounds: (typeof options)[] = [];
+    for (let i = 0; i < options.length; i += ROUND_SIZE) rounds.push(options.slice(i, i + ROUND_SIZE));
+    if (rounds.length <= 1) {
+      const set = this.#set(observed, step, options);
+      const chosenId = await this.#decision.select(set, observed, this.#abort.signal, [...this.#history]);
+      this.#active(generation);
+      return { set, chosenId };
+    }
+    const winners: typeof options = [];
+    for (const round of rounds) {
+      const set = this.#set(observed, step, round);
+      const ids = this.#decision.bestActions
+        ? await this.#decision.bestActions(set, observed, this.#abort.signal, [...this.#history])
+        : [await this.#decision.select(set, observed, this.#abort.signal, [...this.#history])];
+      this.#active(generation);
+      for (const id of ids.slice(0, 2)) {
+        const ref = id ? set.resolve(id, observed.observationId, set.candidateSetDigest)?.targetRef : undefined;
+        const winner = round.find(control => control.id === ref);
+        if (winner && !winners.includes(winner)) winners.push(winner);
+      }
+    }
+    const set = this.#set(observed, step, winners);
+    const chosenId = await this.#decision.select(set, observed, this.#abort.signal, [...this.#history]);
+    this.#active(generation);
+    return { set, chosenId };
   }
 
   pause(reasonRef: string): { readonly workerFenced: boolean } {

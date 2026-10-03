@@ -37,6 +37,8 @@ export interface CLMProposal {
   readonly inputTokens: number | null;
   /** Probability of the model's top choice, for display only; never authority. */
   readonly topProbability: number | null;
+  /** The validated full distribution, for host-side ranking only; never authority. */
+  readonly probabilities: Readonly<Record<string, number>> | null;
 }
 
 /** Produces a bounded proposal, never an admission, permission or verifier.
@@ -87,7 +89,7 @@ export class CLMDecisionClient {
     });
     if (signal.aborted) throw new ContractError('CLM decision cancelled after transport');
     if (transportFailed) return Object.freeze({ ...base, candidateId: null, status: 'abstained',
-      reason: 'unavailable', inputTokens: null, topProbability: null });
+      reason: 'unavailable', inputTokens: null, topProbability: null, probabilities: null });
     try {
       const choice = this.#codec.decode(raw, view);
       const probabilities = Object.values(choice.probabilities).sort((a, b) => b - a);
@@ -95,20 +97,23 @@ export class CLMDecisionClient {
         || probabilities[0]! === probabilities[1]!
         || probabilities[0]! - probabilities[1]! < this.#calibration.minMargin) {
         return Object.freeze({ ...base, candidateId: null, status: 'abstained',
-          reason: 'low_confidence', inputTokens: choice.inputTokens, topProbability: probabilities[0]! });
+          reason: 'low_confidence', inputTokens: choice.inputTokens, topProbability: probabilities[0]!,
+          probabilities: choice.probabilities });
       }
       const candidate = set.candidates.find(c => c.candidateId === choice.choice)!;
       if (candidate.operation === 'wait' || candidate.operation === 'request_help'
         || candidate.operation === 'finish') {
         return Object.freeze({ ...base, candidateId: choice.choice, status: candidate.operation,
-          reason: 'non_effect_choice', inputTokens: choice.inputTokens, topProbability: probabilities[0]! });
+          reason: 'non_effect_choice', inputTokens: choice.inputTokens, topProbability: probabilities[0]!,
+          probabilities: choice.probabilities });
       }
       if (set.abstained || !set.resolve(choice.choice, set.observationId, set.candidateSetDigest)) {
         throw new ContractError('CLM candidate does not resolve');
       }
       return Object.freeze({ ...base, candidateId: choice.choice, status: 'selected',
-        reason: 'accepted', inputTokens: choice.inputTokens, topProbability: probabilities[0]! });
+        reason: 'accepted', inputTokens: choice.inputTokens, topProbability: probabilities[0]!,
+        probabilities: choice.probabilities });
     } catch { return Object.freeze({ ...base, candidateId: null, status: 'abstained',
-      reason: 'invalid_output', inputTokens: null, topProbability: null }); }
+      reason: 'invalid_output', inputTokens: null, topProbability: null, probabilities: null }); }
   }
 }

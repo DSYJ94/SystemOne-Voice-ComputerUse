@@ -32,7 +32,8 @@ private func systemOneHotkeyHandler(_ event: EventHandlerCallRef?,
     }
     let app = Unmanaged<SystemOneDev>.fromOpaque(userData).takeUnretainedValue()
     let actionID = hotkeyID.id
-    DispatchQueue.main.async { app.handleGlobalHotkey(actionID) }
+    let pressed = GetEventKind(eventRef) == UInt32(kEventHotKeyPressed)
+    DispatchQueue.main.async { app.handleGlobalHotkey(actionID, pressed: pressed) }
     return noErr
 }
 
@@ -105,6 +106,14 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var browseKeptOpen = false
     private var queuedRequestText: String?
     private var micButton: NSButton?
+    /// The current transcript came from holding the hotkey; it runs on release.
+    private var hotkeyDictation = false
+    private var hotkeyPressedAt: Date?
+    private var approvalRow: NSStackView?
+    /// "Allow all" for one task, or the Settings switch for the whole session.
+    /// Steps stay journaled, permitted one at a time and verified; Esc stops.
+    private var autoAllowTaskID: String?
+    private var autoAllowSession = false
     private var recoveryRequestID: String?
     private let recoveryUISession = UUID().uuidString.lowercased()
     private var recoveryAlert: NSAlert?
@@ -265,7 +274,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func makeCommandPanel() {
-        let window = GlassCommandPanel(contentRect: NSRect(x: 0, y: 0, width: 680, height: 132),
+        let window = GlassCommandPanel(contentRect: NSRect(x: 0, y: 0, width: 680, height: 168),
                                        styleMask: [.borderless, .fullSizeContentView],
                                        backing: .buffered, defer: false)
         window.title = "SystemOne"
@@ -391,7 +400,22 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         footer.orientation = .horizontal
         footer.alignment = .firstBaseline
         footer.spacing = 8
-        let stack = NSStackView(views: [bar, footer, target])
+        func pill(_ title: String, _ action: Selector, prominent: Bool = false) -> NSButton {
+            let button = NSButton(title: title, target: self, action: action)
+            button.bezelStyle = .push
+            button.controlSize = .regular
+            if prominent { button.keyEquivalent = "\r"; button.bezelColor = .controlAccentColor }
+            return button
+        }
+        let allowAll = pill("Allow all for this task", #selector(allowAllSteps))
+        let stopStep = pill("Stop", #selector(stop))
+        stopStep.keyEquivalent = "\u{1b}"
+        let approvals = NSStackView(views: [pill("Allow", #selector(allowStep), prominent: true), allowAll, stopStep])
+        approvals.orientation = .horizontal
+        approvals.spacing = 8
+        approvals.isHidden = true
+        approvalRow = approvals
+        let stack = NSStackView(views: [bar, footer, approvals, target])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
@@ -420,13 +444,19 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.finalSpeechText = isFinal ? text : nil
             // A browse request is safe to start straight from speech: nothing
             // acts before the user confirms the first proposed step.
-            if isFinal, self.jevEnabled, ScopedBrowse.parse(ScopedBrowse.normalizedSpeech(text)) != nil {
+            let fromHotkey = isFinal && self.hotkeyDictation
+            if isFinal { self.hotkeyDictation = false }
+            if isFinal, fromHotkey || (self.jevEnabled && (self.browseKeptOpen
+                || ScopedBrowse.parse(ScopedBrowse.normalizedSpeech(text)) != nil)) {
                 DispatchQueue.main.async { [weak self] in self?.runTaskRequest() }
             }
         }
         speech.onStatus = { [weak self] message in
             self?.commandStatus?.stringValue = message
+        }
+        speech.onCaptureChange = { [weak self] capturing in
             self?.updateMic()
+            if !capturing { DispatchQueue.main.async { [weak self] in self?.hotkeyDictation = false } }
         }
         commandPanel = window
     }
@@ -463,6 +493,13 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let jevRow = row("Let Jev choose each step", nil)
         jevRow.insertArrangedSubview(jevSwitch, at: 0)
         let jevNote = caption("Sends your request and the visible control labels to TypeSafe (jev-1.13.0). Off keeps everything on this Mac.")
+        let autoSwitch = NSSwitch()
+        autoSwitch.state = autoAllowSession ? .on : .off
+        autoSwitch.target = self
+        autoSwitch.action = #selector(toggleAutoAllow(_:))
+        let autoRow = row("Auto-allow steps", nil)
+        autoRow.insertArrangedSubview(autoSwitch, at: 0)
+        let autoNote = caption("Jev acts without asking each time. Every step is still checked, and Esc or Control-Option-Escape stops.")
         let voiceRow = row("Voice: " + (speech.isAuthorized ? "ready (on this Mac)" : "not enabled"),
                            speech.isAuthorized ? nil : link("Enable", #selector(enableVoice)))
         let axGranted = hasAccessibilityAccess()
@@ -475,7 +512,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                                         link("Developer tools", #selector(openDeveloperPanel))])
         tools.orientation = .horizontal
         tools.spacing = 6
-        let stack = NSStackView(views: [heading, jevRow, jevNote, voiceRow, axRow, advanced, tools])
+        let stack = NSStackView(views: [heading, jevRow, jevNote, autoRow, autoNote, voiceRow, axRow, advanced, tools])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
@@ -487,6 +524,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         popover.contentViewController = controller
         settingsPopover = popover
         popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+    }
+
+    @objc private func toggleAutoAllow(_ sender: NSSwitch) {
+        autoAllowSession = sender.state == .on
     }
 
     @objc private func toggleJev(_ sender: NSSwitch) {
@@ -1037,10 +1078,17 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 switch kind {
                 case "fill": action = "type your words into “\(label)”"
                 case "submit": action = "press “\(label)”"
+                case "click": action = "click “\(label)”"
                 case "navigate": action = "open “\(label)”" + (host.isEmpty ? "" : " (\(host))")
                 default: action = "finish here; the goal looks done on “\(label)”"
                 }
-                commandStatus?.stringValue = "Step \(step): Jev wants to \(action). Return or say “yes” to allow · Esc to stop."
+                if autoAllowSession || autoAllowTaskID == requestID {
+                    commandStatus?.stringValue = "Step \(step): Jev will \(action) (auto-allowed; Esc stops)."
+                    confirmProposal((requestID, proposalID), allow: true)
+                    continue
+                }
+                commandStatus?.stringValue = "Step \(step): Jev wants to \(action). Allow, or say “yes”."
+                approvalRow?.isHidden = false
                 commandPanel?.orderFrontRegardless()
                 continue
             }
@@ -1196,14 +1244,18 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "verified_browse":
             browseKeptOpen = true
             pendingProposal = nil
+            approvalRow?.isHidden = true
             statusField?.stringValue = "Done. The result stays open; say or type a new request, or ■ closes it."
         case "browse_paused":
             pendingProposal = nil
+            approvalRow?.isHidden = true
             statusField?.stringValue = "Paused: Jev wasn't confident, or a step was declined. Nothing else will run."
         case "ready":
             if requestID == activeRequestID { stopRequestID = nil }
             taskIntake.releaseIfReady(requestID: requestID)
             pendingProposal = nil
+            approvalRow?.isHidden = true
+            if autoAllowTaskID == requestID { autoAllowTaskID = nil }
             browseKeptOpen = false
             if activeRequestID == nil, let queued = queuedRequestText {
                 queuedRequestText = nil
@@ -1349,10 +1401,30 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         if browseKeptOpen, activeRequestID != nil, stopRequestID == nil {
-            // Close the finished browser first, then run this request.
-            queuedRequestText = taskField?.stringValue
-            commandStatus?.stringValue = "Closing the previous browser window…"
-            stop()
+            let raw = taskField?.stringValue ?? ""
+            let spoken = finalSpeechText != nil && finalSpeechText == raw
+            let text = spoken ? ScopedBrowse.normalizedSpeech(raw) : raw
+            if ScopedBrowse.parse(text) != nil || text.isEmpty {
+                // A different site: close the finished browser, then start fresh.
+                queuedRequestText = raw
+                commandStatus?.stringValue = "Closing the previous browser window…"
+                stop()
+                return
+            }
+            // A follow-up on the same page continues in the same window.
+            guard jevEnabled, let input = controllerInput else {
+                commandStatus?.stringValue = "Turn on “Let Jev choose each step” in Settings (⚙) to continue."
+                return
+            }
+            taskField?.stringValue = text
+            if spoken { finalSpeechText = text }
+            guard taskIntake.continueBrowse(text: text, voice: spoken,
+                send: { [weak self] in self?.send($0, through: input) == true }) else {
+                commandStatus?.stringValue = "Could not continue in the open browser."
+                return
+            }
+            browseKeptOpen = false
+            commandStatus?.stringValue = "Continuing on the open page. Jev will propose each step."
             return
         }
         guard !speech.isCapturing else {
@@ -1436,10 +1508,30 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         commandStatus?.stringValue = "Observing the captured app and exact field…"
     }
 
-    func handleGlobalHotkey(_ id: UInt32) {
-        switch id {
-        case openPanelHotkeyID: openPanel()
-        case stopHotkeyID: stop()
+    /// Control-Option-Space is push-to-talk: hold to speak, release to run.
+    /// A quick tap only opens the bar. Control-Option-Escape stops.
+    func handleGlobalHotkey(_ id: UInt32, pressed: Bool) {
+        switch (id, pressed) {
+        case (openPanelHotkeyID, true):
+            openPanel()
+            hotkeyPressedAt = Date()
+            guard speech.isAuthorized, hostActionsAvailable, !speech.isCapturing else {
+                if !speech.isAuthorized { commandStatus?.stringValue = "Click the mic once to allow voice; then hold Control-Option-Space to talk." }
+                return
+            }
+            hotkeyDictation = true
+            speech.start()
+        case (openPanelHotkeyID, false):
+            guard hotkeyDictation, let started = hotkeyPressedAt else { return }
+            if Date().timeIntervalSince(started) < 0.35 {
+                // A tap, not speech: keep the bar open and stay quiet.
+                hotkeyDictation = false
+                speech.cancel()
+                commandStatus?.stringValue = "Hold Control-Option-Space and speak; release to run."
+            } else {
+                speech.stop()
+            }
+        case (stopHotkeyID, true): stop()
         default: break
         }
     }
@@ -1477,10 +1569,12 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func registerGlobalHotkeys() {
-        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
-                                      eventKind: OSType(kEventHotKeyPressed))
+        var eventTypes = [EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
+                                        eventKind: OSType(kEventHotKeyPressed)),
+                          EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
+                                        eventKind: OSType(kEventHotKeyReleased))]
         let handlerStatus = InstallEventHandler(GetApplicationEventTarget(),
-            systemOneHotkeyHandler, 1, &eventType,
+            systemOneHotkeyHandler, 2, &eventTypes,
             Unmanaged.passUnretained(self).toOpaque(), &hotkeyHandler)
         guard handlerStatus == noErr else {
             shortcutField?.stringValue = "Global shortcuts unavailable (handler \(handlerStatus)); use the menu or Dock."
@@ -1641,7 +1735,18 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusField?.stringValue = "Fixture navigation sent to the local controller…"
     }
 
+    @objc private func allowStep() {
+        if let pending = pendingProposal { confirmProposal(pending, allow: true) }
+    }
+
+    @objc private func allowAllSteps() {
+        guard let pending = pendingProposal else { return }
+        autoAllowTaskID = pending.requestID
+        confirmProposal(pending, allow: true)
+    }
+
     private func confirmProposal(_ pending: (requestID: String, proposalID: String), allow: Bool) {
+        approvalRow?.isHidden = true
         guard let input = controllerInput, pending.requestID == activeRequestID else { pendingProposal = nil; return }
         pendingProposal = nil
         let sent = send(["type": "confirm_step", "requestId": UUID().uuidString.lowercased(),
@@ -1901,7 +2006,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                       limit: Int = 16_384) -> Bool {
         guard controllerIdentityValid() else { return false }
         if let type = object["type"] as? String,
-           (type.hasPrefix("start_") || type == "replace_native_fixture"
+           (type.hasPrefix("start_") || type == "continue_browse" || type == "replace_native_fixture"
             || type == "replace_native_field" || type == "prepare_native_recovery" || type == "native_recovery_presented"
             || type == "resume_native_task"), !hostActionsAvailable {
             commandStatus?.stringValue = "Waiting for the active session and interruption fence."

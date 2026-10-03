@@ -21,7 +21,7 @@ import type { NativePressRequest, NativeLocateRequest } from './native-press-aut
 import { NativeFixtureAuthority } from './native-fixture-authority.ts';
 import type { NativeFixtureDecision } from './native-fixture-task.ts';
 import type { BrowseDecision, BrowseProposal } from '../../browser/src/managed-browse-task.ts';
-import { parseScopedBrowse } from './scoped-native-command.ts';
+import { parseBrowseFollowUp, parseScopedBrowse } from './scoped-native-command.ts';
 import { NativeFieldPipeWorker } from './native-field-pipe-worker.ts';
 import { ChromeReadSession } from './chrome-read-session.ts';
 import { ChromeFillAuthority } from './chrome-fill-authority.ts';
@@ -110,6 +110,14 @@ interface StartBrowse {
   readonly decisionProvider: 'jev';
 }
 
+interface ContinueBrowse {
+  readonly type: 'continue_browse';
+  readonly requestId: string;
+  readonly targetRequestId: string;
+  readonly command: Record<string, JSONValue>;
+  readonly decisionProvider: 'jev';
+}
+
 interface ConfirmStep {
   readonly type: 'confirm_step';
   readonly requestId: string;
@@ -161,7 +169,7 @@ interface NativeRecoveryControl {
 
 type NativeRequest = ReplaceNativeField | ReplaceNativeFixture | NativeRecoveryControl | StartFill | StartNavigate | StartNativeFill | StartNativePress
   | StartNativeLocate | StartNativeOpen
-  | StartChromeFill | StartPortalWorkflow | StartBrowse | ConfirmStep | Stop;
+  | StartChromeFill | StartPortalWorkflow | StartBrowse | ContinueBrowse | ConfirmStep | Stop;
 type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
   | 'verified_dom_fill' | 'unsupported' | 'uncertain' | 'stopping'
   | 'stopped' | 'busy' | 'error' | 'blocked_recovery' | 'paused_budget'
@@ -258,6 +266,15 @@ function requestFromLine(line: Uint8Array): NativeRequest {
     }
     return { type: 'start_browse', requestId: value.requestId as string,
       command: value.command, decisionProvider: 'jev' };
+  }
+  if (value.type === 'continue_browse') {
+    if (Object.keys(value).sort().join(',') !== 'command,decisionProvider,requestId,targetRequestId,type'
+      || value.decisionProvider !== 'jev' || typeof value.targetRequestId !== 'string'
+      || value.command === undefined || !isRecord(value.command)) {
+      throw new ContractError('invalid browse follow-up');
+    }
+    return { type: 'continue_browse', requestId: value.requestId as string,
+      targetRequestId: value.targetRequestId, command: value.command, decisionProvider: 'jev' };
   }
   if (value.type === 'confirm_step') {
     if (Object.keys(value).sort().join(',') !== 'allow,proposalId,requestId,targetRequestId,type'
@@ -415,6 +432,10 @@ interface ActiveTask {
   task?: ManagedFillTask | ManagedNavigateTask | ScriptedPortalTask;
   actor?: PersistentTaskActor;
   browserFenced: boolean;
+  /** Set when a confirmed browse completed and its session may take a follow-up. */
+  browseCompleted?: boolean;
+  /** The named site of a browse session, kept for follow-ups. */
+  browseSite?: string | null;
   done: Promise<void>;
 }
 
@@ -583,6 +604,9 @@ export class NativeManagedController {
     if (request.type === 'stop') {
       void this.#stop(request);
       return;
+    }
+    if (request.type === 'continue_browse') {
+      this.#continueBrowse(request); return;
     }
     if (request.type === 'confirm_step') {
       const pending = this.#pendingStep;
@@ -1069,7 +1093,8 @@ export class NativeManagedController {
   }
 
   /** Confirm-each-step browsing within one site the user named. */
-  async #runBrowse(request: StartBrowse, active: ActiveTask): Promise<void> {
+  async #runBrowse(request: StartBrowse | ContinueBrowse, active: ActiveTask,
+    existing?: ManagedObservationSession, existingSite: string | null = null): Promise<void> {
     try {
       const command = request.command;
       if (command.type !== 'command' || (command.source !== 'text' && command.source !== 'voice')
@@ -1079,7 +1104,9 @@ export class NativeManagedController {
         || command.originSurface.appBundleId !== 'com.aurium.systemone.dev') {
         throw new ContractError('browse command binding changed');
       }
-      const parsed = parseScopedBrowse(command.text);
+      const parsed = existing ? { site: existingSite, startUrl: '', ...parseBrowseFollowUp(command.text) }
+        : parseScopedBrowse(command.text);
+      active.browseSite = parsed.site;
       // Loaded on first use so controller startup stays as lean as before.
       const { ManagedBrowseTask, BROWSE_POLICY, BROWSE_VERIFIER } = await import('../../browser/src/managed-browse-task.ts');
       const factory = this.#browseDecisions;
@@ -1093,7 +1120,7 @@ export class NativeManagedController {
         : [bindCommandValue(route.input, 'search-text', parsed.prefix!, parsed.searchText)];
       const decision = await factory(request.requestId, route.input.text);
       if (active.cancelled) return;
-      const session = await ManagedObservationSession.launch(parsed.startUrl, {
+      const session = existing ?? await ManagedObservationSession.launch(parsed.startUrl, {
         allowedOrigins: [new URL(parsed.startUrl).origin],
         ...(parsed.site ? { allowedSites: [parsed.site] } : {}), headless: this.#headless });
       active.session = session;
@@ -1105,8 +1132,8 @@ export class NativeManagedController {
         // Page scripts may send network requests after a fill or submit.
         approvedEffects: ['READ', 'NAVIGATE', 'EXTERNAL_READ', 'LOCAL_EDIT', 'EXTERNAL_WRITE'], parameters });
       const task = ManagedBrowseTask.start(this.#journal, registry, admission, session,
-        { searchText: parsed.searchText, decision, confirmation: { confirm: (proposal, signal) =>
-          this.#awaitConfirmation(request.requestId, proposal, signal) } });
+        { searchText: parsed.searchText, decision, siteWords: parsed.site?.split('.') ?? [],
+          confirmation: { confirm: (proposal, signal) => this.#awaitConfirmation(request.requestId, proposal, signal) } });
       const actor = new PersistentTaskActor(this.#journal, task, 60_000);
       active.actor = actor;
       if (active.cancelled) { await actor.stop(); return; }
@@ -1118,6 +1145,7 @@ export class NativeManagedController {
       if (result.state === 'completed') {
         // Leave the result page visible until Stop or the next request.
         active.keepOpen = true;
+        active.browseCompleted = true;
         this.#send(request.requestId, 'verified_browse');
       } else this.#send(request.requestId, 'browse_paused');
     } catch (error) {
@@ -1136,6 +1164,33 @@ export class NativeManagedController {
         if (active.actor?.busy) this.#workerFenceFailed = true;
       }
     }
+  }
+
+  /** Hands a finished browse's open window to a new, separately admitted task.
+   * Scope stays the original site; the old task stays completed. */
+  #continueBrowse(request: ContinueBrowse): void {
+    const run = this.#runs.active;
+    const previous = run?.surface === 'managed' ? run.task : undefined;
+    if (!run || !previous || previous.requestId !== request.targetRequestId || !previous.browseCompleted
+      || !previous.keepOpen || previous.cancelled || !(previous.session instanceof ManagedObservationSession)
+      || this.#journal.getTaskState(previous.requestId) !== 'completed' || this.#hostHeld) {
+      this.#send(request.requestId, 'error'); return;
+    }
+    const session = previous.session;
+    const site = previous.browseSite ?? null;
+    delete previous.session; previous.keepOpen = false; previous.browseCompleted = false;
+    if (!this.#runs.release(run)) { this.#send(request.requestId, 'error'); return; }
+    const active: ActiveTask = { requestId: request.requestId, cancelled: false, keepOpen: false,
+      launchFenceUnconfirmed: false, browserFenced: false, done: Promise.resolve() };
+    const next: ControllerRun = { requestId: request.requestId, surface: 'managed', task: active };
+    this.#runs.claim(next);
+    this.#send(request.requestId, 'starting');
+    active.done = this.#runBrowse(request, active, session, site).finally(() => {
+      if (!active.keepOpen && !active.cancelled && this.#runs.release(next)) {
+        this.#send(request.requestId, this.#workerFenceFailed || this.#journal.unresolvedAttempts().length
+          ? 'blocked_recovery' : 'ready');
+      }
+    });
   }
 
   #awaitConfirmation(requestId: string, proposal: BrowseProposal, signal: AbortSignal): Promise<boolean> {

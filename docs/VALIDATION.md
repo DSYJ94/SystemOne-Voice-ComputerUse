@@ -1,5 +1,51 @@
 # Initial foundation validation
 
+## Real-site browsing hardened; push-to-talk; approvals, 3 October 2026
+
+Owner report: the mic stayed red, there was no hotkey dictation, every step
+needed Return, and "change the page to German" appeared to crash Chromium.
+That last one was the kept-open window being closed, followed by an
+unsupported follow-up.
+
+Changes:
+- Click-to-talk mic that keeps the last partial words when the user ends
+  capture.
+- Push-to-talk on Control-Option-Space (hold, speak, release to run).
+- Allow / Allow all for this task / Stop buttons, plus a session auto-allow
+  switch.
+- Follow-up goals continue in the same window (`continue_browse`), admitted as
+  new tasks.
+- Cross-subdomain in-scope links; clickable buttons (a `<button>` outside a
+  form is no longer treated as submit); links in collapsed menus followed by
+  direct in-scope navigation.
+- Large pages are judged in rounds (about 45 options each, top two per round
+  advance to a final).
+- Redirect settling and observation retry.
+- Browse threshold of top choice at least 0.35 and strictly ahead.
+
+Two real defects were found only by live runs against **real Wikipedia**
+(headless, spawned controller, real jev-1.13.0, auto-confirmed):
+1. `allowPartialCoverage` did not reach candidate construction, so partly
+   observed pages offered nothing.
+2. Jev's probabilities are two-decimal and can total 0.99 or 1.01. The
+   0.001 sum tolerance rejected those replies as malformed, so runs were
+   intermittent. It is now 0.02, with renormalization.
+
+After both fixes, the owner's scenario succeeded **4/4 runs identically**:
+- "Go to wikipedia and search for alan turing": fill, submit, finish on
+  en.wikipedia.org/wiki/Alan_Turing in about 5.7 s.
+- Follow-up "change the page to german": "Alan Turing – German" link (0.96),
+  finish on de.wikipedia.org/wiki/Alan_Turing, about 9 s total.
+
+`make test` 488/488 (oracle 115/115), release inventory 7/7. A scratch build
+passed the window-visibility, host-lifecycle, no-target and
+Accessibility-recovery self-checks; voice smoke and parsing checks also pass.
+New local test: collapsed-menu link, verified click, POST button excluded.
+
+Not run: the owner's certificate-signed app with these changes, the physical
+hotkey, live microphone, native apps through Jev, and sites that need POST or
+login. V1 is not ready.
+
 ## Jev-driven, confirm-each-step browsing from the glass bar, 3 October 2026
 
 `codex/mac-first-validation`, owner M5. Owner decisions recorded this day:
