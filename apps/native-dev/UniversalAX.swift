@@ -196,6 +196,14 @@ final class UniversalAX {
         guard let element = elements[id] else { throw AXError.stale }
         try activateTarget()
         AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        // Multi-line text (notes, documents, message bodies) is appended, never replaced.
+        if (attribute(element, kAXRoleAttribute) as String?) == "AXTextArea" {
+            let existing: String = attribute(element, kAXValueAttribute) ?? ""
+            usleep(60_000)
+            key(code: 125, flags: .maskCommand) // Command-Down: end of text
+            try typeKeys(existing.isEmpty ? text : "\n" + text)
+            return
+        }
         if AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, text as CFString) == .success,
            (attribute(element, kAXValueAttribute) as String?) == text {
             // Web fields also need input events; retype through the keyboard.
@@ -208,6 +216,10 @@ final class UniversalAX {
     private func keyboardReplace(_ text: String) throws {
         key(code: 0, flags: .maskCommand) // Command-A selects the field's text
         usleep(60_000)
+        try typeKeys(text)
+    }
+
+    private func typeKeys(_ text: String) throws {
         for chunk in Array(text).chunked(into: 16) {
             let string = String(chunk)
             let utf16 = Array(string.utf16)

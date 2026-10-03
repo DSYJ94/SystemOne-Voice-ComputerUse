@@ -56,7 +56,7 @@ export function parseAgentGoal(text: string, apps: readonly string[]): AgentGoal
   let typedText: AgentGoal['typedText'] = null;
   const quoted = /["“]([^"”]{1,512})["”]/u.exec(text);
   const phrase = quoted ? null
-    : /\b(?:search(?: [a-z0-9.]+)? for|search|type|write|enter|look up)\s+(.+?)(?:\s*,|\s+(?:and|then)\s+.*)?$/iu.exec(text);
+    : /\b(?:search(?:\s+[\w.'-]+){0,3}\s+for|search|type|write|enter|look up)\s+(.+?)(?:\s*,|\s+(?:and|then)\s+.*)?$/iu.exec(text);
   const value = quoted?.[1] ?? phrase?.[1] ?? null;
   if (value && value.trim() === value && Buffer.byteLength(value, 'utf8') <= 512) {
     const index = quoted ? quoted.index + quoted[0].indexOf(value) : phrase!.index + phrase![0].lastIndexOf(value);

@@ -4,7 +4,7 @@
   "qualification": "Source declarations and lockfile inventory; not a distributable SBOM, artifact attestation or legal clearance.",
   "sources": {
     "package.json": {
-      "sha256": "a12cc400c043986ede1467e1a225689ebf9ae7687decae61290ec405e335f1b4"
+      "sha256": "3ffdb0fe0a56e2e052033a24e7efbc170fca3147d174f98a1c5deec2a25b5a15"
     },
     "package-lock.json": {
       "sha256": "8adb81e6001e92629de2b5a4447f0f9e573d39bc6952217eae194042254f1912"

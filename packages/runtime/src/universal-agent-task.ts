@@ -264,7 +264,9 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       if (element.secure) continue;
       if (element.editable && this.#goal.typedText && !this.#typedAt.has(`${view.signature}|${element.id}`)) {
         options.push({ kind: 'type', ref: element.id, element, label: element.label,
-          description: `In ${view.app}: type “${this.#goal.typedText.text}” into the ${role(element.role)} “${element.label}”${where(element)}.`,
+          description: `In ${view.app}: type “${this.#goal.typedText.text}” into the ${role(element.role)} “${element.label}”${where(element)}${
+            element.role === 'AXTextArea' && element.value ? ` (adds after its existing text “${element.value.slice(0, 40)}”)`
+              : element.value ? ` (replaces “${element.value.slice(0, 40)}”)` : ''}.`,
           score: score(element.label) + 3 });
       }
       if (element.pressable || !element.editable) {
