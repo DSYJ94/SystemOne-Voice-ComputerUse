@@ -11,6 +11,9 @@ import { bindEndpoint } from '../../protocol/src/session.ts';
 import { AttemptJournal } from '../src/attempt-journal.ts';
 import { CommittedInputSession } from '../src/committed-input.ts';
 import { NativeFixtureTask } from '../src/native-fixture-task.ts';
+import type { NativeFixtureDecision } from '../src/native-fixture-task.ts';
+import { CLMDecisionClient } from '../../providers/src/clm-decision-client.ts';
+import { approveCandidateProjection } from '../src/action-candidates.ts';
 import { PersistentTaskActor } from '../src/persistent-task-actor.ts';
 import type { NativePressObservation, NativePressWorker } from '../src/native-press-authority.ts';
 import { TaskAdmissionRegistry } from '../src/task-authority.ts';
@@ -56,7 +59,7 @@ class Worker implements NativePressWorker {
   async stop(): Promise<boolean> { this.stopCalls++; return true; }
 }
 
-function harness(t: TestContext, kind: 'NAVIGATE' | 'LOCATE' | 'OPEN' = 'OPEN') {
+function harness(t: TestContext, kind: 'NAVIGATE' | 'LOCATE' | 'OPEN' = 'OPEN', decision?: NativeFixtureDecision) {
   const root = mkdtempSync(join(tmpdir(), 'systemone-native-actor-'));
   const path = join(root, 'journal.sqlite');
   const journal = new AttemptJournal(path);
@@ -75,7 +78,7 @@ function harness(t: TestContext, kind: 'NAVIGATE' | 'LOCATE' | 'OPEN' = 'OPEN') 
     approvedEffects: ['READ', 'NAVIGATE'], parameters: [{
       parameterRef: kind === 'NAVIGATE' ? 'folder-name' : 'synthetic-file-path', sourceRef: 'fixture-config',
       valueDigest: digest(kind === 'NAVIGATE' ? 'Documents' : 'Documents/Budget.xlsx') }] });
-  const workflow = NativeFixtureTask.start(journal, worker, registry, admission);
+  const workflow = NativeFixtureTask.start(journal, worker, registry, admission, undefined, decision);
   const actor = new PersistentTaskActor(journal, workflow);
   t.after(() => { journal.close(); rmSync(root, { recursive: true, force: true }); });
   return { journal, worker, workflow, actor, path, revision };
@@ -182,4 +185,48 @@ test('an unconfirmed idle workflow fence blocks recovery even without a pending 
   assert.equal(h.actor.pause().workerFenced, false);
   await assert.rejects(h.actor.prepareRecovery(), /settled/);
   assert.equal(h.actor.needsRecovery, true);
+});
+
+test('synthetic CLM proposals pass through existing native admission, dispatch and independent verification', async t => {
+  const provider = { id: 'fixture-clm', name: 'clm' as const, location: 'owned_service' as const, revision: 'synthetic-v1' };
+  let calls = 0;
+  const client = new CLMDecisionClient({ mode: 'owned_service', enabledProviderIds: [provider.id] }, provider,
+    { revision: 'synthetic-only', temperature: 1, minProbability: 0.8, minMargin: 0.2 }, { async send(body) {
+      calls++; const wire = JSON.parse(Buffer.from(body).toString());
+      assert.deepEqual(Object.keys(wire.questions.next_action.criteria), ['c0', 'wait', 'request_help']);
+      return { model: 'clm-latest', answers: { next_action: { type: 'choice', choice: 'c0',
+        probabilities: { c0: 0.95, wait: 0.025, request_help: 0.025 } } }, usage: { input_tokens: 0 } };
+    } });
+  const h = harness(t, 'OPEN', { async select(set, observed, signal) {
+    const projection = approveCandidateProjection({ set, stateText: `Synthetic scope: ${observed.windowTitles[0]}`,
+      questionText: 'Choose the offered next step.', provider, disclosureReview: () => true });
+    const proposal = await client.decide(set, projection, signal);
+    assert.equal(proposal.observationId, observed.observationId);
+    assert.equal(proposal.candidateSetDigest, set.candidateSetDigest);
+    return proposal.status === 'selected' ? proposal.candidateId : null;
+  } });
+  assert.equal((await h.actor.run()).state, 'completed');
+  assert.equal(calls, 3);
+  assert.deepEqual(h.worker.labels, ['Documents', 'Budget.xlsx', 'Open selected file']);
+  assert.equal(h.actor.snapshot.attempts.length, 3);
+  assert.equal(h.actor.snapshot.progress?.checkpoints.length, 3);
+});
+
+test('abstention, invented IDs and non-effect decisions cannot prepare a native effect', async t => {
+  for (const choice of [null, 'invented', 'wait', 'request_help']) {
+    const h = harness(t, 'OPEN', { async select() { return choice; } });
+    let prepared = 0; h.worker.onPrepare = () => { prepared++; };
+    assert.equal((await h.actor.run()).state, 'paused');
+    assert.equal(prepared, 0); assert.deepEqual(h.worker.labels, []); assert.equal(h.actor.snapshot.attempts.length, 0);
+  }
+});
+
+test('Stop during an asynchronous decision rejects late selection before native preparation', async t => {
+  let entered!: () => void; const ready = new Promise<void>(resolve => { entered = resolve; });
+  let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+  const h = harness(t, 'OPEN', { async select() { entered(); await gate; return 'c0'; } });
+  let prepared = 0; h.worker.onPrepare = () => { prepared++; };
+  const run = h.actor.run(); await ready; await h.actor.stop(); release();
+  assert.equal((await run).state, 'cancelled'); assert.equal(prepared, 0);
+  assert.deepEqual(h.worker.labels, []); assert.equal(h.actor.snapshot.attempts.length, 0);
 });

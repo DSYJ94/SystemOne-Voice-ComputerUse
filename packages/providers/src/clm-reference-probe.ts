@@ -2,6 +2,7 @@ import { performance } from 'node:perf_hooks';
 import { validateProviderView } from '../../protocol/src/contract.ts';
 import { ContractError } from '../../protocol/src/json.ts';
 import type { JSONValue } from '../../protocol/src/json.ts';
+import { encodeCLMProviderView, decodeCLMChoice } from './clm-wire.ts';
 
 export interface ProbeFixture {
   readonly id: string;
@@ -33,9 +34,6 @@ export interface ProbeResult {
   readonly rawOutput?: unknown;
 }
 
-const QUESTION_ID = 'next_action';
-const MODEL = 'clm-latest';
-
 export function encodeCLMProbeRequest(fixture: ProbeFixture): Uint8Array {
   if (!fixture || fixture.synthetic !== true || !/^[A-Za-z0-9_.:-]{1,160}$/.test(fixture.id)) {
     throw new ContractError('probe requires a named synthetic fixture');
@@ -48,55 +46,12 @@ export function encodeCLMProbeRequest(fixture: ProbeFixture): Uint8Array {
   if (typeof fixture.targetPresent !== 'boolean' || !ids.includes(fixture.expectedCandidateId)) {
     throw new ContractError('expected candidate is absent');
   }
-  const criteria = Object.fromEntries(candidates.map(item => [item.candidateId, item.description]));
-  return new TextEncoder().encode(JSON.stringify({
-    state: fixture.providerView.stateText,
-    model: MODEL,
-    questions: { [QUESTION_ID]: {
-      type: 'choice', instructions: fixture.providerView.questionText, criteria,
-    } },
-    temperature: 1.0,
-  }));
-}
-
-function object(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ContractError('expected object');
-  return value as Record<string, unknown>;
+  return encodeCLMProviderView(fixture.providerView);
 }
 
 export function decodeCLMProbeResponse(raw: unknown, fixture: ProbeFixture):
   Pick<ProbeResult, 'model' | 'inputTokens' | 'choice' | 'probabilities'> {
-  const envelope = object(raw);
-  if (envelope.model !== MODEL) throw new ContractError('unexpected model alias');
-  const answers = object(envelope.answers);
-  if (Object.keys(answers).length !== 1 || !(QUESTION_ID in answers)) throw new ContractError('unexpected question IDs');
-  const answer = object(answers[QUESTION_ID]);
-  if (answer.type !== 'choice' || typeof answer.choice !== 'string') throw new ContractError('invalid choice answer');
-  const distribution = object(answer.probabilities);
-  const expected = fixture.providerView.candidates.map(item => item.candidateId);
-  if (Object.keys(distribution).length !== expected.length ||
-      expected.some(id => !Object.hasOwn(distribution, id))) {
-    throw new ContractError('distribution candidate mismatch');
-  }
-  let total = 0;
-  for (const id of expected) {
-    const probability = distribution[id];
-    if (typeof probability !== 'number' || !Number.isFinite(probability) || probability < 0 || probability > 1) {
-      throw new ContractError('invalid probability');
-    }
-    total += probability;
-  }
-  if (Math.abs(total - 1) > 0.001) throw new ContractError('distribution does not sum to one');
-  if (!expected.includes(answer.choice)) throw new ContractError('unknown choice');
-  const maximum = Math.max(...expected.map(id => distribution[id] as number));
-  if (Math.abs((distribution[answer.choice] as number) - maximum) > 0.000001) {
-    throw new ContractError('choice disagrees with distribution');
-  }
-  const usage = object(envelope.usage);
-  const tokens = usage.input_tokens;
-  if (!Number.isSafeInteger(tokens) || (tokens as number) < 0) throw new ContractError('invalid token accounting');
-  return { model: MODEL, inputTokens: tokens as number, choice: answer.choice,
-    probabilities: distribution as Record<string, number> };
+  return decodeCLMChoice(raw, fixture.providerView);
 }
 
 /** Fixture-only measurement. A result never conveys an execution permit. */

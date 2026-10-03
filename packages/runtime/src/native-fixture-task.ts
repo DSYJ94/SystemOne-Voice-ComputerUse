@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { ContractError, digest } from '../../protocol/src/json.ts';
 import { buildActionCandidates, selectBoundCandidate } from './action-candidates.ts';
+import type { BuiltCandidateSet } from './action-candidates.ts';
 import { AttemptJournal } from './attempt-journal.ts';
 import type { PreparedAttempt } from './attempt-journal.ts';
 import { validNativePressObservation } from './native-press-authority.ts';
@@ -22,6 +23,10 @@ const PREDICATES = {
   [OPENED]: ['opened', 'native-fixture-opened-title-v1'],
 } as const;
 
+export interface NativeFixtureDecision {
+  select(set: BuiltCandidateSet, observed: NativePressObservation, signal: AbortSignal): Promise<string | null>;
+}
+
 /** Scripted semantic native workflow for the synthetic Documents/Budget.xlsx
  * fixture. It uses the existing signed worker boundary and shared candidates;
  * no generic AX, pointer, keyboard or file operation is enabled. */
@@ -30,27 +35,30 @@ export class NativeFixtureTask {
   readonly #journal: AttemptJournal;
   readonly #worker: NativePressWorker;
   readonly #terminalTitle: string;
+  readonly #decision: NativeFixtureDecision | undefined;
   #abort = new AbortController();
   #advancing = false;
   #recovering = false;
   #generation = 0;
 
   static start(journal: AttemptJournal, worker: NativePressWorker,
-    registry: TaskAdmissionRegistry, admission: TaskAdmission, limits?: TaskProgressLimits): NativeFixtureTask {
+    registry: TaskAdmissionRegistry, admission: TaskAdmission, limits?: TaskProgressLimits,
+    decision?: NativeFixtureDecision): NativeFixtureTask {
     validateAdmission(admission);
     journal.startAdmittedTask(registry, admission);
     try { journal.enableTaskProgress(admission.taskId, admission.scopeRef, admission.completionVerifierRef, limits); }
     catch (error) { journal.pauseTask(admission.taskId, 'native_progress_failed'); throw error; }
-    return new NativeFixtureTask(journal, worker, admission.taskId);
+    return new NativeFixtureTask(journal, worker, admission.taskId, decision);
   }
 
-  constructor(journal: AttemptJournal, worker: NativePressWorker, taskId: string) {
+  constructor(journal: AttemptJournal, worker: NativePressWorker, taskId: string, decision?: NativeFixtureDecision) {
     const record = journal.getTaskRecord(taskId);
     if (!record?.admission || !record.progress || !['active', 'paused'].includes(record.state)) {
       throw new ContractError('native actor requires admitted tracked history');
     }
     validateAdmission(record.admission);
     this.taskId = taskId; this.#journal = journal; this.#worker = worker;
+    this.#decision = decision;
     this.#terminalTitle = record.admission.outcomeKind === 'NAVIGATE' ? DOCUMENTS
       : record.admission.outcomeKind === 'LOCATE' ? LOCATED : OPENED;
   }
@@ -144,7 +152,13 @@ export class NativeFixtureTask {
           invokable: !c.secure && c.canPress, destinationUrl: null })) },
         invocations: matching.map(c => ({ targetRef: c.id, expectedRef: 'native-stage',
           expectedDescription: expectedTitle })) });
-      if (!selectBoundCandidate(offered, 'invoke', matching.map(c => c.id)) || matching.length !== 1) {
+      const chosenId = this.#decision
+        ? await this.#decision.select(offered, observed, this.#abort.signal)
+        : selectBoundCandidate(offered, 'invoke', matching.map(c => c.id))?.candidateId;
+      this.#active(generation);
+      const chosen = chosenId ? offered.resolve(chosenId, observed.observationId, offered.candidateSetDigest) : undefined;
+      if (!chosen || chosen.operation !== 'invoke' || matching.length !== 1
+        || chosen.targetRef !== matching[0]?.id) {
         throw new ContractError('native control is missing or ambiguous');
       }
       const control = matching[0]!;

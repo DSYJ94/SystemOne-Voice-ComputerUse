@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { encodeCLMProbeRequest, probeCLM } from '../packages/providers/src/clm-reference-probe.ts';
 import type { ProbeFixture, ProbeTransport } from '../packages/providers/src/clm-reference-probe.ts';
+import { createCLMHTTPTransport } from '../packages/providers/src/clm-http-transport.ts';
 
 function argument(name: string): string {
   const index = process.argv.indexOf(name);
@@ -34,32 +35,9 @@ async function main(): Promise<void> {
   }
   for (const fixture of fixtures as ProbeFixture[]) encodeCLMProbeRequest(fixture);
   const key = process.env.CLM_PROBE_API_KEY;
+  const http = createCLMHTTPTransport({ endpoint: url.href, ...(key ? { apiKey: key } : {}) });
   const transport: ProbeTransport = {
-    async send(body) {
-      const response = await fetch(url, {
-        method: 'POST', redirect: 'error', signal: AbortSignal.timeout(30_000),
-        headers: { 'content-type': 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}) },
-        body: Buffer.from(body),
-      });
-      if (!response.ok) throw new Error(`CLM HTTP ${response.status}`);
-      const contentLength = Number(response.headers.get('content-length'));
-      if (Number.isFinite(contentLength) && contentLength > 262_144) throw new Error('CLM response too large');
-      if (!response.body) throw new Error('CLM response body missing');
-      const reader = response.body.getReader();
-      const chunks: Uint8Array[] = [];
-      let length = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        length += value.byteLength;
-        if (length > 262_144) {
-          await reader.cancel();
-          throw new Error('CLM response too large');
-        }
-        chunks.push(value);
-      }
-      return JSON.parse(new TextDecoder().decode(Buffer.concat(chunks)));
-    },
+    send: body => http.send(body, new AbortController().signal),
   };
   const results = [];
   for (const fixture of fixtures as ProbeFixture[]) results.push(await probeCLM(fixture, transport));

@@ -1,5 +1,30 @@
 # Initial foundation validation
 
+## CLM proposal boundary and owned transport, 1 October 2026
+
+`codex/clm-decision-boundary`, based on #64 at `e64f59b`, implementation
+`40eb6cb`, [draft #65](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/65).
+Same Linux/pinned Node/Playwright toolchain as preceding records.
+
+- `npm run check`: typecheck passed; **355 passed, zero failed, two Mac-only
+  skips, 357 total**. Focused provider/native checks passed **29/29**.
+- Fourteen added tests cover pre-I/O egress/revision/disclosure/digest rejection,
+  exact semantic wire choices, confidence/ties, non-effect choices, malformed
+  replies, unavailable transport, mutation and cancellation. Loopback HTTP tests
+  check exact POST/authentication, no startup/health requests, manifest-header
+  consistency, redirects, strict JSON, both size bounds and timeout/cancellation.
+- Synthetic native proposals complete three independently verified steps;
+  abstention, invented IDs, wait/help and Stop during model selection prepare no
+  effect. Thresholds/replies are fixtures, not measured model calibration.
+- The initial typecheck caught an overloaded HTTP listener type in the test
+  helper; corrected to `RequestListener`. Final checks passed.
+
+No live endpoint, weights, inference or paid GPU ran. Hugging Face metadata was
+blocked with HTTP 403 by the cloud network policy. No Mac build/audio/TCC/Keychain,
+owner-profile browser action or owner-goal resume occurred. Existing native
+Python suites were not rerun for this TypeScript slice. See
+[CLM boundary](CLM_DECISION_BOUNDARY.md) and [v1 gates](V1_READINESS.md).
+
 ## Persistent actors and scripted continuation, 1 October 2026
 
 `codex/persistent-scripted-actor`, based on #63 at `d18e6b3`, implementation
