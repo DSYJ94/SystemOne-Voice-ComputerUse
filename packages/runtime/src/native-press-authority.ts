@@ -8,6 +8,8 @@ import { CommittedInputSession } from './committed-input.ts';
 import { TaskAdmissionRegistry } from './task-authority.ts';
 import type { JSONValue } from '../../protocol/src/json.ts';
 import type { PreparedAttempt } from './attempt-journal.ts';
+import { DEFAULT_PROGRESS_LIMITS } from './task-progress.ts';
+import type { TaskProgressLimits } from './task-progress.ts';
 
 const ID = /^[A-Za-z0-9_.:-]{1,160}$/;
 const FIXTURE_BUNDLE = 'com.aurium.systemone.fixture';
@@ -119,14 +121,17 @@ function validObservation(value: NativePressObservation): boolean {
 export class NativePressAuthority {
   readonly #journal: AttemptJournal;
   readonly #worker: NativePressWorker;
+  readonly #progressLimits: TaskProgressLimits;
   readonly #seen = new Set<string>();
   #active: Active | undefined;
   #workerFenceFailed = false;
   #requiresRecovery = false;
 
-  constructor(journal: AttemptJournal, worker: NativePressWorker) {
+  constructor(journal: AttemptJournal, worker: NativePressWorker,
+    progressLimits: TaskProgressLimits = DEFAULT_PROGRESS_LIMITS) {
     this.#journal = journal;
     this.#worker = worker;
+    this.#progressLimits = Object.freeze({ ...progressLimits });
   }
 
   get needsRecovery(): boolean {
@@ -284,12 +289,17 @@ export class NativePressAuthority {
       });
       this.#journal.startAdmittedTask(registry, admission);
       active.journalStarted = true;
+      this.#journal.enableTaskProgress(request.requestId, admission.scopeRef,
+        admission.completionVerifierRef, this.#progressLimits);
+      this.#retainObservation(request.requestId, observation);
       if (active.stopped) return 'stopped';
+      this.#journal.consumeTaskDecision(request.requestId, observation.observationId);
       if (observation.windowTitles[0] === EXPECTED_TITLE) {
-        const matched = await this.#worker.verifyPress({ taskId: request.requestId,
-          expectedWindowTitle: EXPECTED_TITLE });
+        const verified = await this.#verifyTitle(request.requestId, EXPECTED_TITLE, active);
         if (active.stopped) return 'stopped';
-        if (!matched) return 'unsupported';
+        if (!verified.matched) return 'unsupported';
+        this.#checkpoint(request.requestId, verified.observationId, EXPECTED_TITLE,
+          `native-current-${request.requestId}`);
         this.#journal.completeTask(request.requestId,
           `native-current-${request.requestId}`);
         return 'already_matched';
@@ -337,9 +347,11 @@ export class NativePressAuthority {
         preparationRef: prepared.preparationRef, permit,
       });
       let matched = false;
+      let verifiedObservationId: string | undefined;
       if (result === 'returned_unverified' && !active.stopped) {
-        matched = await this.#worker.verifyPress({ taskId: request.requestId,
-          expectedWindowTitle: EXPECTED_TITLE });
+        const verified = await this.#verifyTitle(request.requestId, EXPECTED_TITLE, active);
+        matched = verified.matched;
+        verifiedObservationId = verified.observationId;
       }
       const outcome = result === 'not_dispatched'
         ? { deliveryStatus: 'not_dispatched' as const,
@@ -358,6 +370,8 @@ export class NativePressAuthority {
       if (active.stopped) return 'stopped';
       if (result === 'not_dispatched') return 'unsupported';
       if (!matched) return 'uncertain';
+      this.#checkpoint(request.requestId, verifiedObservationId!, EXPECTED_TITLE,
+        outcome.evidenceRef!, permit.executionId);
       this.#journal.completeTask(request.requestId, outcome.evidenceRef!);
       return 'verified_navigation';
     } catch {
@@ -434,14 +448,18 @@ export class NativePressAuthority {
       });
       this.#journal.startAdmittedTask(registry, admission);
       active.journalStarted = true;
+      this.#journal.enableTaskProgress(request.requestId, admission.scopeRef,
+        admission.completionVerifierRef, this.#progressLimits);
+      this.#retainObservation(request.requestId, first);
       if (active.stopped) return 'stopped';
       if (initialTitle === request.expectedWindowTitle) {
-        const matched = await this.#worker.verifyPress({
-          taskId: request.requestId,
-          expectedWindowTitle: request.expectedWindowTitle,
-        });
+        this.#journal.consumeTaskDecision(request.requestId, first.observationId);
+        const verified = await this.#verifyTitle(request.requestId,
+          request.expectedWindowTitle, active);
         if (active.stopped) return 'stopped';
-        if (!matched) return 'unsupported';
+        if (!verified.matched) return 'unsupported';
+        this.#checkpoint(request.requestId, verified.observationId,
+          request.expectedWindowTitle, 'native-current-' + request.requestId);
         this.#journal.completeTask(request.requestId,
           'native-current-' + request.requestId);
         return 'already_matched';
@@ -455,10 +473,7 @@ export class NativePressAuthority {
         if (folderResult === 'stopped') return 'stopped';
         if (folderResult !== 'verified') return folderResult;
         if (active.stopped) return 'stopped';
-        stageObservation = await this.#worker.observePress({
-          taskId: request.requestId, bundleId: request.bundleId,
-          signal: active.abort.signal,
-        });
+        stageObservation = await this.#observe(request.requestId, active);
         if (active.stopped) return 'stopped';
         if (!validObservation(stageObservation) || !stageObservation.complete
           || stageObservation.scopeRef !== first.scopeRef
@@ -480,10 +495,7 @@ export class NativePressAuthority {
             'verified_locate');
         }
         const priorObservationId = stageObservation.observationId;
-        stageObservation = await this.#worker.observePress({
-          taskId: request.requestId, bundleId: request.bundleId,
-          signal: active.abort.signal,
-        });
+        stageObservation = await this.#observe(request.requestId, active);
         if (active.stopped) return 'stopped';
         if (!validObservation(stageObservation) || !stageObservation.complete
           || stageObservation.scopeRef !== first.scopeRef
@@ -534,6 +546,7 @@ export class NativePressAuthority {
     let executionId: string | undefined;
     try {
       if (active.stopped) return 'stopped';
+      this.#journal.consumeTaskDecision(taskId, observation.observationId);
       if (observation.windowTitles.length !== 1
         || (label === FILE && observation.windowTitles[0] !== EXPECTED_TITLE)
         || (label === OPEN_CONTROL
@@ -603,10 +616,11 @@ export class NativePressAuthority {
         preparationRef: prepared.preparationRef, permit,
       });
       let matched = false;
+      let verifiedObservationId: string | undefined;
       if (result === 'returned_unverified' && !active.stopped) {
-        matched = await this.#worker.verifyPress({
-          taskId, expectedWindowTitle: expectedTitle,
-        });
+        const verified = await this.#verifyTitle(taskId, expectedTitle, active);
+        matched = verified.matched;
+        verifiedObservationId = verified.observationId;
       }
       const outcome = result === 'not_dispatched'
         ? { deliveryStatus: 'not_dispatched' as const,
@@ -622,6 +636,8 @@ export class NativePressAuthority {
       this.#journal.recordOutcome(permit.executionId, outcome);
       if (active.stopped) return 'stopped';
       if (result === 'not_dispatched') return 'unsupported';
+      if (matched) this.#checkpoint(taskId, verifiedObservationId!, expectedTitle,
+        outcome.evidenceRef!, permit.executionId);
       return matched ? 'verified' : 'uncertain';
     } catch {
       if (executionId && this.#journal.getAttempt(executionId)?.phase
@@ -632,5 +648,54 @@ export class NativePressAuthority {
       }
       return active.stopped ? 'stopped' : 'unsupported';
     }
+  }
+
+  #retainObservation(taskId: string, observation: NativePressObservation, ticket?: string): void {
+    const reservation = ticket ?? this.#journal.reserveTaskObservation(taskId);
+    // Handles and observation IDs change on every read. Count equivalent
+    // semantic states regardless of those identifiers or control ordering.
+    this.#journal.recordTaskObservation(taskId, reservation, {
+      observationId: observation.observationId, scopeRef: observation.scopeRef,
+      stateDigest: digest({ bundleId: observation.bundleId, complete: observation.complete,
+        windowTitles: [...observation.windowTitles].sort(),
+        controls: observation.controls.map(({ id: _id, ...semantic }) => semantic)
+          .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))) }),
+    });
+  }
+
+  async #observe(taskId: string, active: Active): Promise<NativePressObservation> {
+    const ticket = this.#journal.reserveTaskObservation(taskId);
+    const observed = await this.#worker.observePress({ taskId,
+      bundleId: FIXTURE_BUNDLE, signal: active.abort.signal });
+    if (!active.stopped && validObservation(observed) && observed.complete) {
+      this.#retainObservation(taskId, observed, ticket);
+    }
+    return observed;
+  }
+
+  async #verifyTitle(taskId: string, expectedTitle: string, active: Active):
+    Promise<{ matched: boolean; observationId: string }> {
+    const ticket = this.#journal.reserveTaskObservation(taskId, false);
+    const scopeRef = this.#journal.getTaskProgress(taskId)!.scopeRef;
+    const matched = await this.#worker.verifyPress({ taskId, expectedWindowTitle: expectedTitle });
+    const observationId = randomUUID();
+    if (!active.stopped) {
+      this.#journal.recordTaskObservation(taskId, ticket, { observationId, scopeRef,
+        stateDigest: digest({ kind: 'native-title-predicate', expectedTitle, matched }) });
+    }
+    return { matched: matched && !active.stopped, observationId };
+  }
+
+  #checkpoint(taskId: string, observationId: string, expectedTitle: string,
+    evidenceRef: string, executionId?: string): void {
+    const stageRef = expectedTitle === EXPECTED_TITLE ? 'documents'
+      : expectedTitle === SELECTED_TITLE ? 'located' : 'opened';
+    const predicateRef = expectedTitle === EXPECTED_TITLE ? 'native-fixture-window-title-v1'
+      : expectedTitle === SELECTED_TITLE ? 'native-fixture-selected-title-v1'
+        : 'native-fixture-opened-title-v1';
+    this.#journal.recordTaskCheckpoint(taskId, { checkpointId: randomUUID(), observationId,
+      stageRef, predicateRef, evidenceRef,
+      terminal: predicateRef === this.#journal.getTaskProgress(taskId)!.completionVerifierRef,
+      ...(executionId ? { executionId } : {}) });
   }
 }

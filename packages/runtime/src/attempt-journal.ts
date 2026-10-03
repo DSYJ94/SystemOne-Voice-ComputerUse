@@ -2,6 +2,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { ContractError, digest, parseJSON } from '../../protocol/src/json.ts';
 import type { JSONValue } from '../../protocol/src/json.ts';
 import type { TaskAdmission, TaskAdmissionRegistry } from './task-authority.ts';
+import { DEFAULT_PROGRESS_LIMITS, TaskProgressExceeded, TaskProgressStore } from './task-progress.ts';
+import type { TaskCheckpoint, TaskObservation, TaskProgress, TaskProgressLimits } from './task-progress.ts';
 
 const ID = /^[A-Za-z0-9_.:-]{1,160}$/;
 const DIGEST = /^[a-f0-9]{64}$/;
@@ -85,6 +87,7 @@ export interface JournalTaskRecord {
   readonly budget: TaskBudget | undefined;
   readonly attempts: readonly JournalAttempt[];
   readonly completion: TaskCompletion | null;
+  readonly progress: TaskProgress | null;
 }
 
 interface TaskRow {
@@ -123,6 +126,7 @@ interface AttemptRow {
 export class AttemptJournal {
   readonly #db: DatabaseSync;
   readonly #clock: () => number;
+  readonly #progress: TaskProgressStore;
 
   constructor(path: string, clock: () => number = Date.now) {
     this.#clock = clock;
@@ -197,6 +201,7 @@ export class AttemptJournal {
     if (!taskColumns.some(column => column.name === 'admission_digest')) {
       this.#db.exec('ALTER TABLE tasks ADD COLUMN admission_digest TEXT');
     }
+    this.#progress = new TaskProgressStore(this.#db);
     const broken = this.#db.prepare('PRAGMA foreign_key_check').get();
     if (broken) throw new ContractError('journal foreign-key check failed');
   }
@@ -260,6 +265,7 @@ export class AttemptJournal {
     validatePrepared(attempt);
     return this.#budgeted(attempt, true, () => {
       this.#assertAdmittedAttempt(attempt);
+      this.#assertProgressAttempt(attempt);
       if (this.unresolvedAttempts().length) {
         throw new ContractError('an earlier effect is unresolved or unknown');
       }
@@ -284,12 +290,14 @@ export class AttemptJournal {
     if (attempt.phase !== 'prepared') throw new ContractError('attempt is not prepared');
     return this.#budgeted(attempt, false, () => {
       this.#assertAdmittedAttempt(attempt);
+      this.#assertProgressAttempt(attempt);
       if (this.#requiredAttempt(executionId).phase !== 'prepared') {
         throw new ContractError('attempt is not prepared');
       }
       this.#db.prepare(`UPDATE attempts SET phase = 'at_dispatch_boundary'
         WHERE execution_id = ?`).run(executionId);
       this.#event(executionId, 'dispatch_boundary');
+      this.#progress.expire(attempt.taskId);
       return this.getAttempt(executionId)!;
     });
   }
@@ -331,6 +339,7 @@ export class AttemptJournal {
       this.#db.prepare(`UPDATE tasks SET state = 'cancelled' WHERE task_id = ?`).run(taskId);
       this.#taskEvent(taskId, 'cancelled');
       this.#settlePrepared(taskId, 'cancelled_before_dispatch');
+      this.#progress.expire(taskId);
       return this.unresolvedAttempts(taskId);
     });
   }
@@ -351,11 +360,14 @@ export class AttemptJournal {
         throw new ContractError('task has unsettled or unknown attempts');
       }
       const admission = this.#storedAdmission(taskId);
+      this.#progress.assertCompletion(taskId, completionEvidenceRef);
       this.#db.prepare('INSERT INTO task_completions VALUES (?, ?, ?)')
-        .run(taskId, completionEvidenceRef, admission?.completionVerifierRef ?? null);
+        .run(taskId, completionEvidenceRef, admission?.completionVerifierRef
+          ?? this.#progress.get(taskId)?.completionVerifierRef ?? null);
       this.#db.prepare(`UPDATE tasks SET state = 'completed' WHERE task_id = ?`)
         .run(taskId);
       this.#taskEvent(taskId, `completed:${completionEvidenceRef}`);
+      this.#progress.expire(taskId);
     });
   }
 
@@ -368,6 +380,7 @@ export class AttemptJournal {
         this.#db.prepare(`UPDATE tasks SET state = 'paused' WHERE task_id = ?`).run(taskId);
         this.#taskEvent(taskId, 'paused_after_restart');
         this.#settlePrepared(taskId, 'recovered_before_dispatch');
+        this.#progress.expire(taskId);
       }
       return this.unresolvedAttempts();
     });
@@ -391,6 +404,7 @@ export class AttemptJournal {
         goalRevision: task.goal_revision, state: task.state,
         admission: this.#storedAdmission(taskId), budget: this.getTaskBudget(taskId),
         attempts: this.attemptsForTask(taskId),
+        progress: this.#progress.get(taskId),
         completion: row ? Object.freeze({ evidenceRef: row.evidence_ref,
           completionVerifierRef: row.completion_verifier_ref }) : null });
     });
@@ -480,6 +494,92 @@ export class AttemptJournal {
     }
   }
 
+  /** Opt-in for scripted hosts that own fresh observations and predicates.
+   * Existing untracked callers retain their original journal contract. */
+  enableTaskProgress(taskId: string, scopeRef: string, completionVerifierRef: string,
+    limits: TaskProgressLimits = DEFAULT_PROGRESS_LIMITS): void {
+    this.#progressOperation(taskId, () => {
+      const admission = this.#storedAdmission(taskId);
+      if (admission && (admission.scopeRef !== scopeRef
+        || admission.completionVerifierRef !== completionVerifierRef)) {
+        throw new ContractError('progress scope or verifier differs from admitted task');
+      }
+      if (this.attemptsForTask(taskId).length) {
+        throw new ContractError('progress must be enabled before any attempt');
+      }
+      this.#progress.enable(taskId, scopeRef, completionVerifierRef, limits);
+      this.#taskEvent(taskId, 'progress_enabled');
+    });
+  }
+
+  /** Spend before awaiting a read; failed/stale reads still consume the quota.
+   * A new reservation expires facts and fences older in-flight observations. */
+  reserveTaskObservation(taskId: string, actionable = true): string {
+    return this.#progressOperation(taskId, () => this.#progress.reserve(taskId, actionable));
+  }
+
+  recordTaskObservation(taskId: string, ticket: string, observed: TaskObservation): void {
+    this.#progressOperation(taskId, () => this.#progress.observe(taskId, ticket, observed));
+  }
+
+  consumeTaskDecision(taskId: string, observationId: string): void {
+    this.#progressOperation(taskId, () => this.#progress.decide(taskId, observationId));
+  }
+
+  /** Host-owned predicate checks only; a model choice or action receipt is not
+   * a checkpoint. Linked attempts must already have matching settled evidence. */
+  recordTaskCheckpoint(taskId: string, checkpoint: TaskCheckpoint): void {
+    this.#progressOperation(taskId, () => {
+      if (this.attemptsForTask(taskId).some(attempt => attempt.phase !== 'settled'
+        || attempt.outcome?.effectStatus === 'unknown'
+        || attempt.outcome?.deliveryStatus === 'unknown')) {
+        throw new ContractError('checkpoint has unresolved or unknown effects');
+      }
+      if (checkpoint.executionId) {
+        const attempt = this.#requiredAttempt(checkpoint.executionId);
+        if (attempt.taskId !== taskId || attempt.phase !== 'settled'
+          || attempt.outcome?.verification !== 'matched'
+          || attempt.outcome.evidenceRef !== checkpoint.evidenceRef) {
+          throw new ContractError('checkpoint does not match settled attempt evidence');
+        }
+      }
+      this.#progress.checkpoint(taskId, checkpoint);
+      this.#taskEvent(taskId, `checkpoint:${checkpoint.stageRef}`);
+    });
+  }
+
+  getTaskProgress(taskId: string): TaskProgress | null {
+    assertId(taskId, 'task ID');
+    return this.#progress.get(taskId);
+  }
+
+  #assertProgressAttempt(attempt: PreparedAttempt): void {
+    const progress = this.#progress.get(attempt.taskId);
+    if (!progress) return;
+    if (progress.scopeRef !== attempt.scopeRef) throw new ContractError('attempt progress scope differs');
+    this.#progress.assertCurrent(attempt.taskId, attempt.observationId, true);
+  }
+
+  #progressOperation<T>(taskId: string, operation: () => T | TaskProgressExceeded): T {
+    assertId(taskId, 'task ID');
+    const task = this.#task(taskId);
+    if (!task) throw new ContractError('unknown task');
+    const result = this.#budgeted({ taskId, taskEpoch: task.task_epoch,
+      goalRevision: task.goal_revision }, false, () => {
+      const value = operation();
+      if (value instanceof TaskProgressExceeded) {
+        this.#db.prepare("UPDATE tasks SET state = 'paused' WHERE task_id = ?").run(taskId);
+        this.#taskEvent(taskId, `paused_budget:${value.reason}`);
+        this.#settlePrepared(taskId, 'progress_budget_before_dispatch');
+        this.#progress.expire(taskId, value.reason);
+      }
+      return value;
+    });
+    // Pause and prepared-attempt settlement must commit before surfacing failure.
+    if (result instanceof TaskProgressExceeded) throw result;
+    return result;
+  }
+
   #migrateLegacyTasks(): void {
     const row = this.#db.prepare(`SELECT sql FROM sqlite_schema
       WHERE type = 'table' AND name = 'tasks'`).get() as { sql: string } | undefined;
@@ -542,6 +642,7 @@ export class AttemptJournal {
           .run(reason, revision.taskId);
         this.#taskEvent(revision.taskId, `paused_budget:${reason}`);
         this.#settlePrepared(revision.taskId, 'budget_before_dispatch');
+        this.#progress.expire(revision.taskId);
         // Commit the pause before throwing. Unknown/dispatched effects stay
         // untouched; a budget is not an OS cancellation barrier or an undo.
         return { failure: new TaskBudgetExceeded(reason) };

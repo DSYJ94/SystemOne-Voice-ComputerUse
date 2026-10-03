@@ -29,6 +29,12 @@ setup, live permission recovery and physical multi-monitor use remain pending.
 
 ## Current implementation
 
+- [Durable progress](docs/TASK_PROGRESS.md) now expires action facts on fresh
+  reads, dispatch, Stop and restart in synthetic native navigation/LOCATE/OPEN.
+  Verified checkpoints survive as history; read, decision and equivalent-state
+  limits pause the task. Portal reconciliation and explicit recovery remain.
+- [CLM serving preparation](docs/CLM_DEPLOYMENT_PLAN.md) describes the private
+  API and GPU reference experiment; no paid deployment or owner setup is needed yet.
 - [Durable admitted task records](docs/DURABLE_TASK_RECORD.md) now retain the
   admitted goal, parameter bindings and completion verifier beside the journal's
   lifecycle and effect history for native and browser action paths. Terminal

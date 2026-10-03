@@ -1,5 +1,8 @@
 # CLM reference probe
 
+For hosting choices, the owner's M5/32 GB Mac and advance preparation, see
+[CLM serving and preparation](CLM_DEPLOYMENT_PLAN.md). No service is deployed yet.
+
 This is a fixture-only measurement tool for backlog B02, not a decision provider
 connected to the computer-use controller. It cannot issue execution permits or
 operate macOS/Chrome. The three committed synthetic cases exercise native

@@ -122,6 +122,27 @@ test('stored scope and policy bind preparation even when the task revision match
   } finally { local.journal.close(); local.cleanup(); }
 });
 
+test('progress scope and terminal verifier bind to admission and quotas cannot be reset', () => {
+  const local = fixture();
+  const minted = admission();
+  try {
+    local.journal.startAdmittedTask(minted.registry, minted.issued);
+    assert.throws(() => local.journal.enableTaskProgress('task-001', 'another-app',
+      minted.issued.completionVerifierRef), /admitted task/);
+    assert.throws(() => local.journal.enableTaskProgress('task-001', minted.issued.scopeRef,
+      'opened-instead-of-located'), /admitted task/);
+    assert.equal(local.journal.getTaskProgress('task-001'), null);
+    local.journal.enableTaskProgress('task-001', minted.issued.scopeRef,
+      minted.issued.completionVerifierRef,
+      { maxObservations: 1, maxDecisions: 1, maxStateVisits: 1 });
+    local.journal.reserveTaskObservation('task-001');
+    assert.throws(() => local.journal.enableTaskProgress('task-001', minted.issued.scopeRef,
+      minted.issued.completionVerifierRef), /already enabled/);
+    assert.equal(local.journal.getTaskProgress('task-001')?.maxObservations, 1);
+    assert.equal(local.journal.getTaskProgress('task-001')?.observationsUsed, 1);
+  } finally { local.journal.close(); local.cleanup(); }
+});
+
 test('completion and its verifier-bound evidence survive together after reopening', () => {
   const local = fixture();
   const minted = admission();

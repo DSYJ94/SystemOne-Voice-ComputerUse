@@ -170,6 +170,35 @@ async function waitFor(predicate: () => boolean): Promise<void> {
   throw new Error('native locate stage not reached');
 }
 
+test('native decision quota pauses before selecting the second control', async t => {
+  const { worker, journal } = harness(t);
+  const authority = new NativePressAuthority(journal, worker,
+    { maxObservations: 10, maxDecisions: 1, maxStateVisits: 3 });
+  const input = request();
+  assert.equal(await authority.startLocate(input), 'unsupported');
+  assert.deepEqual(worker.commits, ['documents-button']);
+  assert.equal(journal.getTaskState(input.requestId), 'paused');
+  assert.equal(journal.getTaskProgress(input.requestId)?.pauseReason, 'decisions');
+  assert.equal(journal.getTaskProgress(input.requestId)?.checkpoints[0]?.stageRef, 'documents');
+  assert.equal(journal.getTaskProgress(input.requestId)?.currentObservation, null);
+  assert.equal(worker.stopCalls, 1);
+});
+
+test('native read quota pauses before a new read and preserves uncertain dispatch', async t => {
+  const { worker, journal } = harness(t);
+  const authority = new NativePressAuthority(journal, worker,
+    { maxObservations: 1, maxDecisions: 10, maxStateVisits: 3 });
+  const input = request();
+  assert.equal(await authority.startLocate(input), 'uncertain');
+  assert.deepEqual(worker.commits, ['documents-button']);
+  assert.deepEqual(worker.verifications, []);
+  assert.equal(journal.getTaskState(input.requestId), 'paused');
+  assert.equal(journal.getTaskProgress(input.requestId)?.pauseReason, 'observations');
+  assert.equal(journal.getTaskRecord(input.requestId)?.completion, null);
+  assert.equal(journal.unresolvedAttempts(input.requestId).length, 1);
+  assert.equal(await authority.startLocate(request()), 'uncertain');
+});
+
 test('one admitted task navigates and selects exact file without opening', async t => {
   const { worker, journal, authority } = harness(t);
   const input = request();
@@ -189,6 +218,12 @@ test('one admitted task navigates and selects exact file without opening', async
   assert.equal(record.admission?.parameters[0]?.parameterRef, 'synthetic-file-path');
   assert.equal(record.completion?.completionVerifierRef, 'native-fixture-selected-title-v1');
   assert.equal(record.completion?.evidenceRef, attempts.at(-1)?.outcome?.evidenceRef);
+  assert.equal(record.progress?.observationsUsed, 4);
+  assert.equal(record.progress?.decisionsUsed, 2);
+  assert.deepEqual(record.progress?.checkpoints.map(value => value.stageRef), ['documents', 'located']);
+  assert.equal(record.progress?.checkpoints[1]?.terminal, true);
+  assert.ok(record.progress?.checkpoints.every(value => !value.current));
+  assert.equal(record.progress?.currentObservation, null);
   assert.equal(await authority.startLocate(input), 'error');
 });
 
@@ -240,6 +275,8 @@ test('Stop during first dispatch prevents a late receipt from selecting file', a
   assert.equal(await pending, 'stopped');
   assert.deepEqual(worker.commits, ['documents-button']);
   assert.equal(journal.getTaskState(input.requestId), 'cancelled');
+  assert.equal(journal.getTaskProgress(input.requestId)?.currentObservation, null);
+  assert.deepEqual(journal.getTaskProgress(input.requestId)?.checkpoints, []);
   assert.equal(authority.needsRecovery, true);
   assert.equal(await authority.startLocate(request()), 'uncertain');
 });
@@ -258,6 +295,9 @@ test('Stop between verified steps sends no file press and needs no effect recove
   assert.equal(journal.attemptsForTask(input.requestId)[0]?.outcome?.verification,
     'matched');
   assert.equal(journal.getTaskState(input.requestId), 'cancelled');
+  assert.equal(journal.getTaskProgress(input.requestId)?.currentObservation, null);
+  assert.deepEqual(journal.getTaskProgress(input.requestId)?.checkpoints.map(value =>
+    [value.stageRef, value.current]), [['documents', false]]);
   assert.equal(authority.needsRecovery, false);
 });
 
