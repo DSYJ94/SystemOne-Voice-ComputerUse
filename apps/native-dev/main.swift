@@ -71,6 +71,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var hotkeyHandler: EventHandlerRef?
     private var openHotkey: EventHotKeyRef?
     private var stopHotkey: EventHotKeyRef?
+    /// While SystemOne itself is in front, its text field and the input-source
+    /// shortcut can swallow the chord, so it is also caught as a local key event.
+    private var localHotkeyMonitor: Any?
+    private var lastHotkeyEvent: (id: UInt32, pressed: Bool, at: Date)?
     private var nativeBundleField: NSTextField?
     private var nativeLabelField: NSTextField?
     private var nativeValueField: NSTextField?
@@ -1675,6 +1679,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Control-Option-Space is push-to-talk: hold to speak, release to run.
     /// A quick tap only opens the bar. Control-Option-Escape stops.
     func handleGlobalHotkey(_ id: UInt32, pressed: Bool) {
+        // The same press can arrive from both the global and the local path.
+        if let last = lastHotkeyEvent, last.id == id, last.pressed == pressed, Date().timeIntervalSince(last.at) < 0.25 { return }
+        lastHotkeyEvent = (id, pressed, Date())
         switch (id, pressed) {
         case (openPanelHotkeyID, true):
             openPanel()
@@ -1756,6 +1763,20 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             shortcutField?.stringValue = "Global shortcuts unavailable (open \(openStatus), Stop \(stopStatus)); use the menu or Dock."
             return
         }
+        localHotkeyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+            guard let self else { return event }
+            let chord = event.modifierFlags.intersection([.control, .option, .command, .shift]) == [.control, .option]
+            if event.keyCode == UInt16(kVK_Space), chord || (event.type == .keyUp && self.hotkeyDictation) {
+                if event.type == .keyUp { self.handleGlobalHotkey(openPanelHotkeyID, pressed: false) }
+                else if !event.isARepeat { self.handleGlobalHotkey(openPanelHotkeyID, pressed: true) }
+                return nil
+            }
+            if event.type == .keyDown, event.keyCode == UInt16(kVK_Escape), chord {
+                self.handleGlobalHotkey(stopHotkeyID, pressed: true)
+                return nil
+            }
+            return event
+        }
         shortcutField?.stringValue = "Control–Option–Space: open panel · Control–Option–Escape: Stop"
     }
 
@@ -1763,6 +1784,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let openHotkey { UnregisterEventHotKey(openHotkey); self.openHotkey = nil }
         if let stopHotkey { UnregisterEventHotKey(stopHotkey); self.stopHotkey = nil }
         if let hotkeyHandler { RemoveEventHandler(hotkeyHandler); self.hotkeyHandler = nil }
+        if let localHotkeyMonitor { NSEvent.removeMonitor(localHotkeyMonitor); self.localHotkeyMonitor = nil }
     }
 
     @objc private func startFill() {
@@ -1956,7 +1978,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                         value = ["app": snap.app, "bundleId": snap.bundleID, "pid": Int(snap.pid),
                                  "windowTitle": snap.windowTitle, "url": snap.url, "elements": elements,
                                  "truncated": snap.truncated || elements.count < snap.elements.count,
-                                 "signature": snap.signature, "runningApps": UniversalAX.runningApps(),
+                                 "signature": snap.signature, "contentSignature": snap.contentSignature,
+                                 "scrollY": snap.scrollY as Any? ?? NSNull(), "runningApps": UniversalAX.runningApps(),
                                  "readMs": self.universalAX.lastReadMs, "visited": snap.visited, "via": snap.via]
                         if let hint = snap.hint, hint != self.lastBrowserHint {
                             // Once per distinct problem: how to enable the faster page read.
@@ -1980,7 +2003,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 case "open_url":
                     guard let text = object["url"] as? String, let url = URL(string: text),
                           ["https", "http"].contains(url.scheme ?? "") else { throw UniversalAX.AXError.actionFailed }
-                    try await self.universalAX.open(url: url); reply(true, nil, nil)
+                    try await self.universalAX.open(url: url, newTab: object["newTab"] as? Bool ?? true); reply(true, nil, nil)
                 case "open_app":
                     try await self.universalAX.open(app: object["name"] as? String ?? ""); reply(true, nil, nil)
                 case "quit_app":

@@ -36,6 +36,14 @@ const BROWSER_KEYS: readonly [string, string][] = [
   ['forward', 'Go forward (Command-])'],
   ['reload', 'Reload the page (Command-R)'],
 ];
+/** Built-in steps and the steps that would undo them. A toggled control (its label
+ * flipped, e.g. Play → Pause) is its own inverse; that is detected from the screen. */
+const INVERSE: Readonly<Record<string, readonly string[]>> = {
+  'scroll:scroll-up': ['scroll:scroll-down', 'key:space'], 'scroll:scroll-down': ['scroll:scroll-up'],
+  'key:space': ['key:space', 'scroll:scroll-up'], 'key:back': ['key:forward'], 'key:forward': ['key:back'],
+  'key:nexttab': ['key:prevtab'], 'key:prevtab': ['key:nexttab'], 'key:newtab': ['key:closetab'],
+  'key:undo': ['key:undo'],
+};
 /** Steps that end an app or the user's session; offered only when the request asks to quit or close. */
 const ENDS_APP = /^(?:quit|force quit|close window|close all|hide|log ?out|sign ?out|shut down|restart)\b/iu;
 const BROWSERS = new Set(['com.google.Chrome', 'com.apple.Safari', 'company.thebrowser.Browser', 'com.microsoft.edgemac',
@@ -44,6 +52,8 @@ const BROWSERS = new Set(['com.google.Chrome', 'com.apple.Safari', 'company.theb
 /** Long chores (inbox triage, forms) need many steps; runaway loops are
  * caught by the same-screen limit, so the step cap can be generous. */
 const AGENT_LIMITS = Object.freeze({ maxObservations: 120, maxDecisions: 40, maxStateVisits: 6 });
+/** What a step is judged against: everything visible, including text such as a song title. */
+const content = (view: AgentSnapshot) => view.contentSignature || view.signature;
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /** One step proposal, shown to the user with exact observed labels only. */
@@ -106,13 +116,14 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
   #openedApp = false;
   #typedAt = new Set<string>();
   #waits = 0;
-  /** The previous action, which is not offered again immediately (no Play→Pause flip-flop). */
-  #lastAction: string | null = null;
-  /** Recent action descriptions, to stop three identical steps in a row. */
-  readonly #recent: string[] = [];
   #origin: string | undefined;
-  /** Times each control or key was used; a toggle is not pressed back and forth. */
-  readonly #uses = new Map<string, number>();
+  /** Loop prevention, three general rules (no per-app special cases):
+   * 1. never undo the previous step (its inverse, or re-pressing a control it flipped);
+   * 2. on a screen seen before, don't repeat a step already taken from it (that led round a cycle);
+   * 3. a step that changed nothing is not offered on that screen again (`#noEffect`).
+   * Repeating a step that makes progress (Next, Next) stays allowed. */
+  #undo = new Set<string>();
+  readonly #takenFrom = new Map<string, Set<string>>();
   /** Text this task copied, available to paste. */
   #clipboard: string | null = null;
   /** Steps that changed nothing on a given screen are not offered there again. */
@@ -183,7 +194,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
           ? this.#decision.done(view, this.#abort.signal, [...this.#history], this.#origin).catch(() => 0) : Promise.resolve(0),
       ]);
       this.#active(generation);
-      const chosenId = doneProbability >= 0.6 ? 'finish' : proposedId;
+      // Only a clear "yes" overrides the chooser; it can still choose to finish itself.
+      const chosenId = doneProbability >= 0.8 ? 'finish' : proposedId;
       const decideMs = Math.round(performance.now() - decideStarted);
       const candidate = chosenId ? set.candidates.find(item => item.candidateId === chosenId) : undefined;
       if (!candidate) throw new ContractError('no confident agent step');
@@ -217,14 +229,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         return;
       }
       const chosen = option!;
-      const actionKey = `${chosen.kind}:${chosen.label}`;
-      this.#recent.push(actionKey);
-      if (!['close', 'scroll'].includes(chosen.kind) && this.#recent.length >= 3
-        && this.#recent.slice(-3).every(item => item === actionKey)) {
-        throw new ContractError('the same step three times in a row; stopping instead of looping');
-      }
-      this.#lastAction = `${chosen.kind}:${chosen.ref}`;
-      this.#uses.set(this.#lastAction, (this.#uses.get(this.#lastAction) ?? 0) + 1);
+      const actionKey = `${chosen.kind}:${chosen.ref}`;
       const permit: PreparedAttempt = Object.freeze({ taskId: this.taskId, taskEpoch: admission.taskEpoch,
         goalRevision: admission.goalRevision, executionId: randomUUID(), permitRef: randomUUID(),
         scopeRef: admission.scopeRef, observationId,
@@ -258,21 +263,33 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       const opening = chosen.kind === 'open_url' || chosen.kind === 'open_app';
       await sleep(opening ? 400 : 250);
       let after: AgentSnapshot | undefined = await this.#observe().catch(() => undefined);
-      if (after && after.signature === view.signature && chosen.kind !== 'copy') {
+      if (after && content(after) === content(view) && chosen.kind !== 'copy') {
         await sleep(opening ? 900 : 450);
         after = await this.#observe().catch(() => undefined);
       }
       const verifyMs = Math.round(performance.now() - verifyStarted);
       this.#nextView = after;
       // Copying changes the clipboard, not the screen.
-      const changed = copied !== null || (!!after && after.signature !== view.signature);
+      const changed = copied !== null || (!!after && content(after) !== content(view));
       const evidenceRef = `agent-${chosen.kind}-${permit.executionId}`;
       this.#journal.recordOutcome(permit.executionId, changed
         ? { deliveryStatus: 'dispatched', effectStatus: 'applied', verification: 'matched', evidenceRef }
         : { deliveryStatus: 'dispatched', effectStatus: 'not_applied', verification: 'not_matched' });
       executionId = undefined;
       if (chosen.kind === 'type' && changed) this.#typedAt.add(`${view.signature}|${chosen.ref}`);
-      if (!changed) this.#noEffect.add(`${view.signature}|${chosen.kind}:${chosen.ref}`);
+      if (!changed) this.#noEffect.add(`${content(view)}|${actionKey}`);
+      else {
+        const taken = this.#takenFrom.get(content(view)) ?? new Set<string>();
+        this.#takenFrom.set(content(view), taken.add(actionKey));
+      }
+      // Whatever this step flipped (its own label, or a twin control's) must not be flipped straight back.
+      // Ids are positions, so labels are compared only on the same page of the same app with the same layout.
+      const samePage = !!after && after.bundleId === view.bundleId && after.url === view.url
+        && after.elements.length === view.elements.length;
+      const before = new Map(view.elements.map(item => [item.id, item]));
+      this.#undo = new Set([...(INVERSE[actionKey] ?? []), ...(samePage ? after!.elements : [])
+        .filter(item => item.pressable && before.get(item.id)?.role === item.role && before.get(item.id)!.label !== item.label)
+        .map(item => `press:${item.id}`)]);
       if (chosen.kind === 'open_url') this.#openedUrl = true;
       if (chosen.kind === 'open_app' && chosen.ref === 'goal-app') this.#openedApp = true;
       const relabelled = chosen.element && after?.elements.find(item => item.id === chosen.element!.id
@@ -313,7 +330,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       : option.kind === 'type' ? { id: option.ref, text: this.#goal.typedText!.text }
         : option.kind === 'key' ? { name: option.ref }
           : option.kind === 'scroll' ? { down: option.ref === 'scroll-down' }
-            : option.kind === 'open_url' ? { url: this.#goal.url! }
+            : option.kind === 'open_url' ? { url: this.#goal.url!, newTab: this.#newTab(this.#lastView) }
               : option.kind === 'quit_app' ? { name: option.label.replace(/[\u200e\u200f]/gu, '').trim() }
                 : { name: option.label };
     return await this.#ax.call(this.taskId, option.kind as Exclude<Option['kind'], 'finish'>, params,
@@ -378,8 +395,11 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       }
     }
     if (this.#goal.url && !this.#openedUrl && !view.url.includes(new URL(this.#goal.url).hostname.replace(/^www\./u, ''))) {
+      const inBrowser = view.pid > 0 && BROWSERS.has(view.bundleId);
       options.push({ kind: 'open_url', ref: 'goal-url', label: this.#goal.url,
-        description: `Open ${this.#goal.url} in the default web browser.`, score: 10 });
+        description: !inBrowser ? `Open ${this.#goal.url} in the web browser.`
+          : this.#newTab(view) ? `Open ${this.#goal.url} in a new browser tab.`
+            : `Go to ${this.#goal.url} in this browser tab (replacing “${view.windowTitle.slice(0, 60)}”).`, score: 10 });
     }
     const plain = (name: string) => name.replace(/[\u200e\u200f]/gu, '').trim().toLowerCase();
     const named = this.#goal.app ? plain(this.#goal.app) : null;
@@ -417,12 +437,19 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       options.push({ kind: 'scroll', ref: 'scroll-down', label: 'Scroll down', description: `In ${view.app}: scroll down to see more.`, score: 0 });
       options.push({ kind: 'scroll', ref: 'scroll-up', label: 'Scroll up', description: `In ${view.app}: scroll up.`, score: 0 });
     }
-    return options.filter(option => !this.#noEffect.has(`${view.signature}|${option.kind}:${option.ref}`)
-      && (option.kind === 'scroll' || option.kind === 'close' || (`${option.kind}:${option.ref}` !== this.#lastAction
-        && (this.#uses.get(`${option.kind}:${option.ref}`) ?? 0) < 3)))
+    const takenHere = this.#takenFrom.get(content(view));
+    return options.filter(option => {
+      const key = `${option.kind}:${option.ref}`;
+      return !this.#noEffect.has(`${content(view)}|${key}`) && !this.#undo.has(key) && !takenHere?.has(key);
+    })
       .map((option, index) => ({ option, index }))
       .sort((a, b) => b.option.score - a.option.score || a.index - b.index)
       .slice(0, MAX_OPTIONS).map(item => item.option);
+  }
+
+  /** A new tab only when asked for one and the tab in front isn't already a blank new tab. */
+  #newTab(view: AgentSnapshot): boolean {
+    return this.#goal.newTab && !/^(?:chrome|edge|brave|vivaldi):\/\/new-?tab|^about:(?:blank|newtab)|^favorites:/u.test(view.url);
   }
 
   #set(observationId: string, options: readonly Option[], step: number) {

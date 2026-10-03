@@ -39,9 +39,11 @@ function systemOneDomAgent(req) {
     const fieldLabel = el.labels && el.labels.length ? el.labels[0].innerText : '';
     const buttonValue = el.tagName === 'INPUT' && ['submit', 'button'].includes(el.type) ? el.value : '';
     const own = el.tagName === 'SELECT' ? '' : (el.innerText || el.textContent);
-    return clean(el.getAttribute('aria-label') || byId || fieldLabel || el.getAttribute('title')
-      || el.getAttribute('placeholder') || el.getAttribute('alt') || buttonValue
-      || (el.querySelector('img[alt]') || {}).alt || own).slice(0, 120);
+    // First source that says something: sites sometimes put "true", "null" or a bare id in aria-label.
+    const sources = [el.getAttribute('aria-label'), byId, fieldLabel, el.getAttribute('title'),
+      el.getAttribute('placeholder'), el.getAttribute('alt'), buttonValue, (el.querySelector('img[alt]') || {}).alt, own];
+    const meaningful = text => text && !/^(?:true|false|null|undefined|nan|on|off|[-_.#\s]+)$/i.test(text);
+    return (sources.map(item => clean(item || '')).find(meaningful) || '').slice(0, 120);
   };
   const contextOf = el => {
     const near = el.closest('[aria-label]:not(a):not(button),nav,header,footer,aside,form,dialog,[role=dialog],[role=navigation],li,tr,article,section');

@@ -21,3 +21,13 @@ test('a reply with no words asks instead of guessing', () => {
   assert.equal(parseAgentGoal('copy the amount and paste it in the reply', APPS).needsText, false);
   assert.equal(parseAgentGoal('open Messages', APPS).needsText, false);
 });
+
+test('sites, tabs and apps are recognised wherever the request names them', () => {
+  assert.equal(parseAgentGoal('Go to the Gmail inbox', APPS).url, 'https://gmail.com/');
+  assert.equal(parseAgentGoal('go to the research page', APPS).url, null);
+  assert.equal(parseAgentGoal('using this current tab go to Gmail', APPS).newTab, false);
+  assert.equal(parseAgentGoal('open gmail in a new tab', APPS).newTab, true);
+  assert.equal(parseAgentGoal('reply to Sam on WhatsApp saying hi', APPS).app, 'WhatsApp');
+  assert.equal(parseAgentGoal('take notes about this page', APPS).app, null);
+  assert.equal(parseAgentGoal('open Notes and type "milk"', APPS).app, 'Notes');
+});

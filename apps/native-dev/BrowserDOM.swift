@@ -59,6 +59,14 @@ final class BrowserDOM {
             : "tell application id \"\(bundleID)\" to set active tab index of front window to \(index)")
     }
 
+    /// Loads `url` in the front window's active tab, as typing it in the address bar does.
+    func navigate(_ bundleID: String, _ url: URL) throws {
+        let text = url.absoluteString.replacingOccurrences(of: "\\", with: "%5C").replacingOccurrences(of: "\"", with: "%22")
+        _ = try execute(bundleID == Self.safari
+            ? "tell application id \"\(bundleID)\" to set URL of current tab of front window to \"\(text)\""
+            : "tell application id \"\(bundleID)\" to set URL of active tab of front window to \"\(text)\"")
+    }
+
     /// Closes tab `index` (1-based) of the front window.
     func closeTab(_ bundleID: String, _ index: Int) throws {
         _ = try execute("tell application id \"\(bundleID)\" to close tab \(index) of front window")

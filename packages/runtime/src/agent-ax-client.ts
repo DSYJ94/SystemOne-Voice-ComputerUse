@@ -25,7 +25,12 @@ export interface AgentSnapshot {
   readonly url: string;
   readonly elements: readonly AgentElement[];
   readonly truncated: boolean;
+  /** Layout only (controls, values, selection): the same screen even while a clock ticks. */
   readonly signature: string;
+  /** Layout plus visible text: whether a step changed anything (e.g. a new song title). */
+  readonly contentSignature?: string;
+  /** Page scroll position in pixels, when the page itself was read. */
+  readonly scrollY?: number | null;
   /** Other apps the user has open (regular apps only), for switching. */
   readonly runningApps?: readonly string[];
   /** Executor-measured read time and nodes visited, for traces. */

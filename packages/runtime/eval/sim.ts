@@ -34,6 +34,8 @@ export interface SimScreen {
   readonly bundleId: string;
   readonly windowTitle: string;
   readonly url?: string;
+  /** Page scroll position; part of the signature, as in the executor's page read. */
+  readonly scrollY?: number;
   readonly elements: readonly SimElement[];
 }
 
@@ -53,7 +55,7 @@ export interface SimWorld {
   key?(name: string): void;
   type?(element: SimElement, text: string): void;
   scroll?(down: boolean): void;
-  openUrl?(url: string): void;
+  openUrl?(url: string, newTab: boolean): void;
   openApp?(name: string): void;
   quitApp?(name: string): void;
   /** Regular apps running now (defaults to the scenario's app list). */
@@ -101,8 +103,11 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
         value = { app: screen?.app ?? 'no app', bundleId: screen?.bundleId ?? '', pid: screen ? 1 : 0,
           windowTitle: screen?.windowTitle ?? '', url: screen?.url ?? '', elements: described as unknown as JSONValue,
           // Like the executor: static text (clocks, counters) is not part of the signature.
-          truncated: false, signature: JSON.stringify([screen?.app, screen?.windowTitle, screen?.url,
+          truncated: false, signature: JSON.stringify([screen?.app, screen?.windowTitle, screen?.url, screen?.scrollY ?? 0,
             elements.filter(item => item.role !== 'AXStaticText').map(item => [item.role, item.label, item.value, item.selected])]),
+          contentSignature: JSON.stringify([screen?.app, screen?.windowTitle, screen?.url, screen?.scrollY ?? 0,
+            elements.map(item => [item.role, item.label, item.value, item.selected])]),
+          ...(screen?.scrollY !== undefined ? { scrollY: screen.scrollY } : {}),
           runningApps: (world.running?.() ?? scenario.apps).filter(name => name !== screen?.app) };
         break;
       }
@@ -123,7 +128,7 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
       case 'type': if (element && world.type) world.type(element, String(request.text)); else ok = false; break;
       case 'key': world.key?.(String(request.name)); break;
       case 'scroll': world.scroll?.(request.down === true); break;
-      case 'open_url': world.openUrl ? world.openUrl(String(request.url)) : ok = false; break;
+      case 'open_url': world.openUrl ? world.openUrl(String(request.url), request.newTab !== false) : ok = false; break;
       case 'open_app':
         if (world.openApp) world.openApp(String(request.name));
         else if (scenario.apps.includes(String(request.name))) world.front = String(request.name);

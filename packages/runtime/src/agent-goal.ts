@@ -20,7 +20,24 @@ export interface AgentGoal {
   readonly quit: boolean;
   /** The request asks to write or reply but gives no words to write. */
   readonly needsText: boolean;
+  /** The request asks for a new tab; otherwise a browser navigates the tab in front. */
+  readonly newTab: boolean;
 }
+
+/** App names that are also ordinary words ("notes", "music"): these need a verb or
+ * preposition before them to count as the app. Distinctive names count anywhere. */
+const COMMON_WORD_APPS = new Set(['notes', 'music', 'mail', 'messages', 'calendar', 'photos', 'maps', 'news', 'books',
+  'stocks', 'home', 'clock', 'weather', 'reminders', 'contacts', 'preview', 'shortcuts', 'podcasts', 'freeform',
+  'passwords', 'phone', 'games', 'tips', 'stickies', 'chess', 'calculator', 'dictionary', 'terminal', 'console',
+  'font book', 'image capture', 'screenshot', 'tv', 'safari', 'finder', 'code', 'mirror', 'journal', 'keynote', 'pages',
+  'numbers', 'automator', 'siri', 'feedback assistant', 'zoom', 'arc', 'things', 'bear', 'signal', 'spark', 'steam']);
+/** Sites known well enough to open from "go to the gmail inbox" (with an article). */
+const KNOWN_SITES = new Set(['gmail', 'youtube', 'google', 'wikipedia', 'amazon', 'netflix', 'reddit', 'github',
+  'linkedin', 'facebook', 'instagram', 'outlook', 'twitter', 'spotify', 'notion', 'figma', 'slack', 'whatsapp', 'bbc',
+  'ebay', 'chatgpt', 'claude', 'perplexity', 'calendly', 'dropbox', 'drive', 'docs', 'maps']);
+const SITE_HOSTS: Readonly<Record<string, string>> = { drive: 'drive.google.com', docs: 'docs.google.com',
+  maps: 'maps.google.com', whatsapp: 'web.whatsapp.com', chatgpt: 'chatgpt.com', claude: 'claude.ai',
+  twitter: 'x.com' };
 
 const NOT_SITES = new Set(['the', 'a', 'an', 'my', 'this', 'that', 'it', 'new', 'next', 'first', 'last', 'video',
   'page', 'app', 'file', 'folder', 'tab', 'window', 'link', 'settings', 'menu']);
@@ -41,20 +58,22 @@ export function parseAgentGoal(text: string, apps: readonly string[]): AgentGoal
   const lower = text.toLowerCase();
   let app: string | null = null;
   for (const name of apps) {
-    const pattern = new RegExp(`\\b(?:open|launch|start|switch to|use|in|into|to|close|quit|exit)\\s+(?:the\\s+)?${name.toLowerCase()
-      .replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}\\b`, 'u');
+    const escaped = name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+    const pattern = COMMON_WORD_APPS.has(name.toLowerCase())
+      ? new RegExp(`\\b(?:open|launch|start|switch to|use|in|into|to|on|from|close|quit|exit|hide)\\s+(?:the\\s+)?${escaped}(?:\\s+app)?\\b`, 'u')
+      : new RegExp(`(?:^|[^\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'u');
     if (name.length >= 3 && pattern.test(lower) && (!app || name.length > app.length)) app = name;
   }
   let url: string | null = null;
-  const site = /\b(?:go to|visit|navigate to|on|open)\s+((?:https?:\/\/)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,63}(?:\/\S*)?|[a-z0-9-]{2,63})\b/iu
+  const site = /\b(?:go to|visit|navigate to|on|open)\s+(?:(the|my)\s+)?((?:https?:\/\/)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,63}(?:\/\S*)?|[a-z0-9-]{2,63})\b/iu
     .exec(text);
-  if (site?.[1]) {
-    const target = site[1].replace(/^https?:\/\//iu, '').replace(/[.,!?]$/u, '').toLowerCase();
+  if (site?.[2] && (!site[1] || site[2].includes('.') || KNOWN_SITES.has(site[2].toLowerCase()))) {
+    const target = site[2].replace(/^https?:\/\//iu, '').replace(/[.,!?]$/u, '').toLowerCase();
     const bare = !target.includes('.');
-    const verb = /^(?:go to|visit|navigate to|on)\b/iu.test(site[0]);
+    const verb = /^(?:go to|visit|navigate to|on)\b/iu.test(site[0]) || KNOWN_SITES.has(target);
     if (!bare) url = `https://${target}`;
     else if (verb && !NOT_SITES.has(target) && !apps.some(name => name.toLowerCase() === target)) {
-      url = `https://${BARE_SITES[target] ?? `${target}.com`}/`;
+      url = `https://${BARE_SITES[target] ?? SITE_HOSTS[target] ?? `${target}.com`}/`;
     }
   }
   const searchOn = url ? null : /\bsearch\s+([a-z0-9-]+(?:\.[a-z0-9-]+)*)\s+for\b/iu.exec(text);
@@ -75,6 +94,7 @@ export function parseAgentGoal(text: string, apps: readonly string[]): AgentGoal
   const clipboard = /\b(?:copy|paste|clipboard)\b/iu.test(text);
   return Object.freeze({ typedText, url, app, clipboard, undo: /\bundo\b/iu.test(text),
     quit: /\b(?:quit|close|exit|shut down|log ?out|sign ?out)\b/iu.test(text),
+    newTab: /\bnew tab\b/iu.test(text),
     needsText: !typedText && !clipboard
       && (/\b(?:reply|respond|write back|type)\b/iu.test(text) || /^\s*(?:message|text)\s+\w+/iu.test(text)) });
 }

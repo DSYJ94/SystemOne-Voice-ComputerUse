@@ -17,8 +17,13 @@ final class UniversalAX {
         let url: String
         let elements: [[String: Any]]
         let truncated: Bool
+        /// Layout only (controls, values, selection): identifies a screen, for loop limits.
         let signature: String
         let visited: Int
+        /// Layout plus visible text: tells whether a step changed anything (a new song title counts).
+        var contentSignature = ""
+        /// Page scroll position, when read from the page.
+        var scrollY: Int?
         /// "dom" when read through the browser's page, else "ax".
         var via = "ax"
         /// Why the page could not be read directly (shown once), if relevant.
@@ -88,8 +93,8 @@ final class UniversalAX {
                                     "selected": index + 1 == active])
             }
         }
-        // Change detection ignores free text (clocks, video time, counters):
-        // only structure, controls, values and selection count as a change.
+        // The layout signature ignores free text (clocks, video time), so a ticking
+        // page is still the same screen; the content signature includes it.
         let structural = (tabElements + elements).filter { ($0["role"] as? String) != "AXStaticText" }
         let signature = "\(title)|\(url)|\(value["scrollY"] ?? 0)|"
             + structural.map { "\($0["role"] ?? "")\($0["label"] ?? "")\($0["value"] ?? "")\($0["selected"] ?? "")" }
@@ -98,6 +103,8 @@ final class UniversalAX {
                             windowTitle: title, url: url, elements: tabElements + elements,
                             truncated: value["truncated"] as? Bool ?? false,
                             signature: String(signature.hashValue), visited: elements.count)
+        snap.contentSignature = String((signature + Self.texts(of: elements)).hashValue)
+        snap.scrollY = (value["scrollY"] as? NSNumber)?.intValue
         snap.via = "dom"
         return snap
     }
@@ -192,9 +199,15 @@ final class UniversalAX {
             + collected.filter { ($0["role"] as? String) != "AXStaticText" }
                 .map { "\($0["role"] ?? "")\($0["label"] ?? "")\($0["value"] ?? "")\($0["selected"] ?? "")" }
                 .joined(separator: "¦")
-        return Snapshot(app: app.localizedName ?? app.bundleIdentifier ?? "app", bundleID: app.bundleIdentifier ?? "",
-                        pid: pid, windowTitle: windowTitle, url: url, elements: collected,
-                        truncated: collected.count >= limit, signature: String(signature.hashValue), visited: visited)
+        var snap = Snapshot(app: app.localizedName ?? app.bundleIdentifier ?? "app", bundleID: app.bundleIdentifier ?? "",
+                            pid: pid, windowTitle: windowTitle, url: url, elements: collected,
+                            truncated: collected.count >= limit, signature: String(signature.hashValue), visited: visited)
+        snap.contentSignature = String((signature + Self.texts(of: collected)).hashValue)
+        return snap
+    }
+
+    private static func texts(of elements: [[String: Any]]) -> String {
+        elements.filter { ($0["role"] as? String) == "AXStaticText" }.map { "\($0["label"] ?? "")" }.joined(separator: "¦")
     }
 
     /// The attributes the walk needs, fetched in one call.
@@ -446,7 +459,15 @@ final class UniversalAX {
     }
 
     /// Opens a URL in the default browser and makes that browser the target.
-    func open(url: URL) async throws {
+    /// Opens `url`. In a browser that is in front, it loads in the current tab (like the
+    /// address bar) unless a new tab was asked for; otherwise the default browser opens it.
+    func open(url: URL, newTab: Bool) async throws {
+        if !newTab, let pid = targetPID, let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated,
+           let bundle = app.bundleIdentifier, BrowserDOM.supports(bundle), (try? dom.navigate(bundle, url)) != nil {
+            app.activate()
+            try await Task.sleep(for: .milliseconds(1_200))
+            return
+        }
         guard let appURL = NSWorkspace.shared.urlForApplication(toOpen: url) else { throw AXError.actionFailed }
         let config = NSWorkspace.OpenConfiguration()
         config.activates = true

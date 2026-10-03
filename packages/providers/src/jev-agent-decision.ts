@@ -33,6 +33,8 @@ export function createJevAgentDecision(options: {
     const tabs = view.elements.filter(element => element.role === 'AXTab' && element.closable);
     const where = (view.pid ? `Current app: ${view.app}, window “${view.windowTitle || 'untitled'}”${
       view.url ? `, showing ${view.url}` : ''}.` : 'No app window is in front yet.')
+      + (typeof view.scrollY === 'number' ? view.scrollY <= 0 ? ' The page is scrolled to the very top.'
+        : ` The page is scrolled ${view.scrollY} pixels down from the top.` : '')
       + (tabs.length ? ` Open browser tabs: ${tabs.map(tab => `“${tab.label.slice(0, 50)}”${tab.selected ? ' (current)' : ''}`)
         .join(', ')}.` : '')
       + (view.runningApps?.length ? ` Other open apps: ${view.runningApps.slice(0, 20).join(', ')}.` : '');
