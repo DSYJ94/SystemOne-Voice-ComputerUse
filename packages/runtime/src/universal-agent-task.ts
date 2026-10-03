@@ -98,10 +98,17 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
   #waits = 0;
   /** Steps that changed nothing on a given screen are not offered there again. */
   readonly #noEffect = new Set<string>();
+  readonly #trace: ((event: Record<string, JSONValue>) => void) | undefined;
+  #lastView: AgentSnapshot = EMPTY_SNAPSHOT;
+
+  /** What happened, for a follow-up request's context. */
+  get summary(): { readonly history: readonly string[]; readonly app: string; readonly url: string } {
+    return { history: [...this.#history], app: this.#lastView.app, url: this.#lastView.url };
+  }
 
   static start(journal: AttemptJournal, registry: TaskAdmissionRegistry, admission: TaskAdmission,
     ax: AgentAXClient, options: { readonly goal: AgentGoal; readonly decision: AgentDecision;
-      readonly confirmation: AgentConfirmation }): UniversalAgentTask {
+      readonly confirmation: AgentConfirmation; readonly trace?: (event: Record<string, JSONValue>) => void }): UniversalAgentTask {
     const typed = admission.parameters.find(item => item.parameterRef === 'typed-text');
     if (admission.outcomeKind !== 'USER_CONFIRMATION' || admission.policyRevision !== AGENT_POLICY
       || admission.completionVerifierRef !== AGENT_VERIFIER
@@ -116,7 +123,9 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
   }
 
   private constructor(journal: AttemptJournal, admission: TaskAdmission, ax: AgentAXClient,
-    options: { readonly goal: AgentGoal; readonly decision: AgentDecision; readonly confirmation: AgentConfirmation }) {
+    options: { readonly goal: AgentGoal; readonly decision: AgentDecision; readonly confirmation: AgentConfirmation;
+      readonly trace?: (event: Record<string, JSONValue>) => void }) {
+    this.#trace = options.trace;
     this.taskId = admission.taskId; this.#journal = journal; this.#ax = ax; this.#goal = options.goal;
     this.#decision = options.decision; this.#confirmation = options.confirmation;
     this.#words = Object.freeze(admission.goal.toLowerCase().split(/[^\p{L}\p{N}]+/u)
@@ -132,6 +141,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
     try {
       const ticket = this.#journal.reserveTaskObservation(this.taskId);
       const view = await this.#observe();
+      this.#lastView = view;
       this.#active(generation);
       const observationId = randomUUID();
       this.#journal.recordTaskObservation(this.taskId, ticket, { observationId, scopeRef: admission.scopeRef,
@@ -156,6 +166,9 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         label: finish ? (view.windowTitle || view.app) : option!.label,
         destinationUrl: option?.kind === 'open_url' ? this.#goal.url : null, pageUrl: view.url, app: view.app,
         risky: !finish && RISKY.test(`${option!.label} ${option!.element?.context ?? ''}`) });
+      this.#trace?.({ kind: 'step', step, app: view.app, window: view.windowTitle, url: view.url,
+        elements: view.elements.length, options: options.length, chosen: proposal.kind, label: proposal.label,
+        risky: proposal.risky, history: [...this.#history] });
       const confirmed = await this.#confirmation.confirm(proposal, this.#abort.signal);
       this.#active(generation);
       if (!confirmed) throw new ContractError('user declined the agent step');
@@ -199,9 +212,11 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       if (chosen.kind === 'type' && changed) this.#typedAt.add(`${view.signature}|${chosen.ref}`);
       if (!changed) this.#noEffect.add(`${view.signature}|${chosen.kind}:${chosen.ref}`);
       if (chosen.kind === 'open_url') this.#openedUrl = true;
-      if (chosen.kind === 'open_app') this.#openedApp = true;
+      if (chosen.kind === 'open_app' && chosen.ref === 'goal-app') this.#openedApp = true;
       const relabelled = chosen.element && after?.elements.find(item => item.id === chosen.element!.id
         && item.role === chosen.element!.role && item.label !== chosen.element!.label);
+      this.#trace?.({ kind: 'result', step, changed, after: after ? { app: after.app, window: after.windowTitle,
+        url: after.url } : null });
       this.#history.push(`${capitalize(describeKind(chosen))} in ${view.app}${!changed ? '; nothing visibly changed'
         : relabelled ? `; it now reads “${relabelled.label}”` : ''}.`);
       if (changed) {
@@ -235,7 +250,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         : option.kind === 'key' ? { name: option.ref }
           : option.kind === 'scroll' ? { down: option.ref === 'scroll-down' }
             : option.kind === 'open_url' ? { url: this.#goal.url! }
-              : { name: this.#goal.app! };
+              : { name: option.label };
     await this.#ax.call(this.taskId, option.kind as Exclude<Option['kind'], 'finish'>, params,
       option.kind === 'open_url' || option.kind === 'open_app' ? 20_000 : 10_000);
   }
@@ -262,6 +277,11 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
     if (this.#goal.url && !this.#openedUrl && !view.url.includes(new URL(this.#goal.url).hostname.replace(/^www\./u, ''))) {
       options.push({ kind: 'open_url', ref: 'goal-url', label: this.#goal.url,
         description: `Open ${this.#goal.url} in the default web browser.`, score: 10 });
+    }
+    for (const name of (view.runningApps ?? []).slice(0, 20)) {
+      if (name.toLowerCase() === view.app.toLowerCase() || name === this.#goal.app) continue;
+      options.push({ kind: 'open_app', ref: `app:${name}`, label: name,
+        description: `Switch to the app ${name} (already open).`, score: score(name) * 3 });
     }
     if (this.#goal.app && !this.#openedApp && view.app.toLowerCase() !== this.#goal.app.toLowerCase()) {
       options.push({ kind: 'open_app', ref: 'goal-app', label: this.#goal.app,
@@ -302,7 +322,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
               parameters: { direction: option.ref === 'scroll-down' ? 'down' : 'up', amount: 'page' }, effects: ['READ'] }
               : option.kind === 'open_url' ? { ...base, operation: 'navigate', parameters: { urlRef: 'goal-url' },
                 effects: ['NAVIGATE', 'EXTERNAL_READ'] }
-                : { ...base, operation: 'activate_app', parameters: { appRef: 'goal-app' }, effects: ['NAVIGATE'] };
+                : { ...base, operation: 'activate_app',
+                  parameters: { appRef: option.ref.replace(/[^A-Za-z0-9_.:-]/gu, '-').slice(0, 160) }, effects: ['NAVIGATE'] };
       validateCandidate(candidate);
       candidates.push(Object.freeze(candidate));
       byId.set(candidateId, option);

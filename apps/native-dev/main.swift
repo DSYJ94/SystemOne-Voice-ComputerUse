@@ -1891,14 +1891,20 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             do {
                 switch op {
                 case "snapshot":
-                    let snap = try self.universalAX.snapshot()
+                    guard let snap = try? self.universalAX.snapshot() else {
+                        // Nothing in front: Jev can still open a site or switch to an app.
+                        reply(true, ["app": "no app", "bundleId": "", "pid": 0, "windowTitle": "", "url": "",
+                                     "elements": [] as [Any], "truncated": false, "signature": "none",
+                                     "runningApps": UniversalAX.runningApps()], nil)
+                        return
+                    }
                     var elements = snap.elements
                     var value: [String: Any] = [:]
                     repeat {
                         value = ["app": snap.app, "bundleId": snap.bundleID, "pid": Int(snap.pid),
                                  "windowTitle": snap.windowTitle, "url": snap.url, "elements": elements,
                                  "truncated": snap.truncated || elements.count < snap.elements.count,
-                                 "signature": snap.signature]
+                                 "signature": snap.signature, "runningApps": UniversalAX.runningApps()]
                         let size = (try? JSONSerialization.data(withJSONObject: value).count) ?? 0
                         if size < 56_000 { break }
                         elements.removeLast(min(20, elements.count))

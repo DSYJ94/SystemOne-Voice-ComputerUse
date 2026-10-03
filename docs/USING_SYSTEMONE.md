@@ -43,6 +43,13 @@ Say "stop", press Esc or press Control-Option-Escape at any time. A new
 request replaces the running one. Typed text comes only from your own words
 (quotes, or what follows "search for" or "type").
 
+Follow-ups within 10 minutes know what just happened ("now play the second
+one", "go back"). Jev also knows your other open apps ("switch to Slack").
+
+When something goes wrong, run `npm run traces` and paste the output into
+the chat. It shows each recent request's steps, as recorded locally on your
+Mac.
+
 `privately go to <site> …` uses an isolated Chromium window instead of your
 browser.
 

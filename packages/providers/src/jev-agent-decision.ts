@@ -22,15 +22,18 @@ const QUESTION = 'Choose the one offered action that best moves the user toward 
  * verified-step history and candidate descriptions (visible labels) only. */
 export function createJevAgentDecision(options: {
   readonly apiKey?: string; readonly goal: string;
+  /** What the previous request did, so follow-ups ("now play the second one") make sense. */
+  readonly context?: string;
   readonly report: (event: FixtureDecisionEvent) => void; readonly transport?: CLMTransport;
 }): AgentDecision {
   const transport = options.transport ?? createCLMHTTPTransport({ endpoint: JEV_ENDPOINT,
     ...(options.apiKey ? { apiKey: options.apiKey } : {}), timeoutMs: 15_000 });
   const client = new CLMDecisionClient(POLICY, PROVIDER, CALIBRATION, transport, JEV_CODEC);
   const project = (set: BuiltCandidateSet, view: AgentSnapshot, history: readonly string[]) => {
-    const where = view.pid ? `Current app: ${view.app}, window “${view.windowTitle || 'untitled'}”${
-      view.url ? `, showing ${view.url}` : ''}.` : 'No app window is in front yet.';
-    const stateText = `Goal: ${options.goal}. ${where}`
+    const where = (view.pid ? `Current app: ${view.app}, window “${view.windowTitle || 'untitled'}”${
+      view.url ? `, showing ${view.url}` : ''}.` : 'No app window is in front yet.')
+      + (view.runningApps?.length ? ` Other open apps: ${view.runningApps.slice(0, 20).join(', ')}.` : '');
+    const stateText = (options.context ? `Earlier: ${options.context} ` : '') + `Goal: ${options.goal}. ${where}`
       + (history.length ? ` Done so far: ${history.slice(-12).join(' ')}` : ' Nothing has been done yet.')
       + ' Prefer the most direct step; do not repeat a step that changed nothing.';
     return approveCandidateProjection({ set, stateText: stateText.slice(0, 24_000), questionText: QUESTION,

@@ -254,8 +254,25 @@ final class UniversalAX {
         try await Task.sleep(for: .milliseconds(1_500))
     }
 
-    /// Opens or activates an installed app by its display name.
+    /// Regular apps the user has open, excluding SystemOne itself.
+    static func runningApps() -> [String] {
+        let me = ProcessInfo.processInfo.processIdentifier
+        return NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular && $0.processIdentifier != me && !$0.isTerminated }
+            .compactMap(\.localizedName)
+    }
+
+    /// Switches to a running app by name, or opens an installed one.
     func open(app name: String) async throws {
+        let me = ProcessInfo.processInfo.processIdentifier
+        if let running = NSWorkspace.shared.runningApplications.first(where: {
+            $0.activationPolicy == .regular && $0.processIdentifier != me
+                && $0.localizedName?.lowercased() == name.lowercased() }) {
+            running.activate()
+            targetPID = running.processIdentifier
+            try await Task.sleep(for: .milliseconds(500))
+            return
+        }
         let roots = ["/Applications", "/System/Applications", "/System/Applications/Utilities",
                      NSHomeDirectory() + "/Applications"]
         let wanted = name.lowercased()

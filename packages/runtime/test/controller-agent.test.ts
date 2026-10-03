@@ -91,3 +91,35 @@ test('a paused agent task never blocks the next request', async t => {
   assert.equal(has(second, 'agent_done'), true);
   assert.equal(journal.getTaskState(first), 'cancelled');
 });
+
+test('a follow-up request receives what the previous request did', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'systemone-controller-agent-context-'));
+  const journal = new AttemptJournal(join(root, 'attempts.sqlite'));
+  const phases: { id: string; phase: string }[] = [];
+  const contexts: (string | undefined)[] = [];
+  let controller!: NativeManagedController;
+  controller = new NativeManagedController(journal, (id, phase) => { phases.push({ id, phase }); }, true, undefined,
+    (message: Record<string, JSONValue>) => {
+      if (message.type === 'agent_ax_request') queueMicrotask(() => controller.receive(Buffer.from(JSON.stringify({
+        type: 'agent_ax_reply', requestId: message.requestId, ok: true, value: { app: 'Google Chrome',
+          bundleId: 'com.google.Chrome', pid: 9, windowTitle: 'lofi - YouTube', url: 'https://www.youtube.com/results',
+          elements: [], truncated: false, signature: 's' } }))));
+      if (message.type === 'browse_proposal') queueMicrotask(() => controller.receive(Buffer.from(JSON.stringify({
+        type: 'confirm_step', requestId: randomUUID(), targetRequestId: message.requestId,
+        proposalId: message.proposalId, allow: true }))));
+    }, undefined, false, undefined, undefined, async (_id, _goal, context) => {
+      contexts.push(context);
+      return { async select(set) { return set.candidates.find(c => c.operation === 'finish')?.candidateId as string; } };
+    });
+  t.after(async () => { await controller.close(); rmSync(root, { recursive: true, force: true }); });
+  const has = (id: string, phase: string) => phases.some(p => p.id === id && p.phase === phase);
+  const first = randomUUID();
+  controller.receive(Buffer.from(JSON.stringify(agent(first, 'search youtube for lofi'))));
+  await waitFor(() => has(first, 'ready'));
+  const second = randomUUID();
+  controller.receive(Buffer.from(JSON.stringify(agent(second, 'now play the second one'))));
+  await waitFor(() => has(second, 'agent_done'));
+  assert.equal(contexts[0], undefined);
+  assert.match(contexts[1] ?? '', /search youtube for lofi/u);
+  assert.match(contexts[1] ?? '', /youtube\.com\/results/u);
+});

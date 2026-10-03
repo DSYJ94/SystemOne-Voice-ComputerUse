@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ManagedFillTask } from '../../browser/src/managed-fill-task.ts';
@@ -197,12 +197,27 @@ type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
   | 'verified_portal_download' | 'portal_paused' | 'native_paused' | 'checking_native_recovery' | 'replacing_native_task'
   | 'browsing' | 'verified_browse' | 'browse_paused' | 'agent_working' | 'agent_done' | 'agent_paused';
 
+/** Private per-task step traces for diagnosing and replaying failures. Only
+ * written when SYSTEMONE_TRACE_DIR is set (the app's own support folder). */
+function agentTraceWriter(taskId: string, goal: string): ((event: Record<string, JSONValue>) => void) | undefined {
+  const dir = process.env.SYSTEMONE_TRACE_DIR;
+  if (!dir || !isAbsolute(dir)) return undefined;
+  try { mkdirSync(dir, { recursive: true, mode: 0o700 }); } catch { return undefined; }
+  const path = join(dir, `${new Date().toISOString().replace(/[:.]/gu, '-')}-${taskId.slice(0, 8)}.jsonl`);
+  const write = (value: Record<string, JSONValue>) => {
+    try { appendFileSync(path, `${JSON.stringify({ at: new Date().toISOString(), ...value })}\n`, { mode: 0o600 }); }
+    catch { /* Tracing never affects the task. */ }
+  };
+  write({ kind: 'goal', goal });
+  return write;
+}
+
 function decisionProviderValid(value: Record<string, JSONValue>): boolean {
   return !Object.hasOwn(value, 'decisionProvider') || value.decisionProvider === 'jev';
 }
 
 /** Per-task universal-agent selector, built only for an explicit agent request. */
-export type AgentDecisionFactory = (requestId: string, goal: string) => Promise<AgentDecision>;
+export type AgentDecisionFactory = (requestId: string, goal: string, context?: string) => Promise<AgentDecision>;
 
 /** Per-task browse selector, built only for an explicit browse request. */
 export type BrowseDecisionFactory = (requestId: string, goal: string) => Promise<BrowseDecision>;
@@ -498,6 +513,8 @@ export class NativeManagedController {
   readonly #browseDecisions: BrowseDecisionFactory | undefined;
   readonly #agentDecisions: AgentDecisionFactory | undefined;
   readonly #agentAX: AgentAXClient;
+  /** The previous agent request and what it did, for follow-ups (10 minutes). */
+  #agentContext: { readonly text: string; readonly at: number } | undefined;
   #pendingStep: { readonly requestId: string; readonly proposalId: string;
     readonly resolve: (allow: boolean) => void } | undefined;
   readonly #nativeWorker: NativeFieldPipeWorker | undefined;
@@ -1223,6 +1240,8 @@ export class NativeManagedController {
   /** Universal computer use on the user's own apps through Accessibility. */
   async #runAgent(request: StartAgent, active: ActiveTask): Promise<void> {
     active.agentRun = true;
+    let agentTask: { readonly summary: { readonly history: readonly string[]; readonly app: string;
+      readonly url: string } } | undefined;
     try {
       const command = request.command;
       if (command.type !== 'command' || (command.source !== 'text' && command.source !== 'voice')
@@ -1242,15 +1261,20 @@ export class NativeManagedController {
       const route = input.accept(endpoint, Buffer.from(JSON.stringify(command)));
       if (route.kind !== 'interpret_command') throw new ContractError('not a command');
       const parameters = goal.typedText ? [bindCommandSpan(route.input, 'typed-text', goal.typedText)] : [];
-      const decision = await factory(request.requestId, route.input.text);
+      const context = this.#agentContext && Date.now() - this.#agentContext.at < 600_000
+        ? this.#agentContext.text : undefined;
+      const decision = await factory(request.requestId, route.input.text, context);
       if (active.cancelled) return;
       const registry = new TaskAdmissionRegistry(revision, input);
       const admission = registry.admit(route.input, { admissionId: randomUUID(), goal: route.input.text,
         outcomeKind: 'USER_CONFIRMATION', scopeRef: `agent-session:${request.requestId}`,
         completionVerifierRef: AGENT_VERIFIER, policyRevision: AGENT_POLICY,
         approvedEffects: ['READ', 'NAVIGATE', 'EXTERNAL_READ', 'LOCAL_EDIT', 'EXTERNAL_WRITE'], parameters });
+      const trace = agentTraceWriter(request.requestId, route.input.text);
       const task = UniversalAgentTask.start(this.#journal, registry, admission, this.#agentAX, { goal, decision,
+        ...(trace ? { trace } : {}),
         confirmation: { confirm: (proposal, signal) => this.#awaitConfirmation(request.requestId, proposal, signal) } });
+      agentTask = task;
       const actor = new PersistentTaskActor(this.#journal, task, 60_000);
       active.actor = actor;
       if (active.cancelled) { await actor.stop(); return; }
@@ -1260,6 +1284,10 @@ export class NativeManagedController {
       });
       if (active.cancelled) return;
       this.#send(request.requestId, result.state === 'completed' ? 'agent_done' : 'agent_paused');
+      const done = agentTask!.summary;
+      this.#agentContext = { at: Date.now(), text: `the user asked “${String(command.text).slice(0, 200)}”; `
+        + `${done.history.slice(-6).join(' ') || 'nothing was done.'} It ${result.state === 'completed' ? 'finished' : 'stopped'} in ${done.app}${
+          done.url ? ` at ${done.url}` : ''}.` };
     } catch {
       if (!active.cancelled) this.#send(request.requestId, 'error');
     } finally {
@@ -1507,6 +1535,7 @@ async function main(): Promise<void> {
   if (!journalPath || !isAbsolute(journalPath)) throw new Error('absolute journal path required');
   mkdirSync(dirname(journalPath), { recursive: true, mode: 0o700 });
   const journal = new AttemptJournal(journalPath);
+  process.env.SYSTEMONE_TRACE_DIR ??= join(dirname(journalPath), 'traces');
   const outputRoot = join(dirname(journalPath), 'fixture-output');
   mkdirSync(outputRoot, { recursive: true, mode: 0o700 });
   const portalStore = new ScriptedPortalStore(journalPath, outputRoot, journal);
@@ -1540,12 +1569,12 @@ async function main(): Promise<void> {
     process.env.SYSTEMONE_MANAGED_HEADLESS === '1', worker,
     value => { process.stdout.write(`${JSON.stringify(value)}\n`); }, portalStore,
     process.env.SYSTEMONE_HOST_LIFECYCLE_REQUIRED === '1', fixtureDecisions, browseDecisions,
-    async (requestId, goal) => {
+    async (requestId, goal, context) => {
       const { execFileSync } = await import('node:child_process');
       const { createJevAgentDecision } = await import('../../providers/src/jev-agent-decision.ts');
       const apiKey = execFileSync('/usr/bin/security', ['find-generic-password', '-s', 'systemone-jev', '-w'],
         { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000 }).trim();
-      return createJevAgentDecision({ apiKey, goal, report: event => {
+      return createJevAgentDecision({ apiKey, goal, ...(context ? { context } : {}), report: event => {
         process.stdout.write(`${JSON.stringify({ type: 'decision', requestId, ...event })}\n`);
       } });
     });

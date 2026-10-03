@@ -24,6 +24,8 @@ export interface AgentSnapshot {
   readonly elements: readonly AgentElement[];
   readonly truncated: boolean;
   readonly signature: string;
+  /** Other apps the user has open (regular apps only), for switching. */
+  readonly runningApps?: readonly string[];
 }
 
 export type AgentOperation = 'snapshot' | 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app';

@@ -41,8 +41,10 @@ class FakeApp {
     switch (request.op) {
       case 'snapshot': return { app: this.app, bundleId: 'com.example.browser', pid: this.url ? 42 : 0,
         windowTitle: this.url ? 'YouTube' : '', url: this.url, elements: this.elements() as unknown as JSONValue,
-        truncated: false, signature: `${this.url}|${this.playing}|${this.query}|${this.searched}` };
+        truncated: false, signature: `${this.url}|${this.playing}|${this.query}|${this.searched}|${this.app}`,
+        runningApps: ['Notes', 'Slack'] };
       case 'open_url': this.url = String(request.url); return null;
+      case 'open_app': this.app = String(request.name); return null;
       case 'type': this.query = String(request.text); return null;
       case 'press': if (request.id === 'e2') this.playing = !this.playing; if (request.id === 'e1') this.searched = true; return null;
       default: return null;
@@ -119,4 +121,12 @@ test('without typed words no typing is offered, and abstention pauses with no ef
   h.app.url = 'https://youtube.com/watch';
   assert.equal((await h.actor.run()).state, 'paused');
   assert.equal(h.app.calls.filter(call => call.op !== 'snapshot').length, 0);
+});
+
+test('open apps are offered as switch targets and the agent switches by name', async t => {
+  const h = harness(t, 'switch to Slack', [op('activate_app', /Slack/u), op('finish')]);
+  h.app.url = 'https://youtube.com/';
+  assert.equal((await h.actor.run()).state, 'completed');
+  assert.deepEqual(h.proposals.map(p => p.kind), ['open_app', 'finish']);
+  assert.equal(h.app.calls.find(call => call.op === 'open_app')?.name, 'Slack');
 });
