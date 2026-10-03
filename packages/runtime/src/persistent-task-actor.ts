@@ -66,6 +66,13 @@ export class PersistentTaskActor {
     || this.#journal.unresolvedAttempts().length > 0 || this.snapshot.state === 'paused'; }
   get snapshot(): JournalTaskRecord { return this.#journal.getTaskRecord(this.taskId)!; }
 
+  /** Await actual settlement after closing the adapter transport. This does
+   * not reactivate execution or report a worker fence; it protects journal
+   * shutdown from late operation/history callbacks. */
+  async settleOperation(): Promise<void> {
+    await this.#operation?.catch(() => {});
+  }
+
   async run(onProgress?: (record: JournalTaskRecord) => void): Promise<JournalTaskRecord> {
     if (this.busy || this.#fenceFailed || this.snapshot.state !== 'active') {
       throw new ContractError('actor is busy, fenced or not active');

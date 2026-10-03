@@ -762,6 +762,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             statusField?.stringValue = "Verified: INV-105 was found, opened, downloaded and saved in SystemOne-Dev/fixture-output."
         case "portal_paused":
             statusField?.stringValue = "Fixture workflow paused. Inspect the private task record before retrying."
+        case "native_paused":
+            statusField?.stringValue = "Native fixture task paused. Stop it explicitly before starting another task."
         case "paused_budget":
             statusField?.stringValue = "Task paused at its action or time limit. An earlier action may have taken effect. Inspect the result before starting again."
         case "verified_native_fill":
@@ -797,7 +799,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 stopRequestID = nil
                 if quitPending { quitPending = false; NSApp.reply(toApplicationShouldTerminate: false) }
             }
-        case "blocked_recovery": statusField?.stringValue = "Earlier effect unresolved. Re-observation is required before another task."
+        case "blocked_recovery": statusField?.stringValue = "An earlier task is paused or its effect is unresolved. Stop the task and inspect its state before starting again."
         case "stopping": statusField?.stringValue = nativeActionActive
             ? "Fencing the native worker; a dispatched edit may already have happened…"
             : "Stopping browser and fencing future actions…"

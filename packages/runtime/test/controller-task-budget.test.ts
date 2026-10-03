@@ -41,7 +41,7 @@ for (const expireAt of ['prepare', 'commit'] as const) {
     const finished = new Promise<void>(resolve => { settled = resolve; });
     const controller = new NativeManagedController(journal, (_requestId, phase) => {
       phases.push(phase);
-      if (phase === 'ready') settled();
+      if (phase === 'blocked_recovery') settled();
     }, true, worker);
     const requestId = 'budget-task';
     const bundleId = 'com.aurium.systemone.fixture';

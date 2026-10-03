@@ -63,8 +63,11 @@ title predicate and compares another semantic read, ignoring ephemeral handles.
 Resumed execution uses new observation/preparation/permit IDs, preserves history
 and never repeats a verified Documents press. Stop after dispatch leaves unknown
 effect history; changed scopes, duplicate controls and unmatched predicates pause.
-These new actor checks use a synthetic worker. Native controller/panel routing,
-physical AX/permission qualification and worker lifecycle recovery remain open.
+These actor checks use a synthetic worker. The development controller now routes
+its fixture NAVIGATE/LOCATE/OPEN requests through this actor, retains pause/Stop
+ownership and blocks new intake for unfinished durable tasks after restart.
+See [native controller integration](NATIVE_CONTROLLER_ACTOR.md). Controller/panel
+Resume, physical AX/permission qualification and worker lifecycle recovery remain open.
 
 ## Remaining v1 work
 

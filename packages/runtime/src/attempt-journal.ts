@@ -463,6 +463,14 @@ export class AttemptJournal {
     return this.#task(taskId)?.state;
   }
 
+  /** Unfinished durable tasks keep controller intake blocked after restart.
+   * No admission/permit is reconstructed from this diagnostic listing. */
+  pendingTaskIds(): readonly string[] {
+    const rows = this.#db.prepare("SELECT task_id FROM tasks WHERE state IN ('active', 'paused') ORDER BY task_id")
+      .all() as { task_id: string }[];
+    return Object.freeze(rows.map(row => row.task_id));
+  }
+
   /** One consistent snapshot of the contract, lifecycle and effect history.
    * A paused record is not a safe-to-retry or safe-to-resume decision. */
   getTaskRecord(taskId: string): JournalTaskRecord | undefined {

@@ -1,5 +1,24 @@
 # Implementation status
 
+## Native fixture controller actor, 1 October 2026
+
+`codex/native-controller-actor`, based on #67 at `076c241`.
+Implementation `54c3f0d`, [draft PR #68](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/68),
+targeting `codex/release-dependency-inventory` (#67).
+The [native controller integration](NATIVE_CONTROLLER_ACTOR.md) replaces the
+controller's fixed fixture NAVIGATE/LOCATE/OPEN execution loop with its persistent
+actor. Exact final-command admission, distinct title predicates, separately
+signed worker dispatch and durable effect/checkpoint history remain enforced.
+Pauses retain the native actor; exact Stop reaches it after its run settles.
+Unfinished durable tasks block all controller intake after restart, even without
+unknown effects. Native transport settlement precedes journal shutdown.
+
+Linux typecheck and **377 passed, zero failed, two Mac-only skips (379 total)**;
+14 added tests. The release inventory and its six checks still pass. The AppKit
+status text changed but no Mac build or physical action was possible in Linux.
+Controller/UI Resume, replacement admission, general actions and all real model,
+Mac/current-profile/release gates remain open. The owner goal remains stopped.
+
 ## Pending release dependency inventory, 1 October 2026
 
 `codex/release-dependency-inventory`, stacked on #66 at `3b6c6a8`.

@@ -9,6 +9,23 @@ each implementation slice lands.
 
 ## New-chat resume checkpoint — 1 October 2026
 
+**Native controller continuation:** branch `codex/native-controller-actor`,
+stacked on `codex/release-dependency-inventory` (#67) at `076c241`.
+Implementation `54c3f0d`, [draft PR #68](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/68)
+targets `codex/release-dependency-inventory` (#67).
+The [native fixture controller](NATIVE_CONTROLLER_ACTOR.md) now executes its
+existing NAVIGATE/LOCATE/OPEN commands through the persistent actor rather than
+the legacy fixed loop. Paused actors retain ownership; explicit Stop targets
+the retained fixture task. Unfinished durable tasks block every controller
+surface after restart, even without unknown effects; native transport operation
+settlement precedes journal shutdown. Linux typecheck and **377 passed, zero
+failed, two Mac-only skips (379 total)**; 14 added tests. Inventory consistency
+and six focused release checks remain green. The AppKit status strings changed
+but no Mac compilation or live qualification ran. Next: controller/panel fresh
+recovery and Resume intent, replacement admission, general legal actions and
+qualified primary CLM. Existing-profile Chrome and release/Mac gates stay open.
+Keep the owner goal stopped.
+
 **Release inventory continuation:** branch `codex/release-dependency-inventory`,
 stacked on `codex/clm-artifact-preflight` (#66) at `3b6c6a8`.
 Implementation commit `1673db7` is pushed and verified on the remote.

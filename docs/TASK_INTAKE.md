@@ -25,3 +25,10 @@ LOCATE/OPEN and existing-Chrome grant fields without opening apps or browsers.
 `npm run build:native-dev` compiles the integration; `npm run check` exercises
 the controller's independent authority checks. A live panel and action test
 remains a separate owner gate. See [voice test](VOICE_COMPUTER_USE_TEST.md).
+
+The controller now routes the existing Documents/LOCATE/OPEN intents through the
+[persistent native fixture actor](NATIVE_CONTROLLER_ACTOR.md). A paused task
+keeps intake blocked across every surface and restart. An explicit Stop of the
+retained fixture actor can release intake after its worker fence and operation
+settle, provided no effect remains uncertain. Resume/replacement intent is still
+not exposed by the panel.

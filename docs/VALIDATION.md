@@ -1,5 +1,37 @@
 # Initial foundation validation
 
+## Native fixture controller actor, 1 October 2026
+
+`codex/native-controller-actor`, based on #67 at `076c241`.
+Implementation `54c3f0d`, [draft PR #68](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/68),
+targeting `codex/release-dependency-inventory` (#67).
+Pinned Linux Node 26.5.0 and official Playwright 1.63.0 Chromium/headless-shell
+revision 1243, using ignored `.build/playwright` as `PLAYWRIGHT_BROWSERS_PATH`.
+
+- `npm run check`: typecheck passed; **377 passed, zero failed, two Mac-only
+  skips (379 total)**. Existing browser, Chrome, journal and signed native
+  child-process regressions ran successfully.
+- **14 added authority/controller tests** cover exact final commands and
+  outcome parameters, NAVIGATE/LOCATE/OPEN and already-matched evidence,
+  retained quota/checkpoint pauses, pre-admission Stop after an earlier task,
+  late preparations/dispatch receipts, failed fences, timeout ownership,
+  cross-surface intake blocking, paused startup with no unknown effect and
+  shutdown settlement before closing journal history.
+- Earlier focused signed native pipe, budget and actor checks passed **16/16**.
+  `npm run test:release-inventory` passed consistency and **6/6** focused tests;
+  dependency pins, inventory and lockfiles remain unchanged.
+- `git diff --check`: passed. Initial test development caught a missing journal
+  revision argument and a deferred test-helper initialization error; both were
+  fixed before the final passing full suite. An old focused run awaiting the
+  previous ready status was stopped; the budget test now expects the truthful
+  blocked-recovery state for a paused record.
+
+All native action workers in these tests are synthetic. AppKit status strings
+were updated for native pause/unfinished-task states, but no Swift/AppKit build
+toolchain exists here; native build/live UI qualification remains unrun. No Mac
+app, Accessibility/TCC/Keychain, microphone, model/GPU, paid service, owner Chrome
+profile or owner-goal resume ran. See [integration limits](NATIVE_CONTROLLER_ACTOR.md).
+
 ## Pending release dependency inventory, 1 October 2026
 
 `codex/release-dependency-inventory`, based on #66 at `3b6c6a8`.
