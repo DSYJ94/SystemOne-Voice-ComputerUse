@@ -19,6 +19,13 @@ private final class HoldToTalkButton: NSButton {
     }
 }
 
+/// Borderless glass bar that still accepts typing; Esc hides it.
+private final class GlassCommandPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+    override func cancelOperation(_ sender: Any?) { orderOut(nil) }
+}
+
 private func systemOneHotkeyHandler(_ event: EventHandlerCallRef?,
                                     _ eventRef: EventRef?,
                                     _ userData: UnsafeMutableRawPointer?) -> OSStatus {
@@ -92,8 +99,11 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var controllerOutput: Pipe?
     private var outputBuffer = Data()
     private var fixtureTaskPaused = false
-    /// Explicit per-task opt-in; off at every launch. Never applies to other surfaces.
+    /// Per-task opt-in; on only when the launcher enabled Jev for this session. Fixture surface only.
     private var jevChoiceCheckbox: NSButton?
+    /// Set only by the launcher (`npm start`); the panel shows it while active.
+    private let sessionDecisionProvider = ProcessInfo.processInfo.environment["SYSTEMONE_DECISION_PROVIDER"] == "jev"
+        ? "jev" : nil
     private var recoveryRequestID: String?
     private let recoveryUISession = UUID().uuidString.lowercased()
     private var recoveryAlert: NSAlert?
@@ -237,8 +247,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func makeCommandPanel() {
-        let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 540, height: 225),
-                             styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        let window = GlassCommandPanel(contentRect: NSRect(x: 0, y: 0, width: 680, height: 132),
+                                       styleMask: [.borderless, .fullSizeContentView],
+                                       backing: .buffered, defer: false)
         window.title = "SystemOne"
         window.delegate = self
         window.isFloatingPanel = true
@@ -250,58 +261,126 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                                      .canJoinAllSpaces, .fullScreenAuxiliary]
         window.isOpaque = false
         window.backgroundColor = .clear
+        window.hasShadow = true
+        window.isMovableByWindowBackground = true
         window.center()
-        let backdrop = NSVisualEffectView(frame: window.contentView?.bounds ?? .zero)
-        backdrop.material = .popover
-        backdrop.blendingMode = .behindWindow
-        backdrop.state = .active
-        backdrop.autoresizingMask = [.width, .height]
-        window.contentView = backdrop
-        let target = NSTextField(wrappingLabelWithString: "Open the panel from a target app.")
-        target.textColor = .secondaryLabelColor
-        commandTarget = target
-        let field = NSTextField()
-        field.placeholderString = "Fill Field with value · or Fill Field on https://… with value"
-        field.setAccessibilityLabel("Task request")
-        taskField = field
-        let enableVoice = NSButton(title: "Enable Voice", target: self,
-                                   action: #selector(enableVoice))
-        let talk = HoldToTalkButton(title: "Hold Talk", target: nil, action: nil)
+        let content = NSView()
+        let surface: NSView
+        if #available(macOS 26.0, *) {
+            let glass = NSGlassEffectView()
+            glass.cornerRadius = 26
+            glass.contentView = content
+            surface = glass
+        } else {
+            let blur = NSVisualEffectView()
+            blur.material = .hudWindow
+            blur.blendingMode = .behindWindow
+            blur.state = .active
+            blur.wantsLayer = true
+            blur.layer?.cornerRadius = 26
+            blur.layer?.masksToBounds = true
+            content.translatesAutoresizingMaskIntoConstraints = false
+            blur.addSubview(content)
+            NSLayoutConstraint.activate([
+                content.leadingAnchor.constraint(equalTo: blur.leadingAnchor),
+                content.trailingAnchor.constraint(equalTo: blur.trailingAnchor),
+                content.topAnchor.constraint(equalTo: blur.topAnchor),
+                content.bottomAnchor.constraint(equalTo: blur.bottomAnchor),
+            ])
+            surface = blur
+        }
+        window.contentView = surface
+
+        func symbolButton(_ name: String, _ label: String, size: CGFloat = 22) -> NSButton {
+            let button = NSButton()
+            button.isBordered = false
+            button.image = NSImage(systemSymbolName: name, accessibilityDescription: label)?
+                .withSymbolConfiguration(.init(pointSize: size, weight: .regular))
+            button.contentTintColor = .labelColor
+            button.setAccessibilityLabel(label)
+            button.toolTip = label
+            return button
+        }
+        let talk = HoldToTalkButton()
+        talk.isBordered = false
+        talk.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Hold to talk")?
+            .withSymbolConfiguration(.init(pointSize: 22, weight: .medium))
+        talk.contentTintColor = .controlAccentColor
+        talk.setAccessibilityLabel("Hold to talk")
+        talk.toolTip = "Hold to talk (on this Mac)"
         talk.onPress = { [weak self] in
             guard let self, self.hostActionsAvailable else { return }
             self.speech.start()
         }
         talk.onRelease = { [weak self] in self?.speech.stop() }
-        let run = NSButton(title: "Run request", target: self,
-                           action: #selector(runTaskRequest))
-        let stop = NSButton(title: "Stop", target: self, action: #selector(stop))
-        let fields = NSButton(title: "Show fields", target: self,
-                              action: #selector(showCapturedFields))
-        let permissions = NSButton(title: "Accessibility…", target: self,
-                                   action: #selector(openAccessibilityRecovery))
-        permissions.isHidden = true
-        accessibilityRecoveryButton = permissions
-        let actions = NSStackView(views: [enableVoice, talk, fields, run, stop])
-        actions.orientation = .horizontal
-        actions.spacing = 8
+        let field = NSTextField()
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.font = .systemFont(ofSize: 19)
+        field.placeholderString = "Tell SystemOne what to do…"
+        field.setAccessibilityLabel("Task request")
+        field.target = self
+        field.action = #selector(runTaskRequest)
+        field.cell?.sendsActionOnEndEditing = false
+        taskField = field
+        let chip = NSTextField(labelWithString: sessionDecisionProvider == "jev" ? " Jev " : "")
+        chip.font = .systemFont(ofSize: 11, weight: .semibold)
+        chip.textColor = .secondaryLabelColor
+        chip.wantsLayer = true
+        chip.layer?.cornerRadius = 6
+        chip.layer?.backgroundColor = NSColor.secondaryLabelColor.withAlphaComponent(0.15).cgColor
+        chip.isHidden = sessionDecisionProvider != "jev"
+        chip.toolTip = "Jev (TypeSafe) chooses steps; this sends the task and visible control labels to TypeSafe."
+        let more = symbolButton("ellipsis.circle", "More", size: 18)
+        more.target = self
+        more.action = #selector(showCommandMenu(_:))
+        let run = symbolButton("arrow.up.circle.fill", "Run request", size: 26)
+        run.contentTintColor = .controlAccentColor
+        run.target = self
+        run.action = #selector(runTaskRequest)
+        let stopButton = symbolButton("stop.circle", "Stop", size: 22)
+        stopButton.target = self
+        stopButton.action = #selector(stop)
+        let bar = NSStackView(views: [talk, field, chip, more, run, stopButton])
+        bar.orientation = .horizontal
+        bar.alignment = .centerY
+        bar.spacing = 12
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let status = NSTextField(wrappingLabelWithString:
-            "Voice stays on this Mac. Review the final transcript before running.")
+            "Hold the mic to speak, or type. Voice stays on this Mac.")
+        status.font = .systemFont(ofSize: 12)
         status.textColor = .secondaryLabelColor
+        status.maximumNumberOfLines = 2
         status.setAccessibilityLabel("Task status")
         commandStatus = status
-        let stack = NSStackView(views: [target, field, actions, permissions, status])
+        let target = NSTextField(labelWithString: "Open the panel from a target app.")
+        target.font = .systemFont(ofSize: 11)
+        target.textColor = .tertiaryLabelColor
+        target.lineBreakMode = .byTruncatingTail
+        commandTarget = target
+        let permissions = NSButton(title: "Fix Accessibility…", target: self,
+                                   action: #selector(openAccessibilityRecovery))
+        permissions.bezelStyle = .inline
+        permissions.isHidden = true
+        accessibilityRecoveryButton = permissions
+        let footer = NSStackView(views: [status, permissions])
+        footer.orientation = .horizontal
+        footer.alignment = .firstBaseline
+        footer.spacing = 8
+        let stack = NSStackView(views: [bar, footer, target])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 12
+        stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
-        backdrop.addSubview(stack)
+        content.addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor, constant: 18),
-            stack.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor, constant: -18),
-            stack.centerYAnchor.constraint(equalTo: backdrop.centerYAnchor),
-            target.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            field.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            status.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 22),
+            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -18),
+            stack.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+            bar.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            footer.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),
+            target.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),
         ])
         speech.onText = { [weak self] text, isFinal in
             self?.taskField?.stringValue = text
@@ -311,6 +390,19 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self?.commandStatus?.stringValue = message
         }
         commandPanel = window
+    }
+
+    @objc private func showCommandMenu(_ sender: NSButton) {
+        let menu = NSMenu()
+        for (title, action) in [("Enable Voice", #selector(enableVoice)),
+                                ("Show Fields in Target App", #selector(showCapturedFields)),
+                                ("Developer Tools", #selector(openDeveloperPanel)),
+                                ("Accessibility…", #selector(openAccessibilityRecovery))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -442,7 +534,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let jevChoice = NSButton(checkboxWithTitle:
             "Let Jev choose each fixture step (sends this synthetic window's title and button labels to TypeSafe)",
             target: nil, action: nil)
-        jevChoice.state = .off
+        jevChoice.state = sessionDecisionProvider == "jev" ? .on : .off
         jevChoice.setAccessibilityLabel("Let the Jev model choose fixture steps; sends fixture text to TypeSafe")
         jevChoiceCheckbox = jevChoice
         let nativeActions = NSStackView(views: [access, inspect, nativeFill])
@@ -833,6 +925,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 default: text = "Jev was not confident or unavailable (\(probability)). Nothing was pressed."
                 }
                 statusField?.stringValue = text
+                commandStatus?.stringValue = text
                 nativeOutput?.string = (nativeOutput?.string ?? "") + "\n" + text
                 continue
             }
@@ -1090,6 +1183,27 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         let text = taskField?.stringValue ?? ""
+        if let fixture = Self.fixtureIntent(text) {
+            // Fixture admission binds typed provenance; voice stays a reviewable transcript.
+            guard finalSpeechText != text else {
+                commandStatus?.stringValue = "Fixture tasks take typed requests for now. Type it, then press Return."
+                return
+            }
+            guard hasAccessibilityAccess() else {
+                showAccessibilityDenied()
+                return
+            }
+            accessibilityRecoveryButton?.isHidden = true
+            guard taskIntake.submit(fixture,
+                send: { [weak self] in self?.send(self?.withDecisionChoice($0) ?? $0, through: input) == true }) else {
+                commandStatus?.stringValue = "Could not send the fixture request to the controller."
+                return
+            }
+            commandStatus?.stringValue = jevChoiceCheckbox?.state == .on
+                ? "Jev is choosing each step in SystemOne Fixture…"
+                : "Running the scripted SystemOne Fixture steps…"
+            return
+        }
         if let managed = ScopedManagedFill.parse(text) {
             let intent = DevTaskIntake.Intent.managedFill(url: managed.url,
                 field: managed.fieldLabel, value: managed.value)
@@ -1138,6 +1252,21 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         commandStatus?.stringValue = "Observing the captured app and exact field…"
+    }
+
+    /// Plain phrases for the synthetic fixture only ("open Budget.xlsx", "go to Documents").
+    static func fixtureIntent(_ text: String) -> DevTaskIntake.Intent? {
+        let phrase = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let starts = { (verbs: [String]) in verbs.contains { phrase.hasPrefix($0 + " ") } }
+        if phrase.contains("budget") {
+            if starts(["open"]) { return .fixtureFile(open: true) }
+            if starts(["locate", "find", "select", "show"]) { return .fixtureFile(open: false) }
+            return nil
+        }
+        if phrase.contains("documents"), starts(["go to", "open", "show", "navigate to"]) {
+            return .fixtureDocuments
+        }
+        return nil
     }
 
     func handleGlobalHotkey(_ id: UInt32) {

@@ -49,10 +49,15 @@ own_dev=$(native_mock_pids_for_binary "$binary") || {
   print -u2 'Could not verify whether this SystemOne Dev build is already running.'
   exit 1
 }
+# The launcher may enable a decision provider for this session only.
+session_env=()
+if [[ ${SYSTEMONE_DECISION_PROVIDER:-} == jev ]]; then
+  session_env=(--env SYSTEMONE_DECISION_PROVIDER=jev)
+fi
 if [[ -n "$own_dev" ]]; then
-  open "$app_dir"
+  open "${session_env[@]}" "$app_dir"
 else
-  open -n "$app_dir"
+  open -n "${session_env[@]}" "$app_dir"
 fi
 for (( attempt = 0; attempt < 30; attempt++ )); do
   own_dev=$(native_mock_pids_for_binary "$binary") || exit 1

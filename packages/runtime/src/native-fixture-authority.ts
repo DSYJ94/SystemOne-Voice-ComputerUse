@@ -40,7 +40,8 @@ interface Pending {
 
 /** Native controller intake for the existing fixed fixture commands. The actor
  * owns execution after admission; this wrapper never reconstructs a capability
- * from persisted JSON or enables a model/general native action. */
+ * from persisted JSON or enables a general native action. A caller-supplied
+ * decision may choose among fixture controls; every press is still verified. */
 export class NativeFixtureAuthority {
   readonly #journal: AttemptJournal;
   readonly #worker: NativePressWorker;

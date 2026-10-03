@@ -1,6 +1,6 @@
 # Jev-chosen fixture steps (owner test)
 
-Added 3 October 2026. With a checkbox in the development app, Jev
+Added 3 October 2026. With `npm start` (or the Developer Tools checkbox), Jev
 (`jev-1.13.0`, TypeSafe) chooses each step of the synthetic fixture workflow.
 Without the checkbox, the fixed script chooses. Only the bundled
 SystemOne Fixture app is involved. No real app, file or browser profile is
@@ -28,16 +28,22 @@ touched.
 
 ## Steps
 
-1. Quit any running SystemOne Dev and Fixture apps (Cmd-Q).
-2. `npm run run:native-mock`, then choose Reset in the Fixture window.
-3. `npm run run:native-dev`. The command rebuilds the app when sources
-   changed. An ad-hoc rebuild can invalidate the Accessibility grant; use the
-   panel's Accessibility… button to re-grant it to
+1. `npm start`. It checks Node 26, confirms the Keychain key against
+   TypeSafe without printing it, builds what is stale, opens a fresh
+   SystemOne Fixture window, and restarts SystemOne Dev with Jev enabled for
+   this session (`SYSTEMONE_DECISION_PROVIDER=jev`, shown as a **Jev** chip).
+2. Press Control-Option-Space. The glass command bar appears in the centre.
+3. Type `open Budget.xlsx`, `locate Budget.xlsx` or `go to Documents`, then
+   press Return. Each step shows `Jev chose “…” (97%)` under the bar, then the
+   verified result. Control-Option-Escape or the stop button stops the task.
+4. If the bar reports that this build is not authorized (an ad-hoc rebuild
+   drops the grant), use **⋯ → Accessibility…** and grant it to
    `.build/native-dev/SystemOne Dev.app`.
-4. In Developer Tools, tick **Let Jev choose each fixture step**, then click
-   **Documents**, **Locate Budget.xlsx** or **Open Budget.xlsx**.
-5. Expect one `Jev chose …` line per step, then the usual verified status.
-   Stop (Control-Option-Escape) works as before.
+
+To run the workflow again, use the Fixture window's **Reset**. Fixture tasks
+accept typed requests only for now; a spoken transcript is refused with a
+message. The Developer Tools window (**⋯ → Developer Tools**) keeps the
+older buttons and the per-task Jev checkbox.
 
 Limits: this is a synthetic fixture with development thresholds. It does not
 qualify B22, calibration, privacy review or any v1 gate. Real apps still use
