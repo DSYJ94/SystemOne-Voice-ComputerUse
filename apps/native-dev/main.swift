@@ -1395,9 +1395,14 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             capturedApp = (bundleID, frontmost.processIdentifier, launchDate)
             commandTarget?.stringValue = "Target: \(name) (\(bundleID))."
             focusField?.stringValue = "Previously focused: \(name) (PID \(frontmost.processIdentifier)). Select a target explicitly."
+        } else if let last = lastExternalApp, !last.isTerminated, let bundleID = last.bundleIdentifier,
+                  let launchDate = last.launchDate {
+            // Opened while SystemOne was in front: act on the app the user was just in.
+            capturedApp = (bundleID, last.processIdentifier, launchDate)
+            commandTarget?.stringValue = "Target: \(last.localizedName ?? bundleID)."
         } else {
             capturedApp = nil
-            commandTarget?.stringValue = "No target app captured. Focus an app, then reopen this panel."
+            commandTarget?.stringValue = "No app in front yet. Ask to open a site or app, or switch to one first."
             focusField?.stringValue = "No external app captured. Enter the target explicitly."
         }
         NSApp.activate(ignoringOtherApps: true)

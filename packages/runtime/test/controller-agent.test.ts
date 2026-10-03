@@ -60,3 +60,34 @@ test('Stop while the agent is still starting is clean and never blocks the next 
   await waitFor(() => has(second, 'agent_done') || has(second, 'blocked_recovery') || has(second, 'error'));
   assert.equal(has(second, 'agent_done'), true);
 });
+
+test('a paused agent task never blocks the next request', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'systemone-controller-agent-paused-'));
+  const journal = new AttemptJournal(join(root, 'attempts.sqlite'));
+  const phases: { id: string; phase: string }[] = [];
+  let calls = 0;
+  let controller!: NativeManagedController;
+  controller = new NativeManagedController(journal, (id, phase) => { phases.push({ id, phase }); }, true, undefined,
+    (message: Record<string, JSONValue>) => {
+      if (message.type === 'agent_ax_request') queueMicrotask(() => controller.receive(Buffer.from(JSON.stringify({
+        type: 'agent_ax_reply', requestId: message.requestId, ok: true, value: { app: 'Notes', bundleId: 'com.apple.Notes',
+          pid: 9, windowTitle: 'Notes', url: '', elements: [], truncated: false, signature: 's' } }))));
+      if (message.type === 'browse_proposal') queueMicrotask(() => controller.receive(Buffer.from(JSON.stringify({
+        type: 'confirm_step', requestId: randomUUID(), targetRequestId: message.requestId,
+        proposalId: message.proposalId, allow: true }))));
+    }, undefined, false, undefined, undefined, async () => ({ async select(set) {
+      // First task abstains (pauses); the second finishes.
+      return ++calls === 1 ? null : (set.candidates.find(c => c.operation === 'finish')?.candidateId as string);
+    } }));
+  t.after(async () => { await controller.close(); rmSync(root, { recursive: true, force: true }); });
+  const has = (id: string, phase: string) => phases.some(p => p.id === id && p.phase === phase);
+  const first = randomUUID();
+  controller.receive(Buffer.from(JSON.stringify(agent(first, 'do something unclear'))));
+  await waitFor(() => has(first, 'agent_paused'));
+  await waitFor(() => has(first, 'ready') || has(first, 'blocked_recovery'));
+  const second = randomUUID();
+  controller.receive(Buffer.from(JSON.stringify(agent(second, 'play the video'))));
+  await waitFor(() => has(second, 'agent_done') || has(second, 'blocked_recovery') || has(second, 'error'));
+  assert.equal(has(second, 'agent_done'), true);
+  assert.equal(journal.getTaskState(first), 'cancelled');
+});

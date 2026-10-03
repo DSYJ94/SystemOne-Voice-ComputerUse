@@ -543,6 +543,22 @@ export class NativeManagedController {
       ? new NativeFixtureAuthority(journal, nativeWorker) : undefined;
     journal.recoverAfterRestart();
     portalStore?.recoverAfterRestart();
+    this.#releaseUnresumable();
+  }
+
+  /** Browse and agent tasks never resume (the user just asks again), so a
+   * paused one with no unresolved effect must not block new requests forever.
+   * Fixture tasks keep their explicit recovery path. */
+  #releaseUnresumable(): void {
+    if (this.#runs.active) return;
+    for (const taskId of this.#journal.pendingTaskIds()) {
+      const record = this.#journal.getTaskRecord(taskId);
+      const policy = record?.admission?.policyRevision;
+      if (record?.state === 'paused' && this.#journal.unresolvedAttempts(taskId).length === 0
+        && (policy === 'managed-browse-confirmed-v1' || policy === 'universal-agent-confirmed-v1')) {
+        this.#journal.cancelTask(taskId);
+      }
+    }
   }
 
   startupPhase(): Phase {
@@ -665,6 +681,7 @@ export class NativeManagedController {
     if (this.#runs.active) {
       this.#send(request.requestId, 'busy'); return;
     }
+    this.#releaseUnresumable();
     if (this.#workerFenceFailed || this.#nativeAuthority?.needsRecovery
       || this.#pressAuthority?.needsRecovery
       || [...this.#chromeAuthorities.values()].some(x => x.needsRecovery)
