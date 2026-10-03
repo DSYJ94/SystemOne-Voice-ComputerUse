@@ -28,7 +28,9 @@ binds a registered native-UI prompt, consumes its exact Resume intent and then
 requires fresh actionable observations for subsequent execution. Stop or
 correction closes pending prompts and fences late observations/receipts.
 Correction reaches the actual workflow Stop barrier after cancelling the old
-revision; replacement admission is still a separate, unfinished integration.
+revision. [Fixture replacement admission](NATIVE_TASK_REPLACEMENT.md) now
+transfers a changed paused goal into a fresh child after that settled fence.
+General and active-operation replacement remain open.
 
 ## Scripted browser continuation
 
@@ -66,13 +68,15 @@ effect history; changed scopes, duplicate controls and unmatched predicates paus
 These actor checks use a synthetic worker. The development controller now routes
 its fixture NAVIGATE/LOCATE/OPEN requests through this actor, retains pause/Stop
 ownership and blocks new intake for unfinished durable tasks after restart.
-See [native controller integration](NATIVE_CONTROLLER_ACTOR.md). Controller/panel
-Resume, physical AX/permission qualification and worker lifecycle recovery remain open.
+See [native controller integration](NATIVE_CONTROLLER_ACTOR.md). The
+[Resume path](NATIVE_CONTROLLER_RECOVERY.md) and bounded fixture replacement are
+wired in source; physical AX/permission qualification and worker lifecycle
+recovery remain open.
 
 ## Remaining v1 work
 
-Connect recovery/correction intent to the native UI/controller and replacement
-admission, extend legal semantic actions beyond fixed fixtures, and qualify
+Extend recovery/correction beyond retained paused fixture actors, move native
+field fills under the actor, extend legal semantic actions, and qualify
 sleep/lock, persistent browser sessions and unknown-effect reconciliation.
 Prove existing-profile Chrome continuity and authenticated release workers.
 CLM decisions require their own artifact/calibration and closed-loop evidence.

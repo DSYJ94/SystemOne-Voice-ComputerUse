@@ -1,5 +1,37 @@
 # Initial foundation validation
 
+## Native fixture replacement admission, 1 October 2026
+
+`codex/native-task-replacement`, based on #69 at `4bcab66`.
+Implementation `244441d`, [draft PR #70](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/70),
+targeting `codex/native-controller-recovery` (#69).
+Pinned Linux Node 26.5.0 and official Playwright 1.63.0 revision 1243.
+
+- `npm run check`: typecheck passed; **407 passed, zero failed, two Mac-only
+  skips (409 total)**, including headless browser and signed worker regressions.
+- **19 added regressions** cover exact one-use correction transfer, ordinary
+  admission refusal, copied/unclaimed/replayed input, immutable source history,
+  next revisions, fresh limits/checkpoints, invalid/unchanged goals, failed fences,
+  unknown effects, transaction rollback, durable links across restart, forged
+  provenance/second children, unrelated paused history, cross-surface intake and
+  Stop during old fencing, child observation and after panel handoff.
+  Focused committed-input/lineage/authority/controller suites pass **49/49**.
+- `npm run test:release-inventory`: consistency and **6/6** checks pass;
+  dependency declarations and generated inventory are unchanged.
+- `git diff --check`: passed. An initial test incorrectly assumed a fresh child
+  inherited a recoverable checkpoint; corrected to assert empty history and
+  require a separately explicit changed revision. Full typecheck then caught
+  UUID-template inference in a helper; fixed before the passing full run.
+
+The Foundation intake check was extended for failed delivery, exact handoffs,
+revision progression, concurrent submissions, stale rejection and stale Ready,
+but was **not run**: no Swift/AppKit toolchain exists here. Sheet/focus/Stop timing
+and real AX worker behavior need a Mac build and live qualification. Native
+workers in these tests are synthetic. No owner app, microphone, TCC/Keychain,
+owner Chrome profile, model/GPU, paid service or owner journal mutation ran.
+The previous owner goal remains dropped. See [replacement limits](NATIVE_TASK_REPLACEMENT.md).
+
+
 ## Native fixture recovery controller and panel, 1 October 2026
 
 `codex/native-controller-recovery`, based on #68 at `d0482bc`.

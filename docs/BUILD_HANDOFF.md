@@ -9,7 +9,25 @@ each implementation slice lands.
 
 ## New-chat resume checkpoint — 1 October 2026
 
-**Current continuation:** branch `codex/native-controller-recovery`, based on
+**Latest continuation:** branch `codex/native-task-replacement`, based on
+`codex/native-controller-recovery` (#69) at `4bcab66`. Implementation `244441d`,
+[draft PR #70](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/70)
+targets `codex/native-controller-recovery` (#69). The
+[replacement admission milestone](NATIVE_TASK_REPLACEMENT.md) now transfers an
+exact correction command once after cancelling the retained paused fixture
+actor and confirming its settled worker fence. Fresh child admission and unique
+durable lineage are atomic; old admission/revision/budgets/history remain intact.
+The controller owns the transition across all surfaces and preserves Stop through
+panel ownership transfer. A Replace fixture goal sheet sends explicit next-revision
+commands; unchanged goals, unknown effects and failed fences do not admit a child.
+Linux typecheck and **407 passed, zero failed, two Mac-only skips (409 total)**;
+19 added regressions and six release inventory checks pass. The new Swift intake
+checks and AppKit sheet remain uncompiled/unqualified in Linux. Next source
+milestone: native field-fill persistent actor integration and semantic completion
+contracts. General/active/restart correction, CLM, Mac, existing-profile Chrome
+and release gates remain open. The previous owner goal stays dropped.
+
+**Previous continuation:** branch `codex/native-controller-recovery`, based on
 `codex/native-controller-actor` (#68) at `d0482bc`. Implementation `582b959`,
 [draft PR #69](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/69)
 targets `codex/native-controller-actor` (#68). Native fixture recovery now

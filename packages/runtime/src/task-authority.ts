@@ -3,7 +3,7 @@ import { receive } from '../../protocol/src/session.ts';
 import type { Message } from '../../protocol/src/contract.ts';
 import type { Endpoint, TaskRevision } from '../../protocol/src/session.ts';
 import { CommittedInputSession } from './committed-input.ts';
-import type { CommittedInput } from './committed-input.ts';
+import type { CommittedInput, CorrectionSource } from './committed-input.ts';
 
 const ID = /^[A-Za-z0-9_.:-]{1,160}$/;
 const DIGEST = /^[a-f0-9]{64}$/;
@@ -66,6 +66,8 @@ export class TaskAdmissionRegistry {
     this.#revision = Object.freeze({ ...revision });
     this.#inputSession = inputSession;
   }
+
+  get correctionSource(): CorrectionSource | undefined { return this.#inputSession.correctionSource; }
 
   admit(input: CommittedInput, draft: TaskAdmissionDraft): TaskAdmission {
     if (this.#closed) throw new ContractError('task admission registry closed');

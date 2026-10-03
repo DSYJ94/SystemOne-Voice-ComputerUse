@@ -281,3 +281,92 @@ test('exhausted decision budget cannot be reset by preparing recovery', async t 
   await assert.rejects(authority.prepareRecovery(input.requestId, 'panel-session'));
   assert.equal(worker.observations, observations); assert.equal(journal.getTaskProgress(input.requestId)!.decisionsUsed, 1);
 });
+
+function correction(input: NativeLocateRequest, mode: 'navigate' | 'locate' | 'open' = 'locate', revision = 2) {
+  const next = request(mode);
+  next.command.taskId = input.requestId; next.command.goalRevision = revision;
+  return next;
+}
+test('changed goal fences old actor before fresh replacement admission and records immutable lineage', async t => {
+  const { worker, journal, authority, input } = await pausedHarness(t);
+  const old = journal.getTaskRecord(input.requestId)!;
+  const next = correction(input);
+  worker.onObserve = () => { assert.deepEqual(worker.stops, [input.requestId]);
+    assert.equal(journal.getTaskState(input.requestId), 'cancelled'); };
+  assert.equal(await authority.replace(input.requestId, next, 'locate'), 'verified_locate');
+  const replaced = journal.getTaskRecord(next.requestId)!;
+  const cancelled = journal.getTaskRecord(input.requestId)!;
+  assert.deepEqual(worker.commits, ['Documents', 'Budget.xlsx']);
+  assert.deepEqual(cancelled.admission, old.admission); assert.deepEqual(cancelled.budget, old.budget);
+  assert.deepEqual(cancelled.progress!.checkpoints, old.progress!.checkpoints);
+  assert.equal(cancelled.goalRevision, 1); assert.equal(cancelled.correction!.replacementGoalRevision, 2);
+  assert.equal(cancelled.correction!.commandMessageId, next.command.messageId);
+  assert.equal(replaced.admission!.commandMessageId, next.command.messageId);
+  assert.equal(replaced.goalRevision, 2); assert.equal(replaced.admission!.outcomeKind, 'LOCATE');
+  assert.deepEqual(cancelled.replacement, { taskId: next.requestId });
+  assert.deepEqual(replaced.replaces, { taskId: input.requestId });
+  assert.equal(replaced.progress!.decisionsUsed, 1);
+});
+test('invalid or unchanged replacement commands leave the paused goal and prompt intact', async t => {
+  const { worker, journal, authority, input } = await pausedHarness(t);
+  const prompt = await authority.prepareRecovery(input.requestId, 'panel-session');
+  authority.presented(input.requestId, prompt.promptId, prompt.presentationDigest, prompt.uiSessionRef);
+  const before = worker.observations;
+  for (const update of [{ isFinal: false }, { goalRevision: 3 }, { taskId: 'other-task' },
+    { mode: 'dictation' }, { source: 'voice' }, { text: 'Locate personal data' }]) {
+    const next = correction(input); Object.assign(next.command, update);
+    await assert.rejects(authority.replace(input.requestId, next, 'locate'));
+  }
+  await assert.rejects(authority.replace(input.requestId, correction(input, 'open'), 'open'));
+  assert.equal(worker.observations, before); assert.deepEqual(worker.stops, []);
+  assert.equal(journal.getTaskState(input.requestId), 'paused');
+  assert.equal(await authority.resume(input.requestId, reply(prompt)), 'verified_open');
+});
+test('failed correction fence cancels old history but performs no replacement I/O or admission', async t => {
+  const { worker, journal, authority, input } = await pausedHarness(t);
+  const next = correction(input); const before = worker.observations; worker.stopResult = false;
+  assert.equal(await authority.replace(input.requestId, next, 'locate'), 'uncertain');
+  assert.equal(worker.observations, before); assert.equal(journal.getTaskRecord(next.requestId), undefined);
+  assert.equal(journal.getTaskState(input.requestId), 'cancelled'); assert.equal(authority.needsRecovery, true);
+  assert.equal(await authority.startOpen(request()), 'uncertain');
+});
+test('Stop during replacement scope discovery fences new task and prevents late admission', async t => {
+  const { worker, journal, authority, input } = await pausedHarness(t);
+  const prompt = await authority.prepareRecovery(input.requestId, 'panel-session');
+  authority.presented(input.requestId, prompt.promptId, prompt.presentationDigest, prompt.uiSessionRef);
+  const next = correction(input); const before = worker.observations; worker.observeGate = new Deferred();
+  const replacing = authority.replace(input.requestId, next, 'locate');
+  await waitFor(() => worker.observations > before);
+  assert.deepEqual(worker.stops, [input.requestId]);
+  await authority.stop(); assert.deepEqual(worker.stops, [input.requestId, next.requestId]);
+  worker.observeGate.resolve(); assert.equal(await replacing, 'stopped');
+  assert.equal(journal.getTaskRecord(next.requestId), undefined);
+  await assert.rejects(authority.resume(input.requestId, reply(prompt)));
+  assert.deepEqual(worker.commits, ['Documents']);
+});
+test('replacement pauses without inherited checkpoints and admits the next changed revision explicitly', async t => {
+  const { worker, journal, authority, input } = await pausedHarness(t);
+  const next = correction(input); worker.duplicate = true;
+  assert.equal(await authority.replace(input.requestId, next, 'locate'), 'paused');
+  assert.equal(authority.taskId, next.requestId); assert.equal(journal.getTaskState(next.requestId), 'paused');
+  assert.deepEqual(journal.getTaskProgress(next.requestId)!.checkpoints, []);
+  await assert.rejects(authority.prepareRecovery(input.requestId, 'panel-session'));
+  await assert.rejects(authority.prepareRecovery(next.requestId, 'panel-session'), /checkpoint/);
+  worker.duplicate = false;
+  const third = correction(next, 'navigate', 3);
+  assert.equal(await authority.replace(next.requestId, third, 'navigate'), 'already_matched');
+  assert.equal(journal.getTaskRecord(third.requestId)!.goalRevision, 3);
+  assert.deepEqual(journal.getTaskRecord(third.requestId)!.replaces, { taskId: next.requestId });
+  assert.deepEqual(worker.commits, ['Documents']);
+});
+
+test('unknown old effect survives correction and prevents all replacement observations', async t => {
+  const { worker, journal, authority } = harness(t); worker.verification = false;
+  const input = request(); assert.equal(await authority.startOpen(input), 'uncertain');
+  const next = correction(input); const observations = worker.observations;
+  assert.equal(await authority.replace(input.requestId, next, 'locate'), 'uncertain');
+  assert.equal(journal.getTaskState(input.requestId), 'cancelled');
+  assert.equal(journal.unresolvedAttempts(input.requestId).length, 1);
+  assert.equal(journal.getTaskRecord(next.requestId), undefined);
+  assert.equal(worker.observations, observations); assert.deepEqual(worker.stops, [input.requestId]);
+});

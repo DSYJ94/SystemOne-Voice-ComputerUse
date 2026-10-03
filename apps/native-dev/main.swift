@@ -91,6 +91,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var controllerInput: Pipe?
     private var controllerOutput: Pipe?
     private var outputBuffer = Data()
+    private var fixtureTaskPaused = false
     private var recoveryRequestID: String?
     private let recoveryUISession = UUID().uuidString.lowercased()
     private var recoveryAlert: NSAlert?
@@ -408,8 +409,13 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         fixtureOpen.setAccessibilityLabel("Open synthetic Documents/Budget.xlsx")
         let fixtureRecovery = NSButton(title: "Check recovery", target: self,
             action: #selector(checkNativeRecovery))
+        let fixtureReplacement = NSButton(title: "Replace fixture goal…", target: self,
+            action: #selector(replaceNativeFixture))
+        let fixtureRecoveryActions = NSStackView(views: [fixtureRecovery, fixtureReplacement])
+        fixtureRecoveryActions.orientation = .horizontal
+        fixtureRecoveryActions.spacing = 8
         let fixtureActions = NSStackView(views: [fixtureDocuments, fixtureLocate,
-                                                 fixtureOpen, fixtureRecovery])
+                                                 fixtureOpen])
         fixtureActions.orientation = .horizontal
         fixtureActions.spacing = 8
         let nativeActions = NSStackView(views: [access, inspect, nativeFill])
@@ -446,7 +452,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let stack = NSStackView(views: [shortcuts, focus, heading, explanation,
                                         url, label, value, status, actions, portal, nativeHeading,
                                         nativeExplanation, bundle, nativeLabel,
-                                        nativeValue, nativeActions, fixtureActions,
+                                        nativeValue, nativeActions, fixtureActions, fixtureRecoveryActions,
                                         regionActions, scroll,
                                         chromeHeading, chromeExplanation,
                                         chromeLabel, chromeValue, chromeFill])
@@ -716,6 +722,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 statusField?.stringValue = "Existing Chrome tab observed. No action was sent."
                 continue
             }
+            if object["type"] as? String == "native_replacement_task" {
+                if taskIntake.acceptReplacement(object) { dismissRecoverySheet() }
+                continue
+            }
             if object["type"] as? String == "native_recovery_prompt" {
                 presentNativeRecovery(object)
                 continue
@@ -738,7 +748,21 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 : "Earlier task unresolved. Inspect the private task record before starting again."
             return
         }
+        if requestID == taskIntake.replacementRequestID {
+            taskIntake.rejectReplacement(requestID: requestID)
+            statusField?.stringValue = "Replacement rejected or blocked. Inspect the current task state."
+            commandStatus?.stringValue = statusField?.stringValue ?? "Replacement blocked."
+            return
+        }
         guard requestID == activeRequestID || requestID == stopRequestID else { return }
+        if requestID == activeRequestID {
+            if ["native_paused", "paused_budget", "blocked_recovery"].contains(phase) {
+                fixtureTaskPaused = true
+            } else if ["ready", "stopped", "replacing_native_task", "observing_native_navigation",
+                       "observing_native_locate", "observing_native_open"].contains(phase) {
+                fixtureTaskPaused = false
+            }
+        }
         switch phase {
         case "starting": statusField?.stringValue = "Opening a fresh managed Chromium profile…"
         case "observing": statusField?.stringValue = activeSurface == .managedNavigation
@@ -771,6 +795,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             statusField?.stringValue = "Verified: INV-105 was found, opened, downloaded and saved in SystemOne-Dev/fixture-output."
         case "portal_paused":
             statusField?.stringValue = "Fixture workflow paused. Inspect the private task record before retrying."
+        case "replacing_native_task":
+            statusField?.stringValue = "Fencing the old fixture task before executing the replacement goal…"
         case "checking_native_recovery":
             statusField?.stringValue = "Checking the native fixture checkpoint…"
         case "native_paused":
@@ -818,6 +844,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "busy": statusField?.stringValue = "A task is already active."
         case "error": statusField?.stringValue = "The request was rejected or failed. No success is claimed."
         case "ready":
+            if requestID == activeRequestID { stopRequestID = nil }
             taskIntake.releaseIfReady(requestID: requestID)
         default: statusField?.stringValue = "Unrecognized controller status."
         }
@@ -1248,11 +1275,38 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusField?.stringValue = "Existing Chrome request sent to the local controller…"
     }
 
+    @objc private func replaceNativeFixture() {
+        guard let surface = activeSurface,
+              [DevTaskIntake.Surface.nativeNavigation, .nativeLocate, .nativeOpen].contains(surface),
+              let target = activeRequestID, let window = panel, let input = controllerInput,
+              stopRequestID == nil, taskIntake.replacementRequestID == nil, fixtureTaskPaused else { return }
+        dismissRecoverySheet()
+        let choices: [(String, DevTaskIntake.Intent)] = [
+            ("Navigate to Documents", .fixtureDocuments),
+            ("Locate Budget.xlsx", .fixtureFile(open: false)),
+            ("Open Budget.xlsx", .fixtureFile(open: true))].filter { $0.1.surface != surface }
+        let alert = NSAlert()
+        alert.messageText = "Replace the paused synthetic fixture goal?"
+        alert.informativeText = "The old task will be cancelled and fenced first. Its earlier actions remain. The selected goal starts a fresh task with fresh limits."
+        alert.addButton(withTitle: "Keep Paused")
+        for choice in choices { alert.addButton(withTitle: choice.0) }
+        recoveryAlert = alert
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self, self.recoveryAlert === alert else { return }
+            self.recoveryAlert = nil
+            let index = response.rawValue - NSApplication.ModalResponse.alertSecondButtonReturn.rawValue
+            guard index >= 0, index < choices.count, self.activeRequestID == target,
+                  self.stopRequestID == nil else { return }
+            _ = self.taskIntake.replaceFixture(choices[index].1,
+                send: { self.send($0, through: input) })
+        }
+    }
+
     @objc private func checkNativeRecovery() {
         guard let surface = activeSurface,
               [DevTaskIntake.Surface.nativeNavigation, .nativeLocate, .nativeOpen].contains(surface),
               let target = activeRequestID, let input = controllerInput,
-              stopRequestID == nil, recoveryAlert == nil else { return }
+              stopRequestID == nil, recoveryAlert == nil, taskIntake.replacementRequestID == nil, fixtureTaskPaused else { return }
         let requestID = UUID().uuidString.lowercased()
         recoveryRequestID = requestID
         _ = send(["type": "prepare_native_recovery", "requestId": requestID,
@@ -1273,7 +1327,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
               object["actorRef"] as? String == "native-dev-ui",
               object["state"] as? String == "paused",
               let epoch = object["taskEpoch"] as? Int, epoch == 1,
-              let revision = object["goalRevision"] as? Int, revision == 1,
+              let revision = object["goalRevision"] as? Int, revision == taskIntake.activeGoalRevision,
               let promptID = object["promptId"] as? String,
               let digest = object["presentationDigest"] as? String,
               let checkpoint = object["checkpointRef"] as? String,

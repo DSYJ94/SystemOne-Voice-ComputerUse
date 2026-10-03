@@ -136,6 +136,41 @@ struct DevTaskIntakeCheck {
         precondition(chrome["grantId"] as? String == "grant-1")
         precondition(chromeCommand["text"] as? String ==
             "Fill Find invoice in existing Chrome tab http://127.0.0.1:1234/ with text: INV-105")
+        intake.releaseIfReady(requestID: intake.activeRequestID!)
+        precondition(intake.submit(.fixtureFile(open: true), send: { request in sent.append(request); return true }))
+        let sourceID = intake.activeRequestID!
+        precondition(!intake.replaceFixture(.fixtureFile(open: true), send: { _ in fatalError("unchanged goal sent") }))
+        precondition(!intake.replaceFixture(.fixtureDocuments, send: { _ in false }))
+        precondition(intake.replacementRequestID == nil && intake.activeRequestID == sourceID)
+        precondition(intake.replaceFixture(.fixtureFile(open: false), send: { request in sent.append(request); return true }))
+        let replacementID = intake.replacementRequestID!
+        let request = sent.last!
+        let payload = request["replacement"] as! [String: Any]
+        let correction = payload["command"] as! [String: Any]
+        precondition(correction["taskId"] as? String == sourceID && correction["goalRevision"] as? Int == 2)
+        precondition(intake.activeRequestID == sourceID)
+        precondition(!intake.replaceFixture(.fixtureDocuments, send: { _ in fatalError("concurrent replacement sent") }))
+        var handoff: [String: Any] = ["type": "native_replacement_task", "requestId": replacementID,
+            "targetRequestId": sourceID, "taskId": replacementID, "taskEpoch": 1, "goalRevision": 2, "mode": "locate"]
+        handoff["goalRevision"] = 3
+        precondition(!intake.acceptReplacement(handoff))
+        handoff["goalRevision"] = 2
+        precondition(intake.acceptReplacement(handoff))
+        precondition(intake.activeRequestID == replacementID && intake.activeSurface == .nativeLocate)
+        precondition(intake.activeGoalRevision == 2 && intake.replacementRequestID == nil)
+        precondition(!intake.acceptReplacement(handoff))
+        intake.releaseIfReady(requestID: sourceID)
+        precondition(intake.activeRequestID == replacementID)
+        precondition(intake.replaceFixture(.fixtureDocuments, send: { request in sent.append(request); return true }))
+        let rejectedID = intake.replacementRequestID!
+        let thirdPayload = sent.last!["replacement"] as! [String: Any]
+        precondition((thirdPayload["command"] as! [String: Any])["goalRevision"] as? Int == 3)
+        intake.rejectReplacement(requestID: "stale")
+        precondition(intake.replacementRequestID == rejectedID)
+        intake.rejectReplacement(requestID: rejectedID)
+        precondition(intake.replacementRequestID == nil && intake.activeRequestID == replacementID)
+        intake.releaseIfReady(requestID: replacementID)
+        precondition(intake.activeGoalRevision == 1)
         print("task intake keeps one writer and binds committed command bytes")
     }
 }

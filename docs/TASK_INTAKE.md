@@ -31,5 +31,7 @@ The controller now routes the existing Documents/LOCATE/OPEN intents through the
 keeps intake blocked across every surface and restart. An explicit Stop of the
 retained fixture actor can release intake after its worker fence and operation
 settle, provided no effect remains uncertain. The [Check recovery / Resume sheet](NATIVE_CONTROLLER_RECOVERY.md) is now wired
-for the retained same-process fixture actor. Replacement admission and restart
-reconstruction remain open; Mac panel behavior is unqualified.
+for the retained same-process fixture actor. The [Replace fixture goal sheet](NATIVE_TASK_REPLACEMENT.md) submits an explicit
+next-revision correction and adopts only the exact linked child after host
+admission. General/active replacement and restart reconstruction remain open;
+Mac panel behavior is unqualified.

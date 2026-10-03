@@ -54,7 +54,9 @@ panel, live Accessibility, voice or owner-profile Chrome.
 
 The [controller/panel recovery path](NATIVE_CONTROLLER_RECOVERY.md) now exposes
 fresh scoped recovery reads and exact user Resume for a retained fixture actor.
-Connect replacement admission and correction next. General
+The [bounded replacement path](NATIVE_TASK_REPLACEMENT.md) now connects explicit
+changed fixture goals to fresh child admission after cancellation and fencing.
+Extend persistent execution to native field fills next. General
 native/browser actions, native field task actors, browser reconstruction,
 unknown-effect reconciliation, sleep/lock, qualified primary CLM and authenticated
 release workers remain open. Older paused non-fixture records also block new

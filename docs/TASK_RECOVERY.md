@@ -67,16 +67,21 @@ diagnostic record. The original admission and goal revision remain immutable;
 late outcomes update old execution history without reactivation. Unknown effects
 still block replacement execution. There is no implied undo.
 
-The actor now coordinates cancellation with its workflow Stop barrier. This API
-consumes the command for the cancellation fence. It does **not** install
-or admit the replacement goal. A future actor must implement replacement
-admission/provenance and coordinate its adapter Stop barrier, pending proposal
-and permit revocation, prompt closure, task slot and browser projection. A journal
-fence alone cannot recall an operation already handed to an adapter.
+The actor coordinates cancellation with its workflow Stop barrier. The journal
+uses a distinct correction claim on the exact input; ordinary admission claims
+cannot transfer. [Native fixture replacement](NATIVE_TASK_REPLACEMENT.md) now
+performs one-use transfer into a fresh task after a settled successful fence,
+then atomically checks correction provenance and records unique durable lineage
+with child admission. The source record stays cancelled and immutable; general
+and active-operation replacement remain unimplemented. A journal fence alone
+cannot recall an operation already handed to an adapter.
 
 ## Remaining integration
 
-Extend the scripted actor with controller/UI intent and replacement admission.
+Extend correction beyond retained paused fixture tasks. Native field-fill and
+browser actor integration, active-operation correction and restart reconstruction
+remain open.
+
 The portal now rechecks results/detail predicates, reconciles history and issues
 an exact activation record after journal Resume. DOWNLOAD can continue from
 verified detail; a temporary receipt cannot be restored into a new browser
