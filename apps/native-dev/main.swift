@@ -120,9 +120,12 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var autoAllowTaskID: String?
     /// On by default when the launcher enabled Jev: the user can sit back.
     /// Risky steps (send, buy, delete, passwords…) always ask regardless.
-    private lazy var autoAllowSession = jevEnabled
+    private lazy var autoAllowSession = UserDefaults.standard.object(forKey: "autoAllowSteps") as? Bool ?? jevEnabled
     /// Owner-controlled, not a rule: ask before steps that look like send/buy/delete.
-    private var askBeforeRisky = true
+    private var askBeforeRisky = UserDefaults.standard.object(forKey: "askBeforeRisky") as? Bool ?? true
+    private let voice = SpokenReplies()
+    /// Listening briefly for a spoken yes/no after asking about a step.
+    private var listeningForAnswer = false
     private let universalAX = UniversalAX()
     private var recoveryRequestID: String?
     private let recoveryUISession = UUID().uuidString.lowercased()
@@ -244,6 +247,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // the Dock. Release packaging will use the agent-app lifecycle.
         NSApp.setActivationPolicy(.regular)
         installMainMenu()
+        voice.enabled = UserDefaults.standard.object(forKey: "speakReplies") as? Bool ?? true
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "S1 Dev"
         let menu = NSMenu()
@@ -476,6 +480,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ])
         speech.onText = { [weak self] text, isFinal in
             guard let self else { return }
+            if isFinal { self.listeningForAnswer = false }
             if isFinal, let pending = self.pendingProposal {
                 let reply = text.lowercased()
                 if reply.range(of: #"^(yes|yeah|yep|allow|go ahead|ok|okay|do it|sure)\b"#, options: .regularExpression) != nil {
@@ -562,7 +567,14 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                                         link("Developer tools", #selector(openDeveloperPanel))])
         tools.orientation = .horizontal
         tools.spacing = 6
-        let stack = NSStackView(views: [heading, jevRow, jevNote, autoRow, autoNote, riskyRow, voiceRow, axRow, advanced, tools])
+        let speakSwitch = NSSwitch()
+        speakSwitch.state = voice.enabled ? .on : .off
+        speakSwitch.target = self
+        speakSwitch.action = #selector(toggleSpeakReplies(_:))
+        let speakRow = row("Speak replies", nil)
+        speakRow.insertArrangedSubview(speakSwitch, at: 0)
+        let stack = NSStackView(views: [heading, jevRow, jevNote, autoRow, autoNote, riskyRow, speakRow, voiceRow, axRow,
+                                        advanced, tools])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
@@ -578,10 +590,33 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func toggleAskBeforeRisky(_ sender: NSSwitch) {
         askBeforeRisky = sender.state == .on
+        UserDefaults.standard.set(askBeforeRisky, forKey: "askBeforeRisky")
     }
 
     @objc private func toggleAutoAllow(_ sender: NSSwitch) {
         autoAllowSession = sender.state == .on
+        UserDefaults.standard.set(autoAllowSession, forKey: "autoAllowSteps")
+    }
+
+    @objc private func toggleSpeakReplies(_ sender: NSSwitch) {
+        voice.enabled = sender.state == .on
+        if !voice.enabled { voice.stop() }
+        UserDefaults.standard.set(voice.enabled, forKey: "speakReplies")
+    }
+
+    /// Says `question`, then listens about five seconds for "yes" or "no".
+    private func askAloud(_ question: String) {
+        voice.say(question) { [weak self] in
+            guard let self, self.pendingProposal != nil, self.speech.isAuthorized, !self.speech.isCapturing,
+                  self.hostActionsAvailable else { return }
+            self.listeningForAnswer = true
+            self.speech.start()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+                guard let self, self.listeningForAnswer else { return }
+                self.listeningForAnswer = false
+                if self.speech.isCapturing { self.speech.stop() }
+            }
+        }
     }
 
     @objc private func toggleJev(_ sender: NSSwitch) {
@@ -1164,6 +1199,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     : "Step \(step): Jev wants to \(action). Allow, or say “yes”."
                 approvalRow?.isHidden = false
                 commandPanel?.orderFrontRegardless()
+                askAloud(risky ? "Should I \(action)? Say yes or no." : "Shall I \(action)?")
                 continue
             }
             if object["type"] as? String == "decision" {
@@ -1325,9 +1361,11 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             pendingProposal = nil
             approvalRow?.isHidden = true
             statusField?.stringValue = "Done."
+            voice.say("Done.")
         case "agent_paused":
             pendingProposal = nil
             approvalRow?.isHidden = true
+            voice.say("I'm not sure what to do next. Try saying it another way.")
             statusField?.stringValue = "Paused: Jev wasn't sure what to do next, or a step was declined. Try rephrasing."
         case "verified_browse":
             browseKeptOpen = true
@@ -2161,6 +2199,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func stop() {
+        voice.stop()
+        listeningForAnswer = false
         dismissRecoverySheet()
         speech.cancel()
         if inspectionPending {

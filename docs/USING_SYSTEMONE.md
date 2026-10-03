@@ -54,6 +54,11 @@ When something goes wrong, run `npm run traces` and paste the output into
 the chat. It shows each recent request's steps, as recorded locally on your
 Mac.
 
+SystemOne talks back: it says "Done", asks "Should I …?" when a step needs
+your approval, and then listens about five seconds for "yes" or "no", with no
+hotkey needed. Turn this off with ⚙ "Speak replies". Settings are remembered
+between launches.
+
 `privately go to <site> …` uses an isolated Chromium window instead of your
 browser.
 
