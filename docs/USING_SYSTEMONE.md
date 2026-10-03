@@ -62,6 +62,30 @@ When something goes wrong, run `npm run traces` and paste the output into
 the chat. It shows each recent request's steps, as recorded locally on your
 Mac.
 
+### Collecting training data
+
+Every request is recorded on this Mac (in
+`~/Library/Application Support/SystemOne-Dev/traces`, readable only by you):
+each question put to Jev word for word (what it saw, every option, its
+probabilities), each step and whether the screen changed, and how the task
+ended. These records are the training data for a future SystemOne chooser
+trained on your own use.
+
+1. Use SystemOne normally, with real requests, phrased however you naturally
+   speak.
+2. After each task, press **👍 Did what I wanted** or **👎 Wrong** under the
+   bar. This is the label that matters most: a task can finish and still be
+   wrong.
+3. Every so often run `npm run traces:export`. It writes one dataset file
+   (one example per Jev question, labelled with what happened and your
+   verdict) to `~/Library/Application Support/SystemOne-Dev/datasets/` and
+   prints how many examples and 👍/👎 you have.
+
+The traces contain whatever was on screen (names, email subjects, page
+titles). They never leave the Mac and are never put in the repository; review
+a dataset before sharing it with anyone. Training itself needs an agreed plan
+(model, GPU, cost) and is not set up yet.
+
 SystemOne talks back: it says "Done", asks "Should I …?" when a step needs
 your approval, and then listens about five seconds for "yes" or "no", with no
 hotkey needed. Turn this off with ⚙ "Speak replies". Settings are remembered

@@ -128,6 +128,14 @@ interface ContinueBrowse {
   readonly decisionProvider: 'jev';
 }
 
+/** The user's verdict on a finished agent task (training label for its trace). */
+interface AgentFeedback {
+  readonly type: 'agent_feedback';
+  readonly requestId: string;
+  readonly targetRequestId: string;
+  readonly value: 'good' | 'bad';
+}
+
 interface ConfirmStep {
   readonly type: 'confirm_step';
   readonly requestId: string;
@@ -179,7 +187,7 @@ interface NativeRecoveryControl {
 
 type NativeRequest = ReplaceNativeField | ReplaceNativeFixture | NativeRecoveryControl | StartFill | StartNavigate | StartNativeFill | StartNativePress
   | StartNativeLocate | StartNativeOpen
-  | StartChromeFill | StartPortalWorkflow | StartBrowse | ContinueBrowse | StartAgent | ConfirmStep | Stop;
+  | StartChromeFill | StartPortalWorkflow | StartBrowse | ContinueBrowse | StartAgent | ConfirmStep | AgentFeedback | Stop;
 interface AgentProposalView {
   readonly step: number; readonly kind: string; readonly label: string; readonly destinationUrl: string | null;
   readonly pageUrl: string; readonly app: string; readonly risky: boolean;
@@ -217,7 +225,8 @@ function decisionProviderValid(value: Record<string, JSONValue>): boolean {
 }
 
 /** Per-task universal-agent selector, built only for an explicit agent request. */
-export type AgentDecisionFactory = (requestId: string, goal: string, context?: string) => Promise<AgentDecision>;
+export type AgentDecisionFactory = (requestId: string, goal: string, context?: string,
+  judgment?: (event: Record<string, JSONValue>) => void) => Promise<AgentDecision>;
 
 /** Per-task browse selector, built only for an explicit browse request. */
 export type BrowseDecisionFactory = (requestId: string, goal: string) => Promise<BrowseDecision>;
@@ -315,6 +324,14 @@ function requestFromLine(line: Uint8Array): NativeRequest {
     }
     return { type: 'continue_browse', requestId: value.requestId as string,
       targetRequestId: value.targetRequestId, command: value.command, decisionProvider: 'jev' };
+  }
+  if (value.type === 'agent_feedback') {
+    if (Object.keys(value).sort().join(',') !== 'requestId,targetRequestId,type,value'
+      || typeof value.targetRequestId !== 'string' || (value.value !== 'good' && value.value !== 'bad')) {
+      throw new ContractError('invalid agent feedback');
+    }
+    return { type: 'agent_feedback', requestId: value.requestId as string, targetRequestId: value.targetRequestId,
+      value: value.value };
   }
   if (value.type === 'confirm_step') {
     if (Object.keys(value).sort().join(',') !== 'allow,proposalId,requestId,targetRequestId,type'
@@ -515,6 +532,8 @@ export class NativeManagedController {
   readonly #agentAX: AgentAXClient;
   /** The previous agent request and what it did, for follow-ups (10 minutes). */
   #agentContext: { readonly text: string; readonly at: number } | undefined;
+  /** Trace writers of recent agent tasks, so a later 👍/👎 lands in the right file. */
+  readonly #traces = new Map<string, (event: Record<string, JSONValue>) => void>();
   #pendingStep: { readonly requestId: string; readonly proposalId: string;
     readonly resolve: (allow: boolean) => void } | undefined;
   readonly #nativeWorker: NativeFieldPipeWorker | undefined;
@@ -675,6 +694,11 @@ export class NativeManagedController {
     }
     if (request.type === 'continue_browse') {
       this.#continueBrowse(request); return;
+    }
+    if (request.type === 'agent_feedback') {
+      // Recorded only into that task's own private trace; never acted on.
+      this.#traces.get(request.targetRequestId)?.({ kind: 'feedback', value: request.value });
+      return;
     }
     if (request.type === 'confirm_step') {
       const pending = this.#pendingStep;
@@ -1242,6 +1266,8 @@ export class NativeManagedController {
     active.agentRun = true;
     let agentTask: { readonly summary: { readonly history: readonly string[]; readonly app: string;
       readonly url: string } } | undefined;
+    let trace: ((event: Record<string, JSONValue>) => void) | undefined;
+    let outcome = 'error';
     try {
       const command = request.command;
       if (command.type !== 'command' || (command.source !== 'text' && command.source !== 'voice')
@@ -1262,13 +1288,20 @@ export class NativeManagedController {
       if (route.kind !== 'interpret_command') throw new ContractError('not a command');
       const context = this.#agentContext && Date.now() - this.#agentContext.at < 600_000
         ? this.#agentContext.text : undefined;
-      const decision = await factory(request.requestId, route.input.text, context);
+      trace = agentTraceWriter(request.requestId, route.input.text);
+      if (trace) {
+        this.#traces.set(request.requestId, trace);
+        if (this.#traces.size > 20) this.#traces.delete(this.#traces.keys().next().value!);
+      }
+      // Read the screen while the request is being understood, not after.
+      const firstView = this.#agentAX.snapshot(request.requestId).catch(() => undefined);
+      const decision = await factory(request.requestId, route.input.text, context, trace);
       if (active.cancelled) return;
       // Jev picks the exact words to type (and a file name) from pieces of what was said.
       const goal = await refineGoal(route.input.text, parsed, decision.pickSpan?.bind(decision));
       if (active.cancelled) return;
       // "Reply in the chat" with no words: ask, rather than guess or wander.
-      if (goal.needsText) { this.#send(request.requestId, 'agent_needs_text'); return; }
+      if (goal.needsText) { outcome = 'needs_text'; this.#send(request.requestId, 'agent_needs_text'); return; }
       const parameters = [...(goal.typedText ? [bindCommandSpan(route.input, 'typed-text', goal.typedText)] : []),
         ...(goal.fileName ? [bindCommandSpan(route.input, 'file-name', goal.fileName)] : [])];
       const registry = new TaskAdmissionRegistry(revision, input);
@@ -1276,8 +1309,9 @@ export class NativeManagedController {
         outcomeKind: 'USER_CONFIRMATION', scopeRef: `agent-session:${request.requestId}`,
         completionVerifierRef: AGENT_VERIFIER, policyRevision: AGENT_POLICY,
         approvedEffects: ['READ', 'NAVIGATE', 'EXTERNAL_READ', 'LOCAL_EDIT', 'EXTERNAL_WRITE'], parameters });
-      const trace = agentTraceWriter(request.requestId, route.input.text);
+      const initialView = await firstView;
       const task = UniversalAgentTask.start(this.#journal, registry, admission, this.#agentAX, { goal, decision,
+        ...(initialView ? { initialView } : {}),
         ...(trace ? { trace } : {}),
         confirmation: { confirm: (proposal, signal) => this.#awaitConfirmation(request.requestId, proposal, signal) } });
       agentTask = task;
@@ -1290,6 +1324,7 @@ export class NativeManagedController {
       });
       if (active.cancelled) return;
       this.#send(request.requestId, result.state === 'completed' ? 'agent_done' : 'agent_paused');
+      outcome = result.state;
       const done = agentTask!.summary;
       this.#agentContext = { at: Date.now(), text: `the user asked “${String(command.text).slice(0, 200)}”; `
         + `${done.history.slice(-6).join(' ') || 'nothing was done.'} It ${result.state === 'completed' ? 'finished' : 'stopped'} in ${done.app}${
@@ -1297,6 +1332,7 @@ export class NativeManagedController {
     } catch {
       if (!active.cancelled) this.#send(request.requestId, 'error');
     } finally {
+      trace?.({ kind: 'end', outcome: active.cancelled ? 'stopped' : outcome });
       this.#pendingStep?.resolve(false); this.#pendingStep = undefined;
       this.#agentAX.cancelAll();
       active.browserFenced = true;
@@ -1575,12 +1611,12 @@ async function main(): Promise<void> {
     process.env.SYSTEMONE_MANAGED_HEADLESS === '1', worker,
     value => { process.stdout.write(`${JSON.stringify(value)}\n`); }, portalStore,
     process.env.SYSTEMONE_HOST_LIFECYCLE_REQUIRED === '1', fixtureDecisions, browseDecisions,
-    async (requestId, goal, context) => {
+    async (requestId, goal, context, judgment) => {
       const { execFileSync } = await import('node:child_process');
       const { createJevAgentDecision } = await import('../../providers/src/jev-agent-decision.ts');
       const apiKey = execFileSync('/usr/bin/security', ['find-generic-password', '-s', 'systemone-jev', '-w'],
         { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000 }).trim();
-      return createJevAgentDecision({ apiKey, goal, ...(context ? { context } : {}), report: event => {
+      return createJevAgentDecision({ apiKey, goal, ...(context ? { context } : {}), ...(judgment ? { judgment } : {}), report: event => {
         process.stdout.write(`${JSON.stringify({ type: 'decision', requestId, ...event })}\n`);
       } });
     });

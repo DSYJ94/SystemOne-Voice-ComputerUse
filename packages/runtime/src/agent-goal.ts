@@ -111,7 +111,7 @@ export function parseAgentGoal(text: string, apps: readonly string[]): AgentGoal
   const clipboard = /\b(?:copy|paste|clipboard)\b/iu.test(text);
   return Object.freeze({ typedText, fileName: null, quoted: !!quoted, url, app, clipboard, undo: /\bundo\b/iu.test(text),
     wantsFile: FILE_WORDS.test(text),
-    windows: /\b(?:windows?|minimi[sz]e|maximi[sz]e|full ?screen|zoom|hide|close|quit)\b/iu.test(text),
+    windows: /\b(?:windows?|minimi[sz]e|maximi[sz]e|full ?screen|zoom|hide|close|quit|half|move|resize|bigger|smaller|cent(?:er|re)|side)\b/iu.test(text),
     quit: /\b(?:quit|close|exit|shut|kill|terminate|get rid of|log ?out|sign ?out)\b/iu.test(text),
     newTab: /\bnew tab\b/iu.test(text),
     needsText: !typedText && !clipboard

@@ -120,6 +120,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var hotkeyDictation = false
     private var hotkeyPressedAt: Date?
     private var approvalRow: NSStackView?
+    /// 👍/👎 after a task: the label that makes its private trace useful for training.
+    private var feedbackRow: NSStackView?
+    private var feedbackTaskID: String?
     /// "Allow all" for one task, or the Settings switch for the whole session.
     /// Steps stay journaled, permitted one at a time and verified; Esc stops.
     private var autoAllowTaskID: String?
@@ -469,7 +472,15 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         approvals.spacing = 8
         approvals.isHidden = true
         approvalRow = approvals
-        let stack = NSStackView(views: [bar, footer, approvals, target])
+        let good = NSButton(title: "👍 Did what I wanted", target: self, action: #selector(feedbackGood))
+        let bad = NSButton(title: "👎 Wrong", target: self, action: #selector(feedbackBad))
+        for button in [good, bad] { button.bezelStyle = .inline; button.controlSize = .small }
+        let feedback = NSStackView(views: [good, bad])
+        feedback.orientation = .horizontal
+        feedback.spacing = 6
+        feedback.isHidden = true
+        feedbackRow = feedback
+        let stack = NSStackView(views: [bar, footer, approvals, feedback, target])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
@@ -1370,6 +1381,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             approvalRow?.isHidden = true
             statusField?.stringValue = "Done."
             voice.say("Done.")
+            askFeedback(requestID)
         case "agent_needs_text":
             pendingProposal = nil
             approvalRow?.isHidden = true
@@ -1380,6 +1392,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             approvalRow?.isHidden = true
             voice.say("I'm not sure what to do next. Try saying it another way.")
             statusField?.stringValue = "Paused: Jev wasn't sure what to do next, or a step was declined. Try rephrasing."
+            askFeedback(requestID)
         case "verified_browse":
             browseKeptOpen = true
             pendingProposal = nil
@@ -1928,6 +1941,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         accessibilityRecoveryButton?.isHidden = true
+        feedbackRow?.isHidden = true
+        feedbackTaskID = nil
         let me = ProcessInfo.processInfo.processIdentifier
         let target = capturedApp.flatMap { app in
             NSRunningApplication(processIdentifier: app.pid).flatMap { $0.isTerminated ? nil : $0 } }
@@ -1969,7 +1984,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                         // Nothing in front: Jev can still open a site or switch to an app.
                         reply(true, ["app": "no app", "bundleId": "", "pid": 0, "windowTitle": "", "url": "",
                                      "elements": [] as [Any], "truncated": false, "signature": "none",
-                                     "runningApps": UniversalAX.runningApps(), "windows": self.universalAX.windows()], nil)
+                                     "runningApps": UniversalAX.runningApps(), "windows": self.universalAX.windows(),
+                                     "installedApps": UniversalAX.installedApps()], nil)
                         return
                     }
                     var elements = snap.elements
@@ -1982,6 +1998,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                                  "signature": snap.signature, "contentSignature": snap.contentSignature,
                                  "scrollY": snap.scrollY as Any? ?? NSNull(), "runningApps": UniversalAX.runningApps(),
                                  "frontmost": UniversalAX.isFront(snap.pid), "windows": windows,
+                                 "installedApps": UniversalAX.installedApps(),
                                  "readMs": self.universalAX.lastReadMs, "visited": snap.visited, "via": snap.via]
                         if let hint = snap.hint, hint != self.lastBrowserHint {
                             // Once per distinct problem: how to enable the faster page read.
@@ -2011,6 +2028,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 case "focus_window": try self.universalAX.focus(window: object["id"] as? String ?? ""); reply(true, nil, nil)
                 case "window_action": try self.universalAX.window(action: object["action"] as? String ?? ""); reply(true, nil, nil)
                 case "media": try UniversalAX.media(object["name"] as? String ?? ""); reply(true, nil, nil)
+                case "system": try UniversalAX.system(object["name"] as? String ?? ""); reply(true, nil, nil)
                 case "open_file":
                     try await self.universalAX.openFile(named: object["name"] as? String ?? ""); reply(true, nil, nil)
                 case "quit_app":
@@ -2019,6 +2037,23 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
             } catch { reply(false, nil, String(describing: error)) }
         }
+    }
+
+    private func askFeedback(_ requestID: String) {
+        feedbackTaskID = requestID
+        feedbackRow?.isHidden = false
+    }
+
+    @objc private func feedbackGood() { sendFeedback("good") }
+    @objc private func feedbackBad() { sendFeedback("bad") }
+
+    private func sendFeedback(_ value: String) {
+        feedbackRow?.isHidden = true
+        guard let target = feedbackTaskID, let input = controllerInput else { return }
+        feedbackTaskID = nil
+        _ = send(["type": "agent_feedback", "requestId": UUID().uuidString.lowercased(),
+                  "targetRequestId": target, "value": value], through: input)
+        commandStatus?.stringValue = value == "good" ? "Thanks, noted." : "Noted as wrong. It will be used to improve Jev's choices."
     }
 
     @objc private func allowStep() {

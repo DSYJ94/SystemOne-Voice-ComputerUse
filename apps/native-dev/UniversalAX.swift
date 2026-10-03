@@ -530,8 +530,31 @@ final class UniversalAX {
         }
     }
 
+    /// Whole-Mac actions that belong to no app.
+    static func system(_ action: String) throws {
+        switch action {
+        case "sleep", "displaysleep":
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+            process.arguments = [action == "sleep" ? "sleepnow" : "displaysleepnow"]
+            try process.run()
+        case "lock": postKey(12, [.maskControl, .maskCommand])          // Control-Command-Q
+        case "screenshot": postKey(20, [.maskCommand, .maskShift])     // Command-Shift-3
+        default: throw AXError.actionFailed
+        }
+    }
+
+    private static func postKey(_ code: CGKeyCode, _ flags: CGEventFlags) {
+        for down in [true, false] {
+            let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)
+            event?.flags = flags
+            event?.post(tap: .cghidEventTap)
+        }
+    }
+
     static func installedApps() -> [String] {
-        let roots = ["/Applications", "/System/Applications", "/System/Applications/Utilities"]
+        let roots = ["/Applications", "/System/Applications", "/System/Applications/Utilities",
+                     NSHomeDirectory() + "/Applications"]
         return roots.flatMap { (try? FileManager.default.contentsOfDirectory(atPath: $0)) ?? [] }
             .filter { $0.hasSuffix(".app") }.map { String($0.dropLast(4)) }
     }
@@ -647,6 +670,29 @@ final class UniversalAX {
                   AXUIElementPerformAction(button, kAXPressAction as CFString) == .success else { throw AXError.actionFailed }
         case "hide_app":
             guard app.hide() else { throw AXError.actionFailed }
+        case "left_half", "right_half", "maximize", "center":
+            // Accessibility positions are top-left based on the primary screen.
+            guard let box = frame(of: window), let primary = NSScreen.screens.first else { throw AXError.actionFailed }
+            let flipped = CGRect(x: box.minX, y: primary.frame.height - box.maxY, width: box.width, height: box.height)
+            let screen = NSScreen.screens.first { $0.frame.intersects(flipped) } ?? primary
+            let area = screen.visibleFrame
+            var target = area
+            switch action {
+            case "left_half": target.size.width = area.width / 2
+            case "right_half": target.size.width = area.width / 2; target.origin.x = area.midX
+            case "center":
+                target = CGRect(x: area.midX - box.width / 2, y: area.midY - box.height / 2, width: box.width, height: box.height)
+            default: break
+            }
+            var origin = CGPoint(x: target.minX, y: primary.frame.height - target.maxY)
+            var size = target.size
+            guard let position = AXValueCreate(.cgPoint, &origin), let extent = AXValueCreate(.cgSize, &size) else {
+                throw AXError.actionFailed
+            }
+            AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, position)
+            guard AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, extent) == .success else {
+                throw AXError.actionFailed
+            }
         default: throw AXError.actionFailed
         }
     }

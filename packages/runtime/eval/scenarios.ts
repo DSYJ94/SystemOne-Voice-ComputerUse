@@ -47,6 +47,11 @@ class Mac implements SimWorld {
   minimized: string[] = [];
   fullScreenWindow = false;
   openedFiles: string[] = [];
+  asleep = false;
+  locked = false;
+  placement = '';
+  installed() { return [...APPS, 'Calculator', 'Photos', 'Maps', 'TextEdit', 'Preview']; }
+  system(name: string) { if (name === 'sleep') this.asleep = true; if (name === 'lock') this.locked = true; }
   /** The app the media keys control: whichever last played sound. */
   nowPlaying: 'Music' | 'Google Chrome' = 'Music';
 
@@ -108,6 +113,7 @@ class Mac implements SimWorld {
   windowAction(action: string) {
     if (action === 'minimize' && this.front) { this.minimized.push(this.front); this.front = this.apps.find(app => app !== this.front && !this.minimized.includes(app)) ?? ''; }
     if (action === 'fullscreen') this.fullScreenWindow = !this.fullScreenWindow;
+    if (['left_half', 'right_half', 'maximize', 'center'].includes(action)) this.placement = action;
     if (action === 'hide_app' && this.front) this.front = this.apps.find(app => app !== this.front) ?? '';
   }
 
@@ -367,7 +373,7 @@ class Mac implements SimWorld {
 
 function scenario(name: string, goal: string, setup: (mac: Mac) => void, done: (mac: Mac) => boolean,
   tabs?: Partial<Tab>[]): Scenario {
-  return { name, goal, apps: APPS, world: () => {
+  return { name, goal, apps: APPS, ...(['sleep-mac', 'lock-screen'].includes(name) ? { allowRisky: true } : {}), world: () => {
     const mac = new Mac(tabs);
     setup(mac);
     if (mac.tab?.url.includes('/watch') && !mac.musicPlaying) mac.nowPlaying = 'Google Chrome';
@@ -501,6 +507,12 @@ const BASE: readonly Scenario[] = [
   scenario('youtube-most-views', 'search youtube for lofi beats and play the one with the most views', () => {},
     mac => !!mac.tab?.url.includes('synthwave') && mac.ytQuery.toLowerCase() === 'lofi beats',
     [{ url: 'https://www.youtube.com/', title: 'YouTube' }]),
+  scenario('sleep-mac', 'put macOS to sleep', () => {}, mac => mac.asleep),
+  scenario('lock-screen', 'lock my screen', () => {}, mac => mac.locked),
+  scenario('open-settings-not-running', 'open system settings',
+    mac => { mac.apps = mac.apps.filter(app => app !== 'System Settings'); }, mac => mac.front === 'System Settings'),
+  scenario('window-left-half', 'move this window to the left half of the screen', mac => { mac.front = 'Notes'; },
+    mac => mac.placement === 'left_half'),
   scenario('dictate-reply', 'reply to Sam saying I will be late', () => {},
     mac => mac.openEmail === 'Sam Lee' && mac.replyBody === 'I will be late',
     [{ url: 'https://mail.google.com/mail/u/0/#inbox', title: 'Inbox (3) - Gmail' }]),
@@ -530,6 +542,9 @@ const PARAPHRASES: Readonly<Record<string, readonly string[]>> = {
   'open-file': ['find my budget spreadsheet and open it', 'open the budget file'],
   'media-next-from-chrome': ['next song', 'play the next track'],
   'chain-music-calendar': ['play some music then show the calendar week view'],
+  'sleep-mac': ['sleep the computer', 'make my mac go to sleep'],
+  'open-settings-not-running': ['go to settings', 'I need the system settings app'],
+  'window-left-half': ['snap this window to the left', 'put this on the left half'],
 };
 
 export const SCENARIOS: readonly Scenario[] = BASE.map(item => {

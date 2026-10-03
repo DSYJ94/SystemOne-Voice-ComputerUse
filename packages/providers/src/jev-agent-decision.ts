@@ -1,5 +1,6 @@
 import { approveCandidateProjection } from '../../runtime/src/action-candidates.ts';
 import type { BuiltCandidateSet } from '../../runtime/src/action-candidates.ts';
+import type { JSONValue } from '../../protocol/src/json.ts';
 import type { AgentSnapshot } from '../../runtime/src/agent-ax-client.ts';
 import type { EgressPolicy, ProviderRegistration } from '../../runtime/src/provider-egress.ts';
 import type { AgentDecision } from '../../runtime/src/universal-agent-task.ts';
@@ -25,9 +26,21 @@ export function createJevAgentDecision(options: {
   /** What the previous request did, so follow-ups ("now play the second one") make sense. */
   readonly context?: string;
   readonly report: (event: FixtureDecisionEvent) => void; readonly transport?: CLMTransport;
+  /** Receives every question put to Jev and its answer, verbatim: training data for a future chooser. */
+  readonly judgment?: (event: Record<string, JSONValue>) => void;
 }): AgentDecision {
-  const transport = options.transport ?? createCLMHTTPTransport({ endpoint: JEV_ENDPOINT,
+  const network = options.transport ?? createCLMHTTPTransport({ endpoint: JEV_ENDPOINT,
     ...(options.apiKey ? { apiKey: options.apiKey } : {}), timeoutMs: 15_000 });
+  const transport: CLMTransport = !options.judgment ? network : Object.freeze({
+    async send(body: Uint8Array, signal: AbortSignal) {
+      const started = performance.now();
+      const answer = await network.send(body, signal);
+      try {
+        options.judgment!({ kind: 'judgment', ms: Math.round(performance.now() - started),
+          request: JSON.parse(Buffer.from(body).toString('utf8')) as JSONValue, answer: answer as JSONValue });
+      } catch { /* Recording never affects a decision. */ }
+      return answer;
+    } });
   const client = new CLMDecisionClient(POLICY, PROVIDER, CALIBRATION, transport, JEV_CODEC);
   const describeState = (view: AgentSnapshot, history: readonly string[], origin?: string) => {
     const tabs = view.elements.filter(element => element.role === 'AXTab' && element.closable);

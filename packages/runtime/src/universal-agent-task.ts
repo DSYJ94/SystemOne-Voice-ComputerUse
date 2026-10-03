@@ -70,7 +70,7 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 export interface AgentProposal {
   readonly step: number;
   readonly kind: 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste' | 'close' | 'quit_app'
-    | 'focus_window' | 'window_action' | 'media' | 'open_file' | 'finish';
+    | 'focus_window' | 'window_action' | 'media' | 'open_file' | 'system' | 'finish';
   readonly label: string;
   readonly destinationUrl: string | null;
   readonly pageUrl: string;
@@ -103,6 +103,8 @@ interface Option {
   readonly description: string;
   readonly label: string;
   readonly score: number;
+  /** Interrupts everything (sleep, lock): always asks first when "Ask before…" is on. */
+  readonly risky?: boolean;
 }
 
 const EMPTY_SNAPSHOT: AgentSnapshot = Object.freeze({ app: 'no app', bundleId: '', pid: 0, windowTitle: '',
@@ -154,12 +156,17 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
 
   static start(journal: AttemptJournal, registry: TaskAdmissionRegistry, admission: TaskAdmission,
     ax: AgentAXClient, options: { readonly goal: AgentGoal; readonly decision: AgentDecision;
-      readonly confirmation: AgentConfirmation; readonly trace?: (event: Record<string, JSONValue>) => void }): UniversalAgentTask {
+      readonly confirmation: AgentConfirmation; readonly trace?: (event: Record<string, JSONValue>) => void;
+      /** A screen read already taken while the request was being understood. */
+      readonly initialView?: AgentSnapshot }): UniversalAgentTask {
     const typed = admission.parameters.find(item => item.parameterRef === 'typed-text');
+    const file = admission.parameters.find(item => item.parameterRef === 'file-name');
     if (admission.outcomeKind !== 'USER_CONFIRMATION' || admission.policyRevision !== AGENT_POLICY
       || admission.completionVerifierRef !== AGENT_VERIFIER
       || (options.goal.typedText === null) !== (typed === undefined)
-      || (typed && typed.valueDigest !== digest(options.goal.typedText!.text))) {
+      || (typed && typed.valueDigest !== digest(options.goal.typedText!.text))
+      || (options.goal.fileName === null) !== (file === undefined)
+      || (file && file.valueDigest !== digest(options.goal.fileName!.text))) {
       throw new ContractError('agent admission differs from the request');
     }
     journal.startAdmittedTask(registry, admission);
@@ -170,8 +177,9 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
 
   private constructor(journal: AttemptJournal, admission: TaskAdmission, ax: AgentAXClient,
     options: { readonly goal: AgentGoal; readonly decision: AgentDecision; readonly confirmation: AgentConfirmation;
-      readonly trace?: (event: Record<string, JSONValue>) => void }) {
+      readonly trace?: (event: Record<string, JSONValue>) => void; readonly initialView?: AgentSnapshot }) {
     this.#trace = options.trace;
+    this.#nextView = options.initialView;
     this.taskId = admission.taskId; this.#journal = journal; this.#ax = ax; this.#goal = options.goal;
     this.#decision = options.decision; this.#confirmation = options.confirmation;
     this.#words = Object.freeze(admission.goal.toLowerCase().split(/[^\p{L}\p{N}]+/u)
@@ -226,7 +234,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       const proposal: AgentProposal = Object.freeze({ step, kind: finish ? 'finish' : option!.kind,
         label: finish ? (view.windowTitle || view.app) : option!.label,
         destinationUrl: option?.kind === 'open_url' ? this.#goal.url : null, pageUrl: view.url, app: view.app,
-        risky: !finish && RISKY.test(`${option!.label} ${option!.element?.context ?? ''}`) });
+        risky: !finish && (option!.risky === true || RISKY.test(`${option!.label} ${option!.element?.context ?? ''}`)) });
       this.#trace?.({ kind: 'step', step, app: view.app, window: view.windowTitle, url: view.url,
         elements: view.elements.length, options: options.length, chosen: proposal.kind, label: proposal.label,
         risky: proposal.risky, history: [...this.#history], observeMs, decideMs,
@@ -330,6 +338,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
           executionId: permit.executionId, terminal: false });
       }
     } catch (error) {
+      // Why the task stopped (no confident step, declined, limits), for the trace.
+      this.#trace?.({ kind: 'stopped', step: this.#step, reason: error instanceof Error ? error.message.slice(0, 200) : 'unknown' });
       if (executionId && this.#journal.getAttempt(executionId)?.phase === 'at_dispatch_boundary') {
         this.#journal.recordOutcome(executionId, { deliveryStatus: 'unknown', effectStatus: 'unknown',
           verification: 'unavailable' });
@@ -356,7 +366,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
               : option.kind === 'quit_app' ? { name: option.label.replace(/[\u200e\u200f]/gu, '').trim() }
                 : option.kind === 'focus_window' ? { id: option.ref }
                   : option.kind === 'window_action' ? { action: option.ref }
-                    : option.kind === 'media' ? { name: option.ref }
+                    : option.kind === 'media' || option.kind === 'system' ? { name: option.ref }
                       : option.kind === 'open_file' ? { name: this.#goal.fileName!.text }
                 : { name: option.label };
     return await this.#ax.call(this.taskId, option.kind as Exclude<Option['kind'], 'finish'>, params,
@@ -458,8 +468,27 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       options.push({ kind: 'open_file', ref: 'goal-file', label: this.#goal.fileName.text, score: 10,
         description: `Find the file or folder named “${this.#goal.fileName.text}” on this Mac and open it.` });
     }
+    // Whole-Mac actions; the ones that interrupt everything ask first.
+    for (const [name, text, risky] of [['sleep', 'put the Mac to sleep', true], ['lock', 'lock the screen', true],
+      ['displaysleep', 'turn the display off', true], ['screenshot', 'take a screenshot of the whole screen (saved to the Desktop)', false]] as const) {
+      options.push({ kind: 'system', ref: name, label: text, risky, score: score(text),
+        description: `On the Mac: ${text}.` });
+    }
+    // Apps that are installed but not open: the closest name matches, plus the system's own.
+    const running = new Set([...(view.runningApps ?? []), view.app].map(plain));
+    const closed = (view.installedApps ?? []).filter(name => !running.has(plain(name)) && name !== this.#goal.app);
+    const picked = [...closed].map((name, index) => ({ name, index, match: score(name) }))
+      .sort((a, b) => b.match - a.match || a.index - b.index).filter(item => item.match > 0).slice(0, 12).map(item => item.name);
+    for (const name of new Set([...picked, ...closed.filter(name => ['System Settings', 'Finder'].includes(name))])) {
+      options.push({ kind: 'open_app', ref: `app:${name}`, label: name, score: score(name) * 3,
+        description: `Open the app ${name} (installed, not open yet).` });
+    }
     if (view.pid && this.#goal.windows) {
       const actions: [string, string][] = [['minimize', 'minimise the front window to the Dock'],
+        ['left_half', 'move the front window to the left half of the screen'],
+        ['right_half', 'move the front window to the right half of the screen'],
+        ['maximize', 'make the front window fill the screen (not full-screen mode)'],
+        ['center', 'move the front window to the centre of the screen'],
         ['fullscreen', 'make the front window full screen (or leave full screen)'],
         ['zoom', 'zoom the front window to fill the screen'],
         ...(this.#goal.quit ? [['close', 'close the front window (the app keeps running)'] as [string, string]] : []),
@@ -516,7 +545,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       const base = { candidateId, description: option.description.slice(0, 1_200), preconditions: ['fresh_observation'],
         verifier: { kind: 'content_changed' }, delivery: 'semantic', riskPolicyRef: AGENT_POLICY,
         replayPolicy: 'only_if_not_applied' };
-      const candidate: Record<string, JSONValue> = ['focus_window', 'window_action', 'media', 'open_file'].includes(option.kind)
+      const candidate: Record<string, JSONValue> = ['focus_window', 'window_action', 'media', 'open_file', 'system'].includes(option.kind)
         ? { ...base, operation: 'invoke', targetRef: `${option.kind}:${option.ref}`.replace(/[^A-Za-z0-9_.:-]/gu, '-').slice(0, 160),
           parameters: {}, effects: ['NAVIGATE', 'EXTERNAL_WRITE'] }
         : option.kind === 'quit_app'
@@ -647,6 +676,7 @@ function describeKind(option: Option): string {
     case 'window_action': return option.label;
     case 'media': return `pressed the media key to ${option.label}`;
     case 'open_file': return `opened the file or folder “${option.label}”`;
+    case 'system': return option.label;
     default: return 'finished';
   }
 }

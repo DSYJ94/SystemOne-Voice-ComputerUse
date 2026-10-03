@@ -10,6 +10,7 @@
   "scripts": {
     "start": "zsh scripts/start.sh",
     "traces": "node scripts/show-traces.ts",
+    "traces:export": "node scripts/export-training.ts",
     "eval:agent": "node scripts/eval-agent.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --test packages/protocol/test/*.test.ts packages/runtime/test/*.test.ts packages/fixtures/test/*.test.ts packages/browser/test/*.test.ts packages/providers/test/*.test.ts extensions/chrome/test/*.test.mjs",

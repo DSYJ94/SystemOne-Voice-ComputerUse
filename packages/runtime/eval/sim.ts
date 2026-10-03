@@ -46,6 +46,8 @@ export interface Scenario {
   readonly apps: readonly string[];
   /** Built fresh per run so state never leaks between runs. */
   readonly world: () => SimWorld;
+  /** The simulated user says yes to steps that ask first (sleep, send…). */
+  readonly allowRisky?: boolean;
   /** Other natural ways to say the same request; each must pass too. */
   readonly paraphrases?: readonly string[];
 }
@@ -66,6 +68,8 @@ export interface SimWorld {
   media?(name: string): void;
   windowAction?(action: string): void;
   openFile?(name: string): boolean;
+  system?(name: string): void;
+  installed?(): readonly string[];
   /** Regular apps running now (defaults to the scenario's app list). */
   running?(): readonly string[];
   /** Did the user's goal happen? */
@@ -117,7 +121,7 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
           contentSignature: JSON.stringify([screen?.app, screen?.windowTitle, screen?.url, screen?.scrollY ?? 0,
             elements.map(item => [item.role, item.label, item.value, item.selected])]),
           ...(screen?.scrollY !== undefined ? { scrollY: screen.scrollY } : {}),
-          frontmost: true,
+          frontmost: true, installedApps: [...(world.installed?.() ?? scenario.apps)],
           windows: (windows = [...(world.windows?.() ?? [])]).map((item, index) => ({ id: `w${index}`, app: item.app,
             title: item.title, ...(item.minimized ? { minimized: true } : {}), front: index === 0 && item.app === screen?.app })),
           runningApps: (world.running?.() ?? scenario.apps).filter(name => name !== screen?.app) };
@@ -138,6 +142,7 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
         break;
       }
       case 'media': world.media ? world.media(String(request.name)) : ok = false; break;
+      case 'system': world.system ? world.system(String(request.name)) : ok = false; break;
       case 'window_action': world.windowAction ? world.windowAction(String(request.action)) : ok = false; break;
       case 'open_file': ok = world.openFile?.(String(request.name)) ?? false; break;
       case 'quit_app': if (world.quitApp && (world.running?.() ?? scenario.apps).includes(String(request.name))) {
@@ -178,7 +183,7 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
     confirmation: { async confirm(proposal: AgentProposal) {
       steps.push(`${proposal.kind} “${proposal.label.slice(0, 60)}”${proposal.risky ? ' (risky)' : ''} [done ${done}]`);
       // Risky steps are declined unless the run allows them, like a user saying no.
-      return !proposal.risky || options.allowRisky === true;
+      return !proposal.risky || options.allowRisky === true || scenario.allowRisky === true;
     } } });
   let state = 'error';
   try { state = (await new PersistentTaskActor(journal, task, 60_000).run()).state; }

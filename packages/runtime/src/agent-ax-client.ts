@@ -49,6 +49,8 @@ export interface AgentSnapshot {
   readonly visited?: number;
   /** False when the app being read is open but behind another app. */
   readonly frontmost?: boolean;
+  /** Apps installed on this Mac (open or not), so any of them can be opened. */
+  readonly installedApps?: readonly string[];
   /** Every open window on the Mac (front app first). */
   readonly windows?: readonly AgentWindow[];
   /** "dom" when a browser tab was read from its page, "ax" otherwise. */
@@ -56,7 +58,7 @@ export interface AgentSnapshot {
 }
 
 export type AgentOperation = 'snapshot' | 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste' | 'close' | 'quit_app'
-  | 'focus_window' | 'window_action' | 'media' | 'open_file';
+  | 'focus_window' | 'window_action' | 'media' | 'open_file' | 'system';
 
 /** Host-side end of the private pipe to the app's Accessibility executor. The
  * app accepts a request only for the active, host-admitted agent task. */
