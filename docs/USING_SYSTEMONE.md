@@ -64,27 +64,37 @@ Mac.
 
 ### Collecting training data
 
-Every request is recorded on this Mac (in
-`~/Library/Application Support/SystemOne-Dev/traces`, readable only by you):
-each question put to Jev word for word (what it saw, every option, its
-probabilities), each step and whether the screen changed, and how the task
-ended. These records are the training data for a future SystemOne chooser
-trained on your own use.
+Nothing to run: every request is recorded on this Mac and turned into training
+examples automatically.
 
-1. Use SystemOne normally, with real requests, phrased however you naturally
-   speak.
-2. After each task, press **👍 Did what I wanted** or **👎 Wrong** under the
-   bar. This is the label that matters most: a task can finish and still be
-   wrong.
-3. Every so often run `npm run traces:export`. It writes one dataset file
-   (one example per Jev question, labelled with what happened and your
-   verdict) to `~/Library/Application Support/SystemOne-Dev/datasets/` and
-   prints how many examples and 👍/👎 you have.
+- **What is recorded** (in `~/Library/Application Support/SystemOne-Dev/traces`,
+  readable only by you): each question put to Jev word for word (what it saw,
+  every option, its probabilities), each step and whether the screen changed,
+  and how the task ended.
+- **Your part:** after each task press **👍 Did what I wanted** or **👎 Wrong**.
+  After 👎, tap what kind of wrong (wrong app or place, typed the wrong words,
+  wrong or extra steps, stopped too early, too slow, other). Then, if you like,
+  say or type what it should have done and press Return, or press Skip. That
+  correction is the most valuable label of all.
+- **Where it goes:** one file per task in
+  `~/Library/Application Support/SystemOne-Dev/datasets/tasks/`, updated after
+  each task and each 👍/👎. `npm run traces:export` is only needed to rebuild
+  them or see totals.
 
-The traces contain whatever was on screen (names, email subjects, page
+The records contain whatever was on screen (names, email subjects, page
 titles). They never leave the Mac and are never put in the repository; review
-a dataset before sharing it with anyone. Training itself needs an agreed plan
-(model, GPU, cost) and is not set up yet.
+them before sharing with anyone. Training itself needs an agreed plan (model,
+GPU, cost) and is not set up yet.
+
+### On-device understanding (⚙ toggle)
+
+⚙ **Understand requests on this Mac** switches who picks the words to type
+(the search terms or message in what you said): **off**, Jev does (more
+accurate in tests); **on**, a small model on this Mac does (Qwen2.5 0.5B,
+faster, no network for that part). The first request after turning it on
+installs it in the background (about 700 MB, under a minute; Jev is used
+meanwhile). Jev still chooses every step either way, and only your own words
+can ever be typed.
 
 SystemOne talks back: it says "Done", asks "Should I …?" when a step needs
 your approval, and then listens about five seconds for "yes" or "no", with no

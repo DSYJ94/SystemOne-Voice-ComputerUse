@@ -24,6 +24,8 @@ import type { BrowseDecision, BrowseProposal } from '../../browser/src/managed-b
 import { parseBrowseFollowUp, parseScopedBrowse } from './scoped-native-command.ts';
 import { AgentAXClient } from './agent-ax-client.ts';
 import { bindCommandSpan, installedApps, parseAgentGoal, refineGoal } from './agent-goal.ts';
+import { LocalUnderstanding } from './local-understanding.ts';
+import { writeTaskDataset } from './training-data.ts';
 import type { AgentDecision } from './universal-agent-task.ts';
 import { NativeFieldPipeWorker } from './native-field-pipe-worker.ts';
 import { ChromeReadSession } from './chrome-read-session.ts';
@@ -118,6 +120,8 @@ interface StartAgent {
   readonly requestId: string;
   readonly command: Record<string, JSONValue>;
   readonly decisionProvider: 'jev';
+  /** Who picks the words to type: Jev (default) or the on-device model. */
+  readonly understanding: 'jev' | 'local';
 }
 
 interface ContinueBrowse {
@@ -134,7 +138,12 @@ interface AgentFeedback {
   readonly requestId: string;
   readonly targetRequestId: string;
   readonly value: 'good' | 'bad';
+  /** For 👎: what kind of wrong (one tap), and optionally what it should have done. */
+  readonly reason?: string;
+  readonly note?: string;
 }
+
+const FEEDBACK_REASONS = new Set(['wrong_place', 'wrong_words', 'wrong_steps', 'stopped_early', 'too_slow', 'other']);
 
 interface ConfirmStep {
   readonly type: 'confirm_step';
@@ -203,11 +212,19 @@ type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
   | 'observing_chrome' | 'verified_chrome_dom_fill' | 'verified_navigation'
   | 'host_unavailable' | 'portal_located' | 'portal_opened' | 'portal_downloaded'
   | 'verified_portal_download' | 'portal_paused' | 'native_paused' | 'checking_native_recovery' | 'replacing_native_task'
-  | 'browsing' | 'verified_browse' | 'browse_paused' | 'agent_working' | 'agent_done' | 'agent_paused' | 'agent_needs_text';
+  | 'browsing' | 'verified_browse' | 'browse_paused' | 'agent_working' | 'agent_done' | 'agent_paused' | 'agent_needs_text' | 'local_model_preparing';
 
 /** Private per-task step traces for diagnosing and replaying failures. Only
  * written when SYSTEMONE_TRACE_DIR is set (the app's own support folder). */
-function agentTraceWriter(taskId: string, goal: string): ((event: Record<string, JSONValue>) => void) | undefined {
+type TraceWriter = ((event: Record<string, JSONValue>) => void) & { readonly path: string };
+
+/** Keeps datasets/tasks/<task>.jsonl in step with the trace; never affects a task. */
+function refreshDataset(tracePath: string): void {
+  try { writeTaskDataset(tracePath, join(dirname(dirname(tracePath)), 'datasets')); }
+  catch { /* Training data is best effort. */ }
+}
+
+function agentTraceWriter(taskId: string, goal: string): TraceWriter | undefined {
   const dir = process.env.SYSTEMONE_TRACE_DIR;
   if (!dir || !isAbsolute(dir)) return undefined;
   try { mkdirSync(dir, { recursive: true, mode: 0o700 }); } catch { return undefined; }
@@ -217,11 +234,27 @@ function agentTraceWriter(taskId: string, goal: string): ((event: Record<string,
     catch { /* Tracing never affects the task. */ }
   };
   write({ kind: 'goal', goal });
-  return write;
+  return Object.assign(write, { path });
 }
 
 function decisionProviderValid(value: Record<string, JSONValue>): boolean {
   return !Object.hasOwn(value, 'decisionProvider') || value.decisionProvider === 'jev';
+}
+
+let sharedLocal: LocalUnderstanding | undefined;
+function localUnderstanding(): LocalUnderstanding {
+  sharedLocal ??= new LocalUnderstanding(process.env.SYSTEMONE_LOCAL_MODEL_DIR
+    ?? join(process.env.HOME ?? '', 'Library/Application Support/SystemOne-Dev/local-model'));
+  return sharedLocal;
+}
+
+/** The on-device model's words, accepted only if they are exactly a run of what was said. */
+export async function pickLocally(local: LocalUnderstanding, text: string, spans: readonly string[],
+  trace?: (event: Record<string, JSONValue>) => void): Promise<number | null> {
+  const { answer, ms } = await local.words(text);
+  const index = answer === null ? -1 : spans.findIndex(span => span.toLowerCase() === answer.toLowerCase());
+  trace?.({ kind: 'local_model', answer, ms, accepted: answer === null || index >= 0 });
+  return index >= 0 ? index : null;
 }
 
 /** Per-task universal-agent selector, built only for an explicit agent request. */
@@ -310,11 +343,14 @@ function requestFromLine(line: Uint8Array): NativeRequest {
       command: value.command, decisionProvider: 'jev' };
   }
   if (value.type === 'start_agent') {
-    if (Object.keys(value).sort().join(',') !== 'command,decisionProvider,requestId,type'
-      || value.decisionProvider !== 'jev' || value.command === undefined || !isRecord(value.command)) {
+    const keys = Object.keys(value).sort().join(',');
+    if ((keys !== 'command,decisionProvider,requestId,type' && keys !== 'command,decisionProvider,requestId,type,understanding')
+      || value.decisionProvider !== 'jev' || value.command === undefined || !isRecord(value.command)
+      || (value.understanding !== undefined && value.understanding !== 'jev' && value.understanding !== 'local')) {
       throw new ContractError('invalid agent request');
     }
-    return { type: 'start_agent', requestId: value.requestId as string, command: value.command, decisionProvider: 'jev' };
+    return { type: 'start_agent', requestId: value.requestId as string, command: value.command, decisionProvider: 'jev',
+      understanding: value.understanding === 'local' ? 'local' : 'jev' };
   }
   if (value.type === 'continue_browse') {
     if (Object.keys(value).sort().join(',') !== 'command,decisionProvider,requestId,targetRequestId,type'
@@ -326,12 +362,16 @@ function requestFromLine(line: Uint8Array): NativeRequest {
       targetRequestId: value.targetRequestId, command: value.command, decisionProvider: 'jev' };
   }
   if (value.type === 'agent_feedback') {
-    if (Object.keys(value).sort().join(',') !== 'requestId,targetRequestId,type,value'
-      || typeof value.targetRequestId !== 'string' || (value.value !== 'good' && value.value !== 'bad')) {
+    const extra = Object.keys(value).filter(key => !['requestId', 'targetRequestId', 'type', 'value'].includes(key));
+    if (extra.some(key => key !== 'reason' && key !== 'note')
+      || typeof value.targetRequestId !== 'string' || (value.value !== 'good' && value.value !== 'bad')
+      || (value.reason !== undefined && (typeof value.reason !== 'string' || !FEEDBACK_REASONS.has(value.reason)))
+      || (value.note !== undefined && (typeof value.note !== 'string' || value.note.length > 1_000))) {
       throw new ContractError('invalid agent feedback');
     }
     return { type: 'agent_feedback', requestId: value.requestId as string, targetRequestId: value.targetRequestId,
-      value: value.value };
+      value: value.value, ...(typeof value.reason === 'string' ? { reason: value.reason } : {}),
+      ...(typeof value.note === 'string' && value.note.trim() ? { note: value.note.trim() } : {}) };
   }
   if (value.type === 'confirm_step') {
     if (Object.keys(value).sort().join(',') !== 'allow,proposalId,requestId,targetRequestId,type'
@@ -533,7 +573,7 @@ export class NativeManagedController {
   /** The previous agent request and what it did, for follow-ups (10 minutes). */
   #agentContext: { readonly text: string; readonly at: number } | undefined;
   /** Trace writers of recent agent tasks, so a later 👍/👎 lands in the right file. */
-  readonly #traces = new Map<string, (event: Record<string, JSONValue>) => void>();
+  readonly #traces = new Map<string, TraceWriter>();
   #pendingStep: { readonly requestId: string; readonly proposalId: string;
     readonly resolve: (allow: boolean) => void } | undefined;
   readonly #nativeWorker: NativeFieldPipeWorker | undefined;
@@ -696,8 +736,11 @@ export class NativeManagedController {
       this.#continueBrowse(request); return;
     }
     if (request.type === 'agent_feedback') {
-      // Recorded only into that task's own private trace; never acted on.
-      this.#traces.get(request.targetRequestId)?.({ kind: 'feedback', value: request.value });
+      // Recorded only into that task's own private trace (and its dataset file); never acted on.
+      const target = this.#traces.get(request.targetRequestId);
+      target?.({ kind: 'feedback', value: request.value, ...(request.reason ? { reason: request.reason } : {}),
+        ...(request.note ? { note: request.note } : {}) });
+      if (target) refreshDataset(target.path);
       return;
     }
     if (request.type === 'confirm_step') {
@@ -1266,7 +1309,7 @@ export class NativeManagedController {
     active.agentRun = true;
     let agentTask: { readonly summary: { readonly history: readonly string[]; readonly app: string;
       readonly url: string } } | undefined;
-    let trace: ((event: Record<string, JSONValue>) => void) | undefined;
+    let trace: TraceWriter | undefined;
     let outcome = 'error';
     try {
       const command = request.command;
@@ -1297,8 +1340,26 @@ export class NativeManagedController {
       const firstView = this.#agentAX.snapshot(request.requestId).catch(() => undefined);
       const decision = await factory(request.requestId, route.input.text, context, trace);
       if (active.cancelled) return;
-      // Jev picks the exact words to type (and a file name) from pieces of what was said.
-      const goal = await refineGoal(route.input.text, parsed, decision.pickSpan?.bind(decision));
+      // The exact words to type are picked from runs of what was said: by Jev, or by the
+      // on-device model when ⚙ "Understand requests on this Mac" is on (falls back to Jev
+      // until it is installed). Either way only the user's own words can be typed.
+      const jevPick = decision.pickSpan?.bind(decision);
+      let understanding = 'jev';
+      let pick = jevPick;
+      if (request.understanding === 'local' && jevPick) {
+        const local = localUnderstanding();
+        if (local.status === 'ready') {
+          understanding = 'local';
+          pick = (text, role, spans) => role === 'file' ? jevPick(text, role, spans) : pickLocally(local, text, spans, trace);
+        } else {
+          local.prepare();
+          understanding = `jev (on-device model ${local.status}${local.problem ? `: ${local.problem}` : ''})`;
+          if (local.status !== 'failed') this.#send(request.requestId, 'local_model_preparing');
+        }
+      }
+      const goal = await refineGoal(route.input.text, parsed, pick);
+      trace?.({ kind: 'understanding', by: understanding, typed: goal.typedText?.text ?? null,
+        file: goal.fileName?.text ?? null });
       if (active.cancelled) return;
       // "Reply in the chat" with no words: ask, rather than guess or wander.
       if (goal.needsText) { outcome = 'needs_text'; this.#send(request.requestId, 'agent_needs_text'); return; }
@@ -1333,6 +1394,7 @@ export class NativeManagedController {
       if (!active.cancelled) this.#send(request.requestId, 'error');
     } finally {
       trace?.({ kind: 'end', outcome: active.cancelled ? 'stopped' : outcome });
+      if (trace) refreshDataset(trace.path);
       this.#pendingStep?.resolve(false); this.#pendingStep = undefined;
       this.#agentAX.cancelAll();
       active.browserFenced = true;
@@ -1578,6 +1640,7 @@ async function main(): Promise<void> {
   mkdirSync(dirname(journalPath), { recursive: true, mode: 0o700 });
   const journal = new AttemptJournal(journalPath);
   process.env.SYSTEMONE_TRACE_DIR ??= join(dirname(journalPath), 'traces');
+  process.env.SYSTEMONE_LOCAL_MODEL_DIR ??= join(dirname(journalPath), 'local-model');
   const outputRoot = join(dirname(journalPath), 'fixture-output');
   mkdirSync(outputRoot, { recursive: true, mode: 0o700 });
   const portalStore = new ScriptedPortalStore(journalPath, outputRoot, journal);

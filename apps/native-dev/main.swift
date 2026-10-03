@@ -123,6 +123,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// 👍/👎 after a task: the label that makes its private trace useful for training.
     private var feedbackRow: NSStackView?
     private var feedbackTaskID: String?
+    /// After 👎: one tap for the kind of wrong, then optionally what it should have done.
+    private var reasonRow: NSStackView?
+    private var correction: (taskID: String, reason: String)?
     /// "Allow all" for one task, or the Settings switch for the whole session.
     /// Steps stay journaled, permitted one at a time and verified; Esc stops.
     private var autoAllowTaskID: String?
@@ -480,7 +483,25 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         feedback.spacing = 6
         feedback.isHidden = true
         feedbackRow = feedback
-        let stack = NSStackView(views: [bar, footer, approvals, feedback, target])
+        let reasons: [(String, String)] = [("Wrong app or place", "wrong_place"), ("Typed the wrong words", "wrong_words"),
+                                           ("Wrong or extra steps", "wrong_steps"), ("Stopped too early", "stopped_early"),
+                                           ("Too slow", "too_slow"), ("Other", "other")]
+        let reasonButtons = reasons.map { title, reason -> NSButton in
+            let button = NSButton(title: title, target: self, action: #selector(feedbackReason(_:)))
+            button.bezelStyle = .inline
+            button.controlSize = .small
+            button.identifier = NSUserInterfaceItemIdentifier(reason)
+            return button
+        }
+        let skip = NSButton(title: "Skip", target: self, action: #selector(skipCorrection))
+        skip.bezelStyle = .inline
+        skip.controlSize = .small
+        let reasonStack = NSStackView(views: reasonButtons + [skip])
+        reasonStack.orientation = .horizontal
+        reasonStack.spacing = 4
+        reasonStack.isHidden = true
+        reasonRow = reasonStack
+        let stack = NSStackView(views: [bar, footer, approvals, feedback, reasonStack, target])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
@@ -592,7 +613,14 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         speakSwitch.action = #selector(toggleSpeakReplies(_:))
         let speakRow = row("Speak replies", nil)
         speakRow.insertArrangedSubview(speakSwitch, at: 0)
-        let stack = NSStackView(views: [heading, jevRow, jevNote, autoRow, autoNote, riskyRow, speakRow, voiceRow, axRow,
+        let localSwitch = NSSwitch()
+        localSwitch.state = UserDefaults.standard.bool(forKey: "understandOnDevice") ? .on : .off
+        localSwitch.target = self
+        localSwitch.action = #selector(toggleUnderstandOnDevice(_:))
+        let localRow = row("Understand requests on this Mac", nil)
+        localRow.insertArrangedSubview(localSwitch, at: 0)
+        let localNote = caption("On: a small on-device model (Qwen2.5 0.5B, about 700 MB with its runtime, installed once in the background) picks the words to type. Off: Jev picks them. Jev still chooses every step either way.")
+        let stack = NSStackView(views: [heading, jevRow, jevNote, autoRow, autoNote, riskyRow, speakRow, localRow, localNote, voiceRow, axRow,
                                         advanced, tools])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -605,6 +633,13 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         popover.contentViewController = controller
         settingsPopover = popover
         popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+    }
+
+    @objc private func toggleUnderstandOnDevice(_ sender: NSSwitch) {
+        UserDefaults.standard.set(sender.state == .on, forKey: "understandOnDevice")
+        commandStatus?.stringValue = sender.state == .on
+            ? "On-device understanding on. The first request installs it (about 700 MB, under a minute); until then Jev is used."
+            : "Jev picks the words to type."
     }
 
     @objc private func toggleAskBeforeRisky(_ sender: NSSwitch) {
@@ -1374,6 +1409,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "error": statusField?.stringValue = "The request was rejected or failed. No success is claimed."
         case "browsing":
             statusField?.stringValue = "Jev is reading the page…"
+        case "local_model_preparing":
+            statusField?.stringValue = "Installing the on-device model (one time, about 700 MB). Jev is used for this request."
         case "agent_working":
             statusField?.stringValue = "Jev is looking at the screen…"
         case "agent_done":
@@ -1554,6 +1591,16 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func runTaskRequest() {
+        // Answering "what should it have done?" records a correction; it does not run anything.
+        if let pending = correction, !speech.isCapturing {
+            let note = (taskField?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !note.isEmpty {
+                sendFeedback(pending.taskID, ["value": "bad", "reason": pending.reason, "note": String(note.prefix(1_000))])
+                taskField?.stringValue = ""
+            }
+            endCorrection(note.isEmpty ? "Noted. Thanks." : "Correction saved for training. Thanks.")
+            return
+        }
         // Return approves a waiting step only when nothing new was typed or said.
         // A new request never approves the old one's step; it replaces that task.
         if let pending = pendingProposal {
@@ -1943,6 +1990,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         accessibilityRecoveryButton?.isHidden = true
         feedbackRow?.isHidden = true
         feedbackTaskID = nil
+        if correction != nil { endCorrection("") }
         let me = ProcessInfo.processInfo.processIdentifier
         let target = capturedApp.flatMap { app in
             NSRunningApplication(processIdentifier: app.pid).flatMap { $0.isTerminated ? nil : $0 } }
@@ -2044,16 +2092,50 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         feedbackRow?.isHidden = false
     }
 
-    @objc private func feedbackGood() { sendFeedback("good") }
-    @objc private func feedbackBad() { sendFeedback("bad") }
-
-    private func sendFeedback(_ value: String) {
+    @objc private func feedbackGood() {
         feedbackRow?.isHidden = true
-        guard let target = feedbackTaskID, let input = controllerInput else { return }
+        guard let target = feedbackTaskID else { return }
         feedbackTaskID = nil
-        _ = send(["type": "agent_feedback", "requestId": UUID().uuidString.lowercased(),
-                  "targetRequestId": target, "value": value], through: input)
-        commandStatus?.stringValue = value == "good" ? "Thanks, noted." : "Noted as wrong. It will be used to improve Jev's choices."
+        sendFeedback(target, ["value": "good"])
+        commandStatus?.stringValue = "Thanks, noted."
+    }
+
+    @objc private func feedbackBad() {
+        feedbackRow?.isHidden = true
+        guard let target = feedbackTaskID else { return }
+        sendFeedback(target, ["value": "bad"])
+        reasonRow?.isHidden = false
+        commandStatus?.stringValue = "What went wrong? One tap is enough."
+    }
+
+    @objc private func feedbackReason(_ sender: NSButton) {
+        guard let target = feedbackTaskID, let reason = sender.identifier?.rawValue else { return }
+        feedbackTaskID = nil
+        sendFeedback(target, ["value": "bad", "reason": reason])
+        correction = (target, reason)
+        reasonRow?.arrangedSubviews.forEach { $0.isHidden = ($0 as? NSButton)?.title != "Skip" }
+        taskField?.stringValue = ""
+        taskField?.placeholderString = "What should it have done? Say or type it, then Return (optional)"
+        commandStatus?.stringValue = "Optional: say or type what it should have done. Skip to move on."
+    }
+
+    @objc private func skipCorrection() { endCorrection("Noted. Thanks.") }
+
+    private func endCorrection(_ status: String) {
+        correction = nil
+        feedbackTaskID = nil
+        reasonRow?.isHidden = true
+        reasonRow?.arrangedSubviews.forEach { $0.isHidden = false }
+        taskField?.placeholderString = "Tell SystemOne what to do…"
+        commandStatus?.stringValue = status
+    }
+
+    private func sendFeedback(_ target: String, _ fields: [String: Any]) {
+        guard let input = controllerInput else { return }
+        var message: [String: Any] = ["type": "agent_feedback", "requestId": UUID().uuidString.lowercased(),
+                                      "targetRequestId": target]
+        message.merge(fields) { _, new in new }
+        _ = send(message, through: input)
     }
 
     @objc private func allowStep() {

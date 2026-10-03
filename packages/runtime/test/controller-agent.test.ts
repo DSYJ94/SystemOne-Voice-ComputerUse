@@ -123,3 +123,49 @@ test('a follow-up request receives what the previous request did', async t => {
   assert.match(contexts[1] ?? '', /search youtube for lofi/u);
   assert.match(contexts[1] ?? '', /youtube\.com\/results/u);
 });
+
+test('a 👎 with a reason and a correction lands in the task trace and its dataset file', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'systemone-controller-feedback-'));
+  const previous = process.env.SYSTEMONE_TRACE_DIR;
+  process.env.SYSTEMONE_TRACE_DIR = join(root, 'traces');
+  const journal = new AttemptJournal(join(root, 'attempts.sqlite'));
+  const phases: { id: string; phase: string }[] = [];
+  const factory: AgentDecisionFactory = async (_id, _goal, _context, judgment) => ({ async select(set) {
+    judgment?.({ kind: 'judgment', ms: 5, request: { state: 'Goal: play the video.', questions: { next_action: {
+      instructions: 'Which step?', criteria: { finish: 'Done: stop here.' } } } },
+    answer: { answers: { next_action: { probabilities: { finish: 1 } } } } });
+    return (set.candidates.find(c => c.operation === 'finish')?.candidateId as string | undefined) ?? null;
+  } });
+  let controller!: NativeManagedController;
+  controller = new NativeManagedController(journal, (id, phase) => { phases.push({ id, phase }); }, true, undefined,
+    (message: Record<string, JSONValue>) => {
+      if (message.type === 'agent_ax_request') queueMicrotask(() => controller.receive(Buffer.from(JSON.stringify({
+        type: 'agent_ax_reply', requestId: message.requestId, ok: true, value: { app: 'Notes', bundleId: 'com.apple.Notes',
+          pid: 9, windowTitle: 'Notes', url: '', elements: [], truncated: false, signature: 's' } }))));
+      if (message.type === 'browse_proposal') queueMicrotask(() => controller.receive(Buffer.from(JSON.stringify({
+        type: 'confirm_step', requestId: randomUUID(), targetRequestId: message.requestId,
+        proposalId: message.proposalId, allow: true }))));
+    }, undefined, false, undefined, undefined, factory);
+  t.after(async () => {
+    await controller.close();
+    if (previous === undefined) delete process.env.SYSTEMONE_TRACE_DIR; else process.env.SYSTEMONE_TRACE_DIR = previous;
+    rmSync(root, { recursive: true, force: true });
+  });
+  const task = randomUUID();
+  controller.receive(Buffer.from(JSON.stringify(agent(task, 'play the video'))));
+  await waitFor(() => phases.some(p => p.id === task && p.phase === 'ready'));
+  controller.receive(Buffer.from(JSON.stringify({ type: 'agent_feedback', requestId: randomUUID(), targetRequestId: task,
+    value: 'bad', reason: 'stopped_early', note: 'it should have pressed play first' })));
+  const { readdirSync, readFileSync } = await import('node:fs');
+  const files = readdirSync(join(root, 'datasets', 'tasks'));
+  assert.equal(files.length, 1);
+  const example = JSON.parse(readFileSync(join(root, 'datasets', 'tasks', files[0]!), 'utf8').trim().split('\n')[0]!);
+  assert.deepEqual(example.feedback, { value: 'bad', reason: 'stopped_early', note: 'it should have pressed play first' });
+  assert.equal(example.outcome, 'completed');
+  assert.equal(example.question, 'Which step?');
+  // An unknown reason is rejected, not recorded.
+  const bogus = randomUUID();
+  controller.receive(Buffer.from(JSON.stringify({ type: 'agent_feedback', requestId: bogus, targetRequestId: task,
+    value: 'bad', reason: 'because' })));
+  assert.equal(phases.some(p => p.id === bogus && p.phase === 'error') || phases.some(p => p.id === 'invalid'), true);
+});

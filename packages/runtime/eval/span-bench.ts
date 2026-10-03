@@ -1,6 +1,10 @@
 import { execFileSync } from 'node:child_process';
 import { parseAgentGoal, refineGoal } from '../src/agent-goal.ts';
 import { createJevAgentDecision } from '../../providers/src/jev-agent-decision.ts';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { LocalUnderstanding } from '../src/local-understanding.ts';
+import { pickLocally } from '../src/native-managed-controller.ts';
 
 // Labelled set for choosing the words to type: natural and dictation-style requests,
 // including ones that type nothing. Usage: node packages/runtime/eval/span-bench.ts
@@ -28,14 +32,25 @@ const CASES: readonly [string, string | null][] = [
   ['close whatsapp', null],
   ['go to the research page', null],
 ];
+// UNDERSTANDING=local benchmarks the on-device model instead of Jev.
+const local = process.env.UNDERSTANDING === 'local'
+  ? new LocalUnderstanding(process.env.SYSTEMONE_LOCAL_MODEL_DIR ?? join(homedir(), 'Library/Application Support/SystemOne-Dev/local-model'))
+  : undefined;
+if (local) {
+  local.prepare();
+  while (local.status !== 'ready' && local.status !== 'failed') await new Promise(resolve => setTimeout(resolve, 500));
+}
 const apiKey = execFileSync('/usr/bin/security', ['find-generic-password', '-s', 'systemone-jev', '-w'], { encoding: 'utf8' }).trim();
 let right = 0;
 const started = performance.now();
 await Promise.all(CASES.map(async ([text, want]) => {
   const decision = createJevAgentDecision({ apiKey, goal: text, report: () => {} });
-  const goal = await refineGoal(text, parseAgentGoal(text, ['Notes', 'Slack', 'Google Chrome', 'WhatsApp']), decision.pickSpan!.bind(decision));
+  const pick = local ? (request: string, _role: 'typed' | 'file', spans: readonly string[]) => pickLocally(local, request, spans)
+    : decision.pickSpan!.bind(decision);
+  const goal = await refineGoal(text, parseAgentGoal(text, ['Notes', 'Slack', 'Google Chrome', 'WhatsApp']), pick);
   const got = goal.typedText?.text ?? null;
   if ((got ?? '').toLowerCase() === (want ?? '').toLowerCase()) right++;
   else console.log(`  wrong: ${text} → ${JSON.stringify(got)} (want ${JSON.stringify(want)})`);
 }));
-console.log(`${right}/${CASES.length} typed-text choices right (${Math.round(performance.now() - started)} ms for all, in parallel)`);
+local?.stop();
+console.log(`${local ? 'on-device model' : 'Jev'}: ${right}/${CASES.length} typed-text choices right (${Math.round(performance.now() - started)} ms for all, in parallel)`);
