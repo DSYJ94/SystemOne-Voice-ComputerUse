@@ -7,7 +7,7 @@ import { CLMDecisionClient } from './clm-decision-client.ts';
 import type { CLMTransport } from './clm-decision-client.ts';
 import { createCLMHTTPTransport } from './clm-http-transport.ts';
 import type { FixtureDecisionEvent } from './jev-fixture-decision.ts';
-import { JEV_CODEC, JEV_ENDPOINT, JEV_MODEL } from './jev-wire.ts';
+import { decodeJevChoice, encodeJevProviderView, JEV_CODEC, JEV_ENDPOINT, JEV_MODEL } from './jev-wire.ts';
 
 const PROVIDER: ProviderRegistration = Object.freeze({ id: 'typesafe-jev', name: 'jev',
   location: 'external_service', revision: JEV_MODEL });
@@ -29,25 +29,40 @@ export function createJevAgentDecision(options: {
   const transport = options.transport ?? createCLMHTTPTransport({ endpoint: JEV_ENDPOINT,
     ...(options.apiKey ? { apiKey: options.apiKey } : {}), timeoutMs: 15_000 });
   const client = new CLMDecisionClient(POLICY, PROVIDER, CALIBRATION, transport, JEV_CODEC);
-  const project = (set: BuiltCandidateSet, view: AgentSnapshot, history: readonly string[]) => {
+  const describeState = (view: AgentSnapshot, history: readonly string[], origin?: string) => {
+    const tabs = view.elements.filter(element => element.role === 'AXTab' && element.closable);
     const where = (view.pid ? `Current app: ${view.app}, window “${view.windowTitle || 'untitled'}”${
       view.url ? `, showing ${view.url}` : ''}.` : 'No app window is in front yet.')
+      + (tabs.length ? ` Open browser tabs: ${tabs.map(tab => `“${tab.label.slice(0, 50)}”${tab.selected ? ' (current)' : ''}`)
+        .join(', ')}.` : '')
       + (view.runningApps?.length ? ` Other open apps: ${view.runningApps.slice(0, 20).join(', ')}.` : '');
-    const stateText = (options.context ? `Earlier: ${options.context} ` : '') + `Goal: ${options.goal}. ${where}`
+    return ((options.context ? `A previous, separate request (already over; do not redo it): ${options.context} ` : '') + `Goal: ${options.goal}.${
+      origin ? ` When the user asked, they were in ${origin}; “this”/“the current” in the goal means that.` : ''} ${where}`
       + (history.length ? ` Done so far: ${history.slice(-12).join(' ')}` : ' Nothing has been done yet.')
-      + ' Prefer the most direct step; do not repeat a step that changed nothing.';
-    return approveCandidateProjection({ set, stateText: stateText.slice(0, 24_000), questionText: QUESTION,
-      provider: PROVIDER, disclosureReview: () => true });
+      + ' Prefer the most direct step; never undo a step that already did what was asked.').slice(0, 24_000);
   };
+  const project = (set: BuiltCandidateSet, view: AgentSnapshot, history: readonly string[], origin?: string) =>
+    approveCandidateProjection({ set, stateText: describeState(view, history, origin), questionText: QUESTION,
+      provider: PROVIDER, disclosureReview: () => true });
   const decision: AgentDecision = {
-    async bestActions(set, view, signal, history) {
-      const proposal = await client.decide(set, project(set, view, history), signal);
+    /** Separate yes/no judgment of completion, from the same state the chooser sees. */
+    async done(view, signal, history, origin) {
+      const providerView = { projectionRevision: 'agent-done-v1', stateText: describeState(view, history, origin),
+        questionText: 'Has everything the user asked for already happened, so nothing else needs to be done?',
+        candidates: [
+          { candidateId: 'done', description: 'Yes. Every part of the request has happened; stop now.' },
+          { candidateId: 'not_done', description: 'No. At least one part of the request has not happened yet.' }] };
+      const raw = await transport.send(encodeJevProviderView(providerView), signal);
+      return decodeJevChoice(raw, providerView).probabilities.done ?? 0;
+    },
+    async bestActions(set, view, signal, history, origin) {
+      const proposal = await client.decide(set, project(set, view, history, origin), signal);
       return Object.entries(proposal.probabilities ?? {})
         .filter(([id, probability]) => probability >= 0.05 && set.resolve(id, set.observationId, set.candidateSetDigest))
         .sort((a, b) => b[1] - a[1]).slice(0, 2).map(([id]) => id);
     },
-    async select(set, view, signal, history) {
-      let proposal = await client.decide(set, project(set, view, history), signal);
+    async select(set, view, signal, history, origin) {
+      let proposal = await client.decide(set, project(set, view, history, origin), signal);
       // Jev reports two-decimal probabilities, so exact ties are common. Break
       // a tie between strong contenders by the host's ranking (options are
       // ordered by how well they match the user's words).

@@ -28,6 +28,50 @@ final class BrowserDOM {
 
     static func supports(_ bundleID: String) -> Bool { chromium.contains(bundleID) || bundleID == safari }
 
+    /// The front window's tabs (title, URL) and which one is active (1-based).
+    func tabs(_ bundleID: String) throws -> (active: Int, tabs: [(title: String, url: String)]) {
+        let safari = bundleID == Self.safari
+        let script = """
+        tell application id "\(bundleID)"
+          set w to front window
+          set out to ""
+          repeat with i from 1 to count of tabs of w
+            set t to tab i of w
+            set out to out & (\(safari ? "name" : "title") of t) & (ASCII character 9) & (URL of t) & (ASCII character 10)
+          end repeat
+          return (\(safari ? "index of current tab of w" : "active tab index of w") as text) & (ASCII character 10) & out
+        end tell
+        """
+        let text = try execute(script)
+        var lines = text.components(separatedBy: "\n")
+        let active = Int(lines.removeFirst()) ?? 1
+        let tabs = lines.filter { !$0.isEmpty }.map { line -> (title: String, url: String) in
+            let parts = line.components(separatedBy: "\t")
+            return (parts.first ?? "", parts.count > 1 ? parts[1] : "")
+        }
+        return (active, tabs)
+    }
+
+    /// Makes tab `index` (1-based) of the front window active.
+    func activateTab(_ bundleID: String, _ index: Int) throws {
+        _ = try execute(bundleID == Self.safari
+            ? "tell application id \"\(bundleID)\" to set current tab of front window to tab \(index) of front window"
+            : "tell application id \"\(bundleID)\" to set active tab index of front window to \(index)")
+    }
+
+    /// Closes tab `index` (1-based) of the front window.
+    func closeTab(_ bundleID: String, _ index: Int) throws {
+        _ = try execute("tell application id \"\(bundleID)\" to close tab \(index) of front window")
+    }
+
+    private func execute(_ source: String) throws -> String {
+        var error: NSDictionary?
+        guard let result = NSAppleScript(source: source)?.executeAndReturnError(&error) else {
+            throw DOMError.failed((error?[NSAppleScript.errorMessage] as? String) ?? "AppleScript failed")
+        }
+        return result.stringValue ?? ""
+    }
+
     func run(_ bundleID: String, _ request: [String: Any]) throws -> [String: Any] {
         guard let source else { throw DOMError.unavailable("dom-agent.js missing from the app bundle") }
         guard let data = try? JSONSerialization.data(withJSONObject: request),

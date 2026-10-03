@@ -195,7 +195,7 @@ type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
   | 'observing_chrome' | 'verified_chrome_dom_fill' | 'verified_navigation'
   | 'host_unavailable' | 'portal_located' | 'portal_opened' | 'portal_downloaded'
   | 'verified_portal_download' | 'portal_paused' | 'native_paused' | 'checking_native_recovery' | 'replacing_native_task'
-  | 'browsing' | 'verified_browse' | 'browse_paused' | 'agent_working' | 'agent_done' | 'agent_paused';
+  | 'browsing' | 'verified_browse' | 'browse_paused' | 'agent_working' | 'agent_done' | 'agent_paused' | 'agent_needs_text';
 
 /** Private per-task step traces for diagnosing and replaying failures. Only
  * written when SYSTEMONE_TRACE_DIR is set (the app's own support folder). */
@@ -1254,6 +1254,8 @@ export class NativeManagedController {
       const factory = this.#agentDecisions;
       if (!factory) throw new ContractError('no agent decision provider');
       const goal = parseAgentGoal(command.text, installedApps());
+      // "Reply in the chat" with no words: ask, rather than guess or wander.
+      if (goal.needsText) { this.#send(request.requestId, 'agent_needs_text'); return; }
       const { UniversalAgentTask, AGENT_POLICY, AGENT_VERIFIER } = await import('./universal-agent-task.ts');
       const revision = { taskId: request.requestId, taskEpoch: 1, goalRevision: 1 };
       const endpoint = bindEndpoint(['command']);

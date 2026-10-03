@@ -76,10 +76,27 @@ final class UniversalAX {
         domBundle = bundle
         let title = value["title"] as? String ?? ""
         let url = value["url"] as? String ?? ""
-        let signature = "\(title)|\(url)|\(value["scrollY"] ?? 0)|\(value["focused"] ?? "")|"
-            + elements.map { "\($0["label"] ?? "")\($0["value"] ?? "")\($0["selected"] ?? "")" }.joined(separator: "¦")
+        // The page cannot see the browser's tab strip; list tabs from the browser
+        // itself so the agent can switch to or close a tab directly by name.
+        var tabElements: [[String: Any]] = []
+        if let (active, tabs) = try? dom.tabs(bundle) {
+            for (index, tab) in tabs.enumerated() {
+                let label = tab.title.isEmpty ? (tab.url.isEmpty ? "New Tab" : tab.url) : tab.title
+                tabElements.append(["id": "t\(index + 1)", "role": "AXTab", "label": String(label.prefix(120)),
+                                    "context": "browser tab \(index + 1) of \(tabs.count)", "url": tab.url,
+                                    "editable": false, "pressable": true, "closable": true,
+                                    "selected": index + 1 == active])
+            }
+        }
+        // Change detection ignores free text (clocks, video time, counters):
+        // only structure, controls, values and selection count as a change.
+        let structural = (tabElements + elements).filter { ($0["role"] as? String) != "AXStaticText" }
+        let signature = "\(title)|\(url)|\(value["scrollY"] ?? 0)|"
+            + structural.map { "\($0["role"] ?? "")\($0["label"] ?? "")\($0["value"] ?? "")\($0["selected"] ?? "")" }
+                .joined(separator: "¦")
         var snap = Snapshot(app: app.localizedName ?? bundle, bundleID: bundle, pid: app.processIdentifier,
-                            windowTitle: title, url: url, elements: elements, truncated: value["truncated"] as? Bool ?? false,
+                            windowTitle: title, url: url, elements: tabElements + elements,
+                            truncated: value["truncated"] as? Bool ?? false,
                             signature: String(signature.hashValue), visited: elements.count)
         snap.via = "dom"
         return snap
@@ -171,8 +188,10 @@ final class UniversalAX {
         let windowTitle: String = attribute(window, kAXTitleAttribute) ?? ""
         let focusedLabel = (attribute(appElement, kAXFocusedUIElementAttribute) as AXUIElement?)
             .map { Self.label(of: $0, role: attribute($0, kAXRoleAttribute) ?? "") } ?? ""
-        let signature = "\(windowTitle)|\(url)|\(collected.count)|\(focusedLabel)|"
-            + collected.map { "\($0["label"] ?? "")\($0["value"] ?? "")\($0["selected"] ?? "")" }.joined(separator: "¦")
+        let signature = "\(windowTitle)|\(url)|\(focusedLabel)|"
+            + collected.filter { ($0["role"] as? String) != "AXStaticText" }
+                .map { "\($0["role"] ?? "")\($0["label"] ?? "")\($0["value"] ?? "")\($0["selected"] ?? "")" }
+                .joined(separator: "¦")
         return Snapshot(app: app.localizedName ?? app.bundleIdentifier ?? "app", bundleID: app.bundleIdentifier ?? "",
                         pid: pid, windowTitle: windowTitle, url: url, elements: collected,
                         truncated: collected.count >= limit, signature: String(signature.hashValue), visited: visited)
@@ -301,6 +320,9 @@ final class UniversalAX {
     // MARK: act
 
     func press(_ id: String) throws {
+        if id.hasPrefix("t"), let bundle = domBundle, let index = Int(id.dropFirst()) {
+            try dom.activateTab(bundle, index); return
+        }
         if id.hasPrefix("d"), let bundle = domBundle { _ = try dom.run(bundle, ["op": "press", "id": id]); return }
         guard let element = elements[id] else { throw AXError.stale }
         if AXUIElementPerformAction(element, kAXPressAction as CFString) == .success { return }
@@ -353,6 +375,18 @@ final class UniversalAX {
     }
 
     /// Copies an element's text (value, else label) to the clipboard and returns it.
+    /// Closes a browser tab by its listed position.
+    /// Closes one tab ("t3") or several ("t2,t4,t5"), highest index first so the others keep their place.
+    func close(_ ids: String) throws {
+        guard let bundle = domBundle else { throw AXError.stale }
+        let indexes = try ids.split(separator: ",").map { id -> Int in
+            guard id.hasPrefix("t"), let index = Int(id.dropFirst()) else { throw AXError.stale }
+            return index
+        }
+        guard !indexes.isEmpty else { throw AXError.stale }
+        for index in Set(indexes).sorted(by: >) { try dom.closeTab(bundle, index) }
+    }
+
     func copy(_ id: String) throws -> String {
         if id.hasPrefix("d"), let bundle = domBundle {
             guard let text = try dom.run(bundle, ["op": "copy", "id": id])["value"] as? String, !text.isEmpty else {
@@ -456,6 +490,21 @@ final class UniversalAX {
         let app = try await NSWorkspace.shared.openApplication(at: found, configuration: config)
         targetPID = app.processIdentifier
         try await Task.sleep(for: .milliseconds(1_200))
+    }
+
+    /// Quits a running app by name, as Command-Q does (the app may still ask to save).
+    func quit(app name: String) async throws {
+        let me = ProcessInfo.processInfo.processIdentifier
+        let plain = { (text: String) in text.replacingOccurrences(of: "\u{200E}", with: "")
+            .replacingOccurrences(of: "\u{200F}", with: "").trimmingCharacters(in: .whitespaces).lowercased() }
+        guard let running = NSWorkspace.shared.runningApplications.first(where: {
+            $0.activationPolicy == .regular && $0.processIdentifier != me
+                && plain($0.localizedName ?? "") == plain(name) }) else { throw AXError.actionFailed }
+        guard running.terminate() else { throw AXError.actionFailed }
+        for _ in 0..<20 where !running.isTerminated { try await Task.sleep(for: .milliseconds(100)) }
+        if targetPID == running.processIdentifier {
+            targetPID = NSWorkspace.shared.frontmostApplication.flatMap { $0.processIdentifier == me ? nil : $0.processIdentifier }
+        }
     }
 
     static func installedApps() -> [String] {

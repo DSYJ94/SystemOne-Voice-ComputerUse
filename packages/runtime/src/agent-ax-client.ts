@@ -13,6 +13,8 @@ export interface AgentElement {
   readonly value?: string;
   readonly selected?: boolean;
   readonly url?: string;
+  /** A browser tab that can be closed by name. */
+  readonly closable?: boolean;
 }
 
 export interface AgentSnapshot {
@@ -33,7 +35,7 @@ export interface AgentSnapshot {
   readonly via?: string;
 }
 
-export type AgentOperation = 'snapshot' | 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste';
+export type AgentOperation = 'snapshot' | 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste' | 'close' | 'quit_app';
 
 /** Host-side end of the private pipe to the app's Accessibility executor. The
  * app accepts a request only for the active, host-admitted agent task. */

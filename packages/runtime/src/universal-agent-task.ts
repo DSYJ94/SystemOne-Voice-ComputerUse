@@ -36,18 +36,20 @@ const BROWSER_KEYS: readonly [string, string][] = [
   ['forward', 'Go forward (Command-])'],
   ['reload', 'Reload the page (Command-R)'],
 ];
+/** Steps that end an app or the user's session; offered only when the request asks to quit or close. */
+const ENDS_APP = /^(?:quit|force quit|close window|close all|hide|log ?out|sign ?out|shut down|restart)\b/iu;
 const BROWSERS = new Set(['com.google.Chrome', 'com.apple.Safari', 'company.thebrowser.Browser', 'com.microsoft.edgemac',
   'com.brave.Browser', 'org.mozilla.firefox', 'com.google.Chrome.canary', 'com.operasoftware.Opera']);
 /** Agent tasks are longer and more exploratory than scripted fixtures. */
 /** Long chores (inbox triage, forms) need many steps; runaway loops are
  * caught by the same-screen limit, so the step cap can be generous. */
-const AGENT_LIMITS = Object.freeze({ maxObservations: 360, maxDecisions: 120, maxStateVisits: 8 });
+const AGENT_LIMITS = Object.freeze({ maxObservations: 120, maxDecisions: 40, maxStateVisits: 6 });
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /** One step proposal, shown to the user with exact observed labels only. */
 export interface AgentProposal {
   readonly step: number;
-  readonly kind: 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste' | 'finish';
+  readonly kind: 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste' | 'close' | 'quit_app' | 'finish';
   readonly label: string;
   readonly destinationUrl: string | null;
   readonly pageUrl: string;
@@ -56,10 +58,15 @@ export interface AgentProposal {
   readonly risky: boolean;
 }
 
+/** `origin` says what was in front when the user asked, so "this tab" or "this
+ * email" keeps meaning the same thing after the screen changes. */
 export interface AgentDecision {
-  select(set: BuiltCandidateSet, view: AgentSnapshot, signal: AbortSignal, history: readonly string[]): Promise<string | null>;
+  select(set: BuiltCandidateSet, view: AgentSnapshot, signal: AbortSignal, history: readonly string[],
+    origin?: string): Promise<string | null>;
   bestActions?(set: BuiltCandidateSet, view: AgentSnapshot, signal: AbortSignal,
-    history: readonly string[]): Promise<readonly string[]>;
+    history: readonly string[], origin?: string): Promise<readonly string[]>;
+  /** Probability (0–1) that the whole goal is already achieved. */
+  done?(view: AgentSnapshot, signal: AbortSignal, history: readonly string[], origin?: string): Promise<number>;
 }
 
 export interface AgentConfirmation {
@@ -99,6 +106,13 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
   #openedApp = false;
   #typedAt = new Set<string>();
   #waits = 0;
+  /** The previous action, which is not offered again immediately (no Play→Pause flip-flop). */
+  #lastAction: string | null = null;
+  /** Recent action descriptions, to stop three identical steps in a row. */
+  readonly #recent: string[] = [];
+  #origin: string | undefined;
+  /** Times each control or key was used; a toggle is not pressed back and forth. */
+  readonly #uses = new Map<string, number>();
   /** Text this task copied, available to paste. */
   #clipboard: string | null = null;
   /** Steps that changed nothing on a given screen are not offered there again. */
@@ -152,6 +166,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       this.#nextView = undefined;
       const observeMs = Math.round(performance.now() - observeStarted);
       this.#lastView = view;
+      this.#origin ??= view.pid ? `${view.app}${view.url ? `, on the browser tab “${view.windowTitle}” (${view.url.slice(0, 160)})`
+        : view.windowTitle ? `, window “${view.windowTitle}”` : ''}` : 'no app';
       this.#active(generation);
       const observationId = randomUUID();
       this.#journal.recordTaskObservation(this.taskId, ticket, { observationId, scopeRef: admission.scopeRef,
@@ -160,7 +176,14 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       const step = ++this.#step;
       const options = this.#options(view);
       const decideStarted = performance.now();
-      const { set, chosenId, byId } = await this.#choose(observationId, view, options, step, generation);
+      // "Is it done?" is asked separately, in parallel, once something has been done.
+      const [{ set, chosenId: proposedId, byId }, doneProbability] = await Promise.all([
+        this.#choose(observationId, view, options, step, generation),
+        this.#history.length && this.#decision.done
+          ? this.#decision.done(view, this.#abort.signal, [...this.#history], this.#origin).catch(() => 0) : Promise.resolve(0),
+      ]);
+      this.#active(generation);
+      const chosenId = doneProbability >= 0.6 ? 'finish' : proposedId;
       const decideMs = Math.round(performance.now() - decideStarted);
       const candidate = chosenId ? set.candidates.find(item => item.candidateId === chosenId) : undefined;
       if (!candidate) throw new ContractError('no confident agent step');
@@ -181,7 +204,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       this.#trace?.({ kind: 'step', step, app: view.app, window: view.windowTitle, url: view.url,
         elements: view.elements.length, options: options.length, chosen: proposal.kind, label: proposal.label,
         risky: proposal.risky, history: [...this.#history], observeMs, decideMs,
-        readMs: view.readMs ?? null, visited: view.visited ?? null, via: view.via ?? null });
+        readMs: view.readMs ?? null, visited: view.visited ?? null, via: view.via ?? null,
+        done: Math.round(doneProbability * 100) / 100 });
       const confirmed = await this.#confirmation.confirm(proposal, this.#abort.signal);
       this.#active(generation);
       if (!confirmed) throw new ContractError('user declined the agent step');
@@ -193,9 +217,18 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         return;
       }
       const chosen = option!;
+      const actionKey = `${chosen.kind}:${chosen.label}`;
+      this.#recent.push(actionKey);
+      if (!['close', 'scroll'].includes(chosen.kind) && this.#recent.length >= 3
+        && this.#recent.slice(-3).every(item => item === actionKey)) {
+        throw new ContractError('the same step three times in a row; stopping instead of looping');
+      }
+      this.#lastAction = `${chosen.kind}:${chosen.ref}`;
+      this.#uses.set(this.#lastAction, (this.#uses.get(this.#lastAction) ?? 0) + 1);
       const permit: PreparedAttempt = Object.freeze({ taskId: this.taskId, taskEpoch: admission.taskEpoch,
         goalRevision: admission.goalRevision, executionId: randomUUID(), permitRef: randomUUID(),
-        scopeRef: admission.scopeRef, observationId, candidateId: chosen.ref, candidateSetDigest: set.candidateSetDigest,
+        scopeRef: admission.scopeRef, observationId,
+        candidateId: chosen.ref.replace(/[^A-Za-z0-9_.:-]/gu, '-').slice(0, 160) || 'step', candidateSetDigest: set.candidateSetDigest,
         actionDigest: digest({ kind: chosen.kind, ref: chosen.ref, label: chosen.label, app: view.bundleId,
           policyRevision: AGENT_POLICY }), policyRevision: AGENT_POLICY, leaseGeneration: 1 });
       this.#journal.prepare(permit); executionId = permit.executionId;
@@ -275,12 +308,14 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
 
   async #act(option: Option): Promise<unknown> {
     const params: Record<string, JSONValue> = option.kind === 'press' || option.kind === 'copy' || option.kind === 'paste'
+      || option.kind === 'close'
       ? { id: option.ref }
       : option.kind === 'type' ? { id: option.ref, text: this.#goal.typedText!.text }
         : option.kind === 'key' ? { name: option.ref }
           : option.kind === 'scroll' ? { down: option.ref === 'scroll-down' }
             : option.kind === 'open_url' ? { url: this.#goal.url! }
-              : { name: option.label };
+              : option.kind === 'quit_app' ? { name: option.label.replace(/[\u200e\u200f]/gu, '').trim() }
+                : { name: option.label };
     return await this.#ax.call(this.taskId, option.kind as Exclude<Option['kind'], 'finish'>, params,
       option.kind === 'open_url' || option.kind === 'open_app' ? 20_000 : 10_000);
   }
@@ -309,6 +344,17 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
           description: `In ${view.app}: paste the copied text “${this.#clipboard.slice(0, 60)}” into the ${role(element.role)} “${element.label}”${where(element)}.`,
           score: score(element.label) + 4 });
       }
+      if (element.role === 'AXTab' && element.closable) {
+        const where = element.url ? ` (${element.url.slice(0, 120)})` : '';
+        options.push({ kind: 'press', ref: element.id, element, label: element.label,
+          description: `Switch to the browser tab “${element.label}”${where}${element.selected ? ' (already the current tab)' : ''}.`,
+          score: score(`${element.label} ${element.url ?? ''}`) * 2 });
+        if (this.#goal.quit) options.push({ kind: 'close', ref: element.id, element, label: element.label,
+          description: `Close the browser tab “${element.label}”${where}${element.selected ? ' (the current tab)' : ''}.`,
+          score: score(`${element.label} ${element.url ?? ''}`) });
+        continue;
+      }
+      if (!this.#goal.quit && ENDS_APP.test(element.label.replace(/^\u200e/u, ''))) continue;
       if (element.role !== 'AXStaticText' && (element.pressable || !element.editable)) {
         options.push({ kind: 'press', ref: element.id, element, label: element.label,
           description: `In ${view.app}: ${['AXRow', 'AXCell', 'AXLink'].includes(element.role) ? 'open' : 'click'} the ${
@@ -317,21 +363,52 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
           score: score(`${element.label} ${element.context}`) });
       }
     }
+    if (this.#goal.quit) {
+      // Identical tabs ("New Tab" ×3) are closed together; one at a time, they look alike and some get missed.
+      const groups = new Map<string, AgentElement[]>();
+      for (const tab of view.elements.filter(element => element.role === 'AXTab' && element.closable)) {
+        const key = tab.url || tab.label;
+        groups.set(key, [...(groups.get(key) ?? []), tab]);
+      }
+      for (const tabs of groups.values()) {
+        if (tabs.length < 2) continue;
+        options.push({ kind: 'close', ref: tabs.map(tab => tab.id).join(','), label: `${tabs.length} tabs “${tabs[0]!.label}”`,
+          description: `Close all ${tabs.length} browser tabs titled “${tabs[0]!.label}”${tabs[0]!.url ? ` (${tabs[0]!.url.slice(0, 120)})` : ''} at once.`,
+          score: score(`${tabs[0]!.label} ${tabs[0]!.url ?? ''} all`) + 2 });
+      }
+    }
     if (this.#goal.url && !this.#openedUrl && !view.url.includes(new URL(this.#goal.url).hostname.replace(/^www\./u, ''))) {
       options.push({ kind: 'open_url', ref: 'goal-url', label: this.#goal.url,
         description: `Open ${this.#goal.url} in the default web browser.`, score: 10 });
     }
+    const plain = (name: string) => name.replace(/[\u200e\u200f]/gu, '').trim().toLowerCase();
+    const named = this.#goal.app ? plain(this.#goal.app) : null;
+    if (this.#goal.quit) {
+      // Quit by name directly; no need to bring the app forward first.
+      const apps = [...new Set([...(view.pid ? [view.app] : []), ...(view.runningApps ?? []).slice(0, 20)])];
+      for (const name of apps) {
+        if (named && plain(name) !== named) continue;
+        options.push({ kind: 'quit_app', ref: `quit:${name}`, label: name,
+          description: `Quit the app ${plain(name) === plain(view.app) ? `${name} (in front now)` : name} completely, as Command-Q does.`,
+          score: 10 + score(name) * 3 });
+      }
+    }
     for (const name of (view.runningApps ?? []).slice(0, 20)) {
-      if (name.toLowerCase() === view.app.toLowerCase() || name === this.#goal.app) continue;
+      if (plain(name) === plain(view.app) || name === this.#goal.app
+        || (this.#goal.quit && named && plain(name) === named)) continue;
       options.push({ kind: 'open_app', ref: `app:${name}`, label: name,
         description: `Switch to the app ${name} (already open).`, score: score(name) * 3 });
     }
-    if (this.#goal.app && !this.#openedApp && view.app.toLowerCase() !== this.#goal.app.toLowerCase()) {
+    if (this.#goal.app && !this.#openedApp && plain(view.app) !== named && !this.#goal.quit) {
       options.push({ kind: 'open_app', ref: 'goal-app', label: this.#goal.app,
         description: `Open the app ${this.#goal.app}.`, score: 10 });
     }
     if (view.pid) {
-      const keys = [...(BROWSERS.has(view.bundleId) ? BROWSER_KEYS : []), ...KEYS,
+      // With a real tab list, tabs are switched and closed by name, never by blind cycling.
+      const listedTabs = view.elements.some(element => element.role === 'AXTab' && element.closable);
+      const browserKeys = BROWSERS.has(view.bundleId)
+        ? BROWSER_KEYS.filter(([name]) => !listedTabs || !['nexttab', 'prevtab', 'closetab'].includes(name)) : [];
+      const keys = [...browserKeys, ...KEYS,
         ...(this.#goal.undo ? [['undo', 'Undo the last change (Command-Z)'] as [string, string]] : [])];
       for (const [name, text] of keys) {
         options.push({ kind: 'key', ref: name, label: text, description: `In ${view.app}: ${text}.`,
@@ -340,7 +417,9 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       options.push({ kind: 'scroll', ref: 'scroll-down', label: 'Scroll down', description: `In ${view.app}: scroll down to see more.`, score: 0 });
       options.push({ kind: 'scroll', ref: 'scroll-up', label: 'Scroll up', description: `In ${view.app}: scroll up.`, score: 0 });
     }
-    return options.filter(option => !this.#noEffect.has(`${view.signature}|${option.kind}:${option.ref}`))
+    return options.filter(option => !this.#noEffect.has(`${view.signature}|${option.kind}:${option.ref}`)
+      && (option.kind === 'scroll' || option.kind === 'close' || (`${option.kind}:${option.ref}` !== this.#lastAction
+        && (this.#uses.get(`${option.kind}:${option.ref}`) ?? 0) < 3)))
       .map((option, index) => ({ option, index }))
       .sort((a, b) => b.option.score - a.option.score || a.index - b.index)
       .slice(0, MAX_OPTIONS).map(item => item.option);
@@ -355,7 +434,12 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       const base = { candidateId, description: option.description.slice(0, 1_200), preconditions: ['fresh_observation'],
         verifier: { kind: 'content_changed' }, delivery: 'semantic', riskPolicyRef: AGENT_POLICY,
         replayPolicy: 'only_if_not_applied' };
-      const candidate: Record<string, JSONValue> = option.kind === 'copy'
+      const candidate: Record<string, JSONValue> = option.kind === 'quit_app'
+        ? { ...base, operation: 'invoke', targetRef: option.ref.replace(/[^A-Za-z0-9_.:-]/gu, '-').slice(0, 160),
+          parameters: {}, effects: ['EXTERNAL_WRITE'] }
+        : option.kind === 'close'
+        ? { ...base, operation: 'tab_operation', parameters: { tabOperation: 'close', tabRef: option.ref.replaceAll(',', '_') }, effects: ['NAVIGATE'] }
+        : option.kind === 'copy'
         ? { ...base, operation: 'copy', targetRef: option.ref, parameters: {}, effects: ['READ', 'CLIPBOARD_WRITE'] }
         : option.kind === 'paste'
           ? { ...base, operation: 'set_value', targetRef: option.ref, parameters: { textRef: 'clipboard-text' },
@@ -411,15 +495,15 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       const picks = await Promise.all(rounds.map(async round => {
         const { set, byId } = this.#set(observationId, round, step);
         const ids = this.#decision.bestActions
-          ? await this.#decision.bestActions(set, view, this.#abort.signal, [...this.#history])
-          : [await this.#decision.select(set, view, this.#abort.signal, [...this.#history])];
+          ? await this.#decision.bestActions(set, view, this.#abort.signal, [...this.#history], this.#origin)
+          : [await this.#decision.select(set, view, this.#abort.signal, [...this.#history], this.#origin)];
         return ids.slice(0, 2).map(id => (id ? byId.get(id) : undefined)).filter((item): item is Option => !!item);
       }));
       this.#active(generation);
       finalists = [...new Set(picks.flat())];
     }
     const { set, byId } = this.#set(observationId, finalists, step);
-    const chosenId = await this.#decision.select(set, view, this.#abort.signal, [...this.#history]);
+    const chosenId = await this.#decision.select(set, view, this.#abort.signal, [...this.#history], this.#origin);
     this.#active(generation);
     return { set, chosenId, byId };
   }
@@ -463,7 +547,8 @@ function role(axRole: string): string {
 
 function describeKind(option: Option): string {
   switch (option.kind) {
-    case 'press': return `clicked “${option.label}”`;
+    case 'press': return option.element?.role === 'AXTab' ? `switched to the tab “${option.label.slice(0, 60)}”`
+      : `clicked “${option.label}”`;
     case 'type': return `typed the user's text into “${option.label}”`;
     case 'key': return option.label.split(' (')[0]!.toLowerCase();
     case 'scroll': return option.label.toLowerCase();
@@ -471,6 +556,8 @@ function describeKind(option: Option): string {
     case 'open_app': return `opened the app ${option.label}`;
     case 'copy': return `copied “${option.label.slice(0, 60)}”`;
     case 'paste': return `pasted the copied text into “${option.label}”`;
+    case 'close': return `closed the tab “${option.label.slice(0, 60)}”`;
+    case 'quit_app': return `quit the app ${option.label}`;
     default: return 'finished';
   }
 }

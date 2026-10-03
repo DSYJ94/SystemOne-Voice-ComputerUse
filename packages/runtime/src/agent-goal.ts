@@ -15,6 +15,11 @@ export interface AgentGoal {
   readonly clipboard: boolean;
   /** The request asks to undo something. */
   readonly undo: boolean;
+  /** The request asks to quit or close an app (or a window/tab). Without it, steps that
+   * end an app or session ("Quit …", "Log out") are never offered. */
+  readonly quit: boolean;
+  /** The request asks to write or reply but gives no words to write. */
+  readonly needsText: boolean;
 }
 
 const NOT_SITES = new Set(['the', 'a', 'an', 'my', 'this', 'that', 'it', 'new', 'next', 'first', 'last', 'video',
@@ -36,7 +41,7 @@ export function parseAgentGoal(text: string, apps: readonly string[]): AgentGoal
   const lower = text.toLowerCase();
   let app: string | null = null;
   for (const name of apps) {
-    const pattern = new RegExp(`\\b(?:open|launch|start|switch to|use|in|into|to)\\s+(?:the\\s+)?${name.toLowerCase()
+    const pattern = new RegExp(`\\b(?:open|launch|start|switch to|use|in|into|to|close|quit|exit)\\s+(?:the\\s+)?${name.toLowerCase()
       .replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}\\b`, 'u');
     if (name.length >= 3 && pattern.test(lower) && (!app || name.length > app.length)) app = name;
   }
@@ -67,8 +72,11 @@ export function parseAgentGoal(text: string, apps: readonly string[]): AgentGoal
     const start = Buffer.byteLength(text.slice(0, index), 'utf8');
     typedText = { text: value, start, end: start + Buffer.byteLength(value, 'utf8') };
   }
-  return Object.freeze({ typedText, url, app, clipboard: /\b(?:copy|paste|clipboard)\b/iu.test(text),
-    undo: /\bundo\b/iu.test(text) });
+  const clipboard = /\b(?:copy|paste|clipboard)\b/iu.test(text);
+  return Object.freeze({ typedText, url, app, clipboard, undo: /\bundo\b/iu.test(text),
+    quit: /\b(?:quit|close|exit|shut down|log ?out|sign ?out)\b/iu.test(text),
+    needsText: !typedText && !clipboard
+      && (/\b(?:reply|respond|write back|type)\b/iu.test(text) || /^\s*(?:message|text)\s+\w+/iu.test(text)) });
 }
 
 /** Binds an exact byte span of the final command (not only a suffix). */

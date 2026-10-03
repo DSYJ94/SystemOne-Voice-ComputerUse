@@ -481,15 +481,18 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ])
         speech.onText = { [weak self] text, isFinal in
             guard let self else { return }
+            let answering = self.listeningForAnswer
             if isFinal { self.listeningForAnswer = false }
             if isFinal, let pending = self.pendingProposal {
                 let reply = text.lowercased()
                 if reply.range(of: #"^(yes|yeah|yep|allow|go ahead|ok|okay|do it|sure)\b"#, options: .regularExpression) != nil {
-                    self.confirmProposal(pending, allow: true)
+                    self.confirmProposal(pending, allow: true); return
                 } else if reply.range(of: #"^(no|stop|cancel|don't|do not)\b"#, options: .regularExpression) != nil {
-                    self.stop()
+                    self.stop(); return
                 }
-                return
+                // Anything else said in the short answer window is noise; said with the
+                // hotkey it is a new request, which replaces the waiting task below.
+                if answering && !self.hotkeyDictation { return }
             }
             self.taskField?.stringValue = text
             self.finalSpeechText = isFinal ? text : nil
@@ -1363,6 +1366,11 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             approvalRow?.isHidden = true
             statusField?.stringValue = "Done."
             voice.say("Done.")
+        case "agent_needs_text":
+            pendingProposal = nil
+            approvalRow?.isHidden = true
+            voice.say("What should it say?")
+            statusField?.stringValue = "What should it say? Ask again with the words, e.g. “reply saying I'll be there at six”."
         case "agent_paused":
             pendingProposal = nil
             approvalRow?.isHidden = true
@@ -1529,9 +1537,14 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func runTaskRequest() {
+        // Return approves a waiting step only when nothing new was typed or said.
+        // A new request never approves the old one's step; it replaces that task.
         if let pending = pendingProposal {
-            confirmProposal(pending, allow: true)
-            return
+            let typed = (taskField?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if typed.isEmpty || typed == runningRequestText {
+                confirmProposal(pending, allow: true)
+                return
+            }
         }
         if activeRequestID != nil, (taskField?.stringValue ?? "") == runningRequestText {
             commandStatus?.stringValue = "Already working on that. Say or type something new to replace it, or press ■ to stop."
@@ -1957,6 +1970,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     reply(true, value, nil)
                 case "press": try self.universalAX.press(object["id"] as? String ?? ""); reply(true, nil, nil)
                 case "copy": reply(true, try self.universalAX.copy(object["id"] as? String ?? ""), nil)
+                case "close": try self.universalAX.close(object["id"] as? String ?? ""); reply(true, nil, nil)
                 case "paste": try self.universalAX.paste(object["id"] as? String ?? ""); reply(true, nil, nil)
                 case "type":
                     try self.universalAX.type(object["id"] as? String ?? "", text: object["text"] as? String ?? "")
@@ -1969,6 +1983,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     try await self.universalAX.open(url: url); reply(true, nil, nil)
                 case "open_app":
                     try await self.universalAX.open(app: object["name"] as? String ?? ""); reply(true, nil, nil)
+                case "quit_app":
+                    try await self.universalAX.quit(app: object["name"] as? String ?? ""); reply(true, nil, nil)
                 default: reply(false, nil, "unsupported operation")
                 }
             } catch { reply(false, nil, String(describing: error)) }

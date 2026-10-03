@@ -25,6 +25,8 @@ export interface SimElement {
   readonly url?: string;
   /** What pressing it does to the world. */
   readonly press?: () => void;
+  /** A browser tab that can be closed by name, and what closing it does. */
+  readonly close?: () => void;
 }
 
 export interface SimScreen {
@@ -53,6 +55,9 @@ export interface SimWorld {
   scroll?(down: boolean): void;
   openUrl?(url: string): void;
   openApp?(name: string): void;
+  quitApp?(name: string): void;
+  /** Regular apps running now (defaults to the scenario's app list). */
+  running?(): readonly string[];
   /** Did the user's goal happen? */
   done(): boolean;
   /** Did something happen that must not (e.g. an email was sent unasked)? */
@@ -91,15 +96,28 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
           label: item.label, context: item.context ?? '', editable: item.editable === true,
           pressable: item.role !== 'AXStaticText' && (item.editable !== true || item.press !== undefined),
           ...(item.value !== undefined ? { value: item.value } : {}),
-          ...(item.selected ? { selected: true } : {}), ...(item.url ? { url: item.url } : {}) }));
+          ...(item.selected ? { selected: true } : {}), ...(item.url ? { url: item.url } : {}),
+          ...(item.close ? { closable: true } : {}) }));
         value = { app: screen?.app ?? 'no app', bundleId: screen?.bundleId ?? '', pid: screen ? 1 : 0,
           windowTitle: screen?.windowTitle ?? '', url: screen?.url ?? '', elements: described as unknown as JSONValue,
+          // Like the executor: static text (clocks, counters) is not part of the signature.
           truncated: false, signature: JSON.stringify([screen?.app, screen?.windowTitle, screen?.url,
-            elements.map(item => [item.label, item.value, item.selected])]),
-          runningApps: scenario.apps.filter(name => name !== screen?.app) };
+            elements.filter(item => item.role !== 'AXStaticText').map(item => [item.role, item.label, item.value, item.selected])]),
+          runningApps: (world.running?.() ?? scenario.apps).filter(name => name !== screen?.app) };
         break;
       }
       case 'press': if (element?.press) element.press(); else ok = !!element; break;
+      case 'close': {
+        // One tab or several ("e1,e3"); highest first, as the executor does.
+        const targets = String(request.id).split(',').map(id => elements[Number(id.slice(1))]);
+        if (targets.every(item => item?.close)) {
+          for (const item of [...targets].reverse()) item!.close!();
+        } else ok = false;
+        break;
+      }
+      case 'quit_app': if (world.quitApp && (world.running?.() ?? scenario.apps).includes(String(request.name))) {
+        world.quitApp(String(request.name));
+      } else ok = false; break;
       case 'copy': if (element) { world.clipboard = element.value ?? element.label; value = world.clipboard; } else ok = false; break;
       case 'paste': if (element && world.type && world.clipboard) world.type(element, world.clipboard); else ok = false; break;
       case 'type': if (element && world.type) world.type(element, String(request.text)); else ok = false; break;
@@ -127,9 +145,11 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
     scopeRef: 'agent-session:eval', completionVerifierRef: AGENT_VERIFIER, policyRevision: AGENT_POLICY,
     approvedEffects: ['READ', 'NAVIGATE', 'EXTERNAL_READ', 'LOCAL_EDIT', 'EXTERNAL_WRITE'],
     parameters: goal.typedText ? [bindCommandSpan(command, 'typed-text', goal.typedText)] : [] });
+  let done = 0;
   const task = UniversalAgentTask.start(journal, registry, admission, client, { goal, decision: decision(scenario.goal),
+    trace: event => { if (event.kind === 'step') done = Number(event.done ?? 0); },
     confirmation: { async confirm(proposal: AgentProposal) {
-      steps.push(`${proposal.kind} “${proposal.label.slice(0, 60)}”${proposal.risky ? ' (risky)' : ''}`);
+      steps.push(`${proposal.kind} “${proposal.label.slice(0, 60)}”${proposal.risky ? ' (risky)' : ''} [done ${done}]`);
       // Risky steps are declined unless the run allows them, like a user saying no.
       return !proposal.risky || options.allowRisky === true;
     } } });
