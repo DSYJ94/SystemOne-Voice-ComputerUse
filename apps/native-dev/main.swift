@@ -107,6 +107,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var queuedRequestText: String?
     private var micButton: NSButton?
     private var runWhenTranscribed = false
+    private var lastBrowserHint: String?
     /// The text of the request currently running; Return on it is a no-op.
     private var runningRequestText: String?
     /// The last app the user was in (never SystemOne), used as the agent's target.
@@ -1943,7 +1944,12 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                                  "windowTitle": snap.windowTitle, "url": snap.url, "elements": elements,
                                  "truncated": snap.truncated || elements.count < snap.elements.count,
                                  "signature": snap.signature, "runningApps": UniversalAX.runningApps(),
-                                 "readMs": self.universalAX.lastReadMs, "visited": snap.visited]
+                                 "readMs": self.universalAX.lastReadMs, "visited": snap.visited, "via": snap.via]
+                        if let hint = snap.hint, hint != self.lastBrowserHint {
+                            // Once per distinct problem: how to enable the faster page read.
+                            self.lastBrowserHint = hint
+                            self.commandStatus?.stringValue = hint
+                        }
                         let size = (try? JSONSerialization.data(withJSONObject: value).count) ?? 0
                         if size < 56_000 { break }
                         elements.removeLast(min(20, elements.count))

@@ -23,6 +23,14 @@ First time after setting up signing:
    this; only native-app actions do. The pinned certificate keeps the grant
    valid across rebuilds.
 
+**Faster, more accurate browsing (one-time, recommended):** in Chrome, choose
+**View › Developer › Allow JavaScript from Apple Events** (Safari: Develop menu,
+same item). The first time SystemOne reads a page, allow the macOS prompt for
+SystemOne to control Chrome. After that, your active tab is read from the page
+itself in tens of milliseconds, and clicks and typing go straight to the page. If
+the setting is off, SystemOne falls back to Accessibility, which is slower, and
+says so once in the bar.
+
 ## Use the bar
 
 **Hold Control-Option-Space, say what you want, release.** SystemOne works on

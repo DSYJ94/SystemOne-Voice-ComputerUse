@@ -69,6 +69,7 @@ metadata = {
     'NSHighResolutionCapable': True,
     'NSMicrophoneUsageDescription': 'Capture speech only while the mic is on, to draft a task request on this Mac.',
     'NSSpeechRecognitionUsageDescription': 'Transcribe held speech on this Mac into an editable task request.',
+    'NSAppleEventsUsageDescription': 'Read and act on your current browser tab when you ask SystemOne to.',
     'SystemOneNodeExecutable': node,
     'SystemOneControllerScript': controller,
 }
@@ -81,6 +82,10 @@ if any(chrome_values):
 with open(path, 'wb') as output:
     plistlib.dump(metadata, output)
 PY
+
+# The in-page browser agent ships as a resource next to the executable.
+mkdir -p "$contents/Resources"
+cp "$repository_root/apps/native-dev/dom-agent.js" "$contents/Resources/dom-agent.js"
 
 # Disposable local output can inherit Finder/file-provider xattrs from the
 # cloud-synced checkout; clear them before signing this development bundle.

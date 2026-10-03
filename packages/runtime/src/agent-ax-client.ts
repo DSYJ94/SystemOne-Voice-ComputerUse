@@ -29,6 +29,8 @@ export interface AgentSnapshot {
   /** Executor-measured read time and nodes visited, for traces. */
   readonly readMs?: number;
   readonly visited?: number;
+  /** "dom" when a browser tab was read from its page, "ax" otherwise. */
+  readonly via?: string;
 }
 
 export type AgentOperation = 'snapshot' | 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste';

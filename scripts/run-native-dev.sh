@@ -32,6 +32,7 @@ fi
 if [[ ! -x "$binary" || "$script_dir/build-native-dev.sh" -nt "$binary" ||
       "$script_dir/native-dev-sources.zsh" -nt "$binary" ||
       "$script_dir/development_signing.py" -nt "$binary" ||
+      "$repository_root/apps/native-dev/dom-agent.js" -nt "$binary" ||
       "$repository_root/.build/development-signing-identity" -nt "$binary" ]]; then
   needs_build=1
 else

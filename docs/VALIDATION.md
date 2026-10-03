@@ -1,5 +1,40 @@
 # Initial foundation validation
 
+## Faster reads and the in-page browser agent, 3 October 2026
+
+**Accessibility read.** The walk now skips:
+- the internals of leaf controls (static text, images, buttons, links,
+  fields, toggles);
+- branches entirely outside the window.
+
+The executor reports its read time and nodes visited.
+
+**In-page browser agent.** `dom-agent.js` runs in the user's active tab
+through AppleScript `execute javascript` (Chromium browsers) or `do
+JavaScript` (Safari):
+- Snapshot: visible interactive elements in Accessibility role terms, with
+  context, URL, value and selected state; password fields are never
+  editable or valued; plus up to 60 short texts for reading and copying.
+- Actions: click; type (replaces fields, appends to text areas and
+  contenteditable); copy; paste; select; scroll.
+- `BrowserDOM.swift` uses it automatically for supported browsers and
+  falls back to Accessibility, with a one-time hint, when "Allow
+  JavaScript from Apple Events" is off or Automation is not granted.
+- The build bundles the script and adds `NSAppleEventsUsageDescription`.
+
+Evidence:
+- `dom-agent.test.ts` runs the script in headless Chromium: link/span
+  de-duplication, hidden and off-screen exclusion, password handling,
+  click, replace versus append, copy, select, scroll.
+- Measured snapshot time on live pages: Wikipedia "Alan Turing" (110
+  elements) 9–37 ms; YouTube home 4–7 ms.
+- Eval with six new multi-app chains: 38/38. `make test` 497/497. A real
+  ad-hoc build contains the resource and plist key and passes three
+  self-checks.
+
+Not run: AppleScript execution against the owner's Chrome (needs the Chrome
+setting and the Automation prompt); real AX timing.
+
 ## Stage B eval harness and Stage C features, 3 October 2026
 
 The owner was away; work continued without live testing.

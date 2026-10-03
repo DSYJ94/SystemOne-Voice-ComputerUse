@@ -19,7 +19,15 @@ final class UniversalAX {
         let truncated: Bool
         let signature: String
         let visited: Int
+        /// "dom" when read through the browser's page, else "ax".
+        var via = "ax"
+        /// Why the page could not be read directly (shown once), if relevant.
+        var hint: String?
     }
+
+    private let dom = BrowserDOM()
+    /// Bundle ID of the browser whose page supplied the last snapshot.
+    private var domBundle: String?
 
     private var elements: [String: AXUIElement] = [:]
     private var windowElement: AXUIElement?
@@ -48,6 +56,36 @@ final class UniversalAX {
         defer { lastReadMs = Int(Date().timeIntervalSince(started) * 1000) }
         guard let pid = targetPID, let app = NSRunningApplication(processIdentifier: pid),
               !app.isTerminated else { throw AXError.noTarget }
+        domBundle = nil
+        var hint: String?
+        if let bundle = app.bundleIdentifier, BrowserDOM.supports(bundle) {
+            do { return try domSnapshot(app: app, bundle: bundle) }
+            catch { hint = dom.lastProblem }
+        }
+        var snap = try axSnapshot(app: app, pid: pid)
+        snap.hint = hint
+        return snap
+    }
+
+    /// The browser's active tab, read from its DOM in one round-trip.
+    private func domSnapshot(app: NSRunningApplication, bundle: String) throws -> Snapshot {
+        let reply = try dom.run(bundle, ["op": "snapshot"])
+        guard let value = reply["value"] as? [String: Any], let elements = value["elements"] as? [[String: Any]] else {
+            throw BrowserDOM.DOMError.failed("unexpected page snapshot")
+        }
+        domBundle = bundle
+        let title = value["title"] as? String ?? ""
+        let url = value["url"] as? String ?? ""
+        let signature = "\(title)|\(url)|\(value["scrollY"] ?? 0)|\(value["focused"] ?? "")|"
+            + elements.map { "\($0["label"] ?? "")\($0["value"] ?? "")\($0["selected"] ?? "")" }.joined(separator: "¦")
+        var snap = Snapshot(app: app.localizedName ?? bundle, bundleID: bundle, pid: app.processIdentifier,
+                            windowTitle: title, url: url, elements: elements, truncated: value["truncated"] as? Bool ?? false,
+                            signature: String(signature.hashValue), visited: elements.count)
+        snap.via = "dom"
+        return snap
+    }
+
+    private func axSnapshot(app: NSRunningApplication, pid: pid_t) throws -> Snapshot {
         let appElement = AXUIElementCreateApplication(pid)
         // A busy app must not stall the agent: each AX call gives up after 0.5 s.
         AXUIElementSetMessagingTimeout(appElement, 0.5)
@@ -263,6 +301,7 @@ final class UniversalAX {
     // MARK: act
 
     func press(_ id: String) throws {
+        if id.hasPrefix("d"), let bundle = domBundle { _ = try dom.run(bundle, ["op": "press", "id": id]); return }
         guard let element = elements[id] else { throw AXError.stale }
         if AXUIElementPerformAction(element, kAXPressAction as CFString) == .success { return }
         guard let box = frame(of: element) else { throw AXError.actionFailed }
@@ -271,6 +310,9 @@ final class UniversalAX {
     }
 
     func type(_ id: String, text: String) throws {
+        if id.hasPrefix("d"), let bundle = domBundle {
+            _ = try dom.run(bundle, ["op": "type", "id": id, "text": text]); return
+        }
         guard let element = elements[id] else { throw AXError.stale }
         try activateTarget()
         AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
@@ -312,6 +354,14 @@ final class UniversalAX {
 
     /// Copies an element's text (value, else label) to the clipboard and returns it.
     func copy(_ id: String) throws -> String {
+        if id.hasPrefix("d"), let bundle = domBundle {
+            guard let text = try dom.run(bundle, ["op": "copy", "id": id])["value"] as? String, !text.isEmpty else {
+                throw AXError.actionFailed
+            }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            return text
+        }
         guard let element = elements[id] else { throw AXError.stale }
         let role: String = attribute(element, kAXRoleAttribute) ?? ""
         let value: String = attribute(element, kAXValueAttribute) ?? ""
@@ -324,6 +374,10 @@ final class UniversalAX {
 
     /// Pastes the clipboard into a field (appending in multi-line text).
     func paste(_ id: String) throws {
+        if id.hasPrefix("d"), let bundle = domBundle {
+            let text = NSPasteboard.general.string(forType: .string) ?? ""
+            _ = try dom.run(bundle, ["op": "paste", "id": id, "text": text]); return
+        }
         guard let element = elements[id] else { throw AXError.stale }
         try activateTarget()
         AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
@@ -347,6 +401,7 @@ final class UniversalAX {
     }
 
     func scroll(down: Bool) throws {
+        if let bundle = domBundle { _ = try dom.run(bundle, ["op": "scroll", "down": down]); return }
         try activateTarget()
         if let window = windowElement, let box = frame(of: window) {
             CGWarpMouseCursorPosition(CGPoint(x: box.midX, y: box.midY))
