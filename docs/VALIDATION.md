@@ -1,5 +1,46 @@
 # Initial foundation validation
 
+## Stage A: universal Accessibility agent, 3 October 2026
+
+The owner dropped the original rule set: staging replaces rules, and V1 means
+general voice computer use (see the rewritten [V1 plan](V1_PLAN.md)). The
+"Controller unavailable or another task is active" error came from a
+finished or waiting task holding the slot; a new request now replaces the
+running one.
+
+New pieces:
+- **`UniversalAX.swift`:** Accessibility snapshots of the front app's focused
+  window, including Chromium/WebKit web content via
+  `AXManualAccessibility`/`AXEnhancedUserInterface`, plus open menus. It can
+  press, type (AX value or keyboard), send keys, scroll, open a URL in the
+  default browser and open an installed app.
+- **`UniversalAgentTask`:** host-built candidates, judged in rounds; Jev
+  choice; confirm or auto-allow; a permit and journal entry per step; a
+  visible-change check, where "no change" is recorded as `not_matched` and
+  does not block; label-change history; wait-and-relook.
+- **Goal parsing:** typed text is an exact span of the command; the site and
+  installed app come from the goal.
+- **Controller:** `start_agent`, executor replies, and a generalized
+  proposal message with app name and risky flag.
+- **Settings:** auto-allow on by default with `npm start`, and "Ask before
+  send / buy / delete" as an owner switch.
+
+Ran:
+- `make test` 491/491 (oracle 115/115); release inventory 7/7.
+- Swift typecheck, and a scratch build passing the four app self-checks.
+- 3 new agent tests against a simulated app through the real request/reply
+  channel.
+- Live jev-1.13.0 on a simulated YouTube Accessibility tree:
+  - "Play the video": Play (k) 0.94, then done 0.88.
+  - "go to youtube and search for lofi beats and play the first result":
+    open YouTube, type, Search, first result, Play, done.
+  - The first live attempt paused in a wait loop after Play; fixed with
+    label-change history and a clearer finish option.
+
+Not run: the real Accessibility executor. This shell is not an
+Accessibility-trusted process, and the owner must add the signed SystemOne
+Dev once. No real app has been driven yet.
+
 ## Real-site browsing hardened; push-to-talk; approvals, 3 October 2026
 
 Owner report: the mic stayed red, there was no hotkey dictation, every step

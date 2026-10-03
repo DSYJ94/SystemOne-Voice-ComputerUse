@@ -6,7 +6,7 @@ import Foundation
 @MainActor
 final class DevTaskIntake {
     enum Surface: Equatable {
-        case managed, managedNavigation, portal, native, nativeNavigation, browse
+        case managed, managedNavigation, portal, native, nativeNavigation, browse, agent
         case nativeLocate, nativeOpen, chrome
 
         var usesNativeWorker: Bool {
@@ -33,10 +33,13 @@ final class DevTaskIntake {
                         field: String, value: String)
         /// Free browse goal; Jev proposes each step and the user confirms it.
         case browse(text: String)
+        /// Universal computer use on the user's own apps through Accessibility.
+        case agent(text: String)
 
         var surface: Surface {
             switch self {
             case .browse: .browse
+            case .agent: .agent
             case .managedFill: .managed
             case .managedNavigate: .managedNavigation
             case .portal: .portal
@@ -70,6 +73,7 @@ final class DevTaskIntake {
             case .chromeFill(_, _, let url, let field, let value):
                 "Fill \(field) in existing Chrome tab \(url) with text: \(value)"
             case .browse(let text): text
+            case .agent(let text): text
             }
         }
 
@@ -114,6 +118,9 @@ final class DevTaskIntake {
                     "command": command]
             case .browse:
                 return ["type": "start_browse", "requestId": taskID, "command": command,
+                        "decisionProvider": "jev"]
+            case .agent:
+                return ["type": "start_agent", "requestId": taskID, "command": command,
                         "decisionProvider": "jev"]
             case .chromeFill(let connectionID, let grantID, _, let field, let value):
                 return ["type": "start_chrome_fill", "requestId": taskID,

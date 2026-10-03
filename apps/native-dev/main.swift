@@ -113,7 +113,12 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// "Allow all" for one task, or the Settings switch for the whole session.
     /// Steps stay journaled, permitted one at a time and verified; Esc stops.
     private var autoAllowTaskID: String?
-    private var autoAllowSession = false
+    /// On by default when the launcher enabled Jev: the user can sit back.
+    /// Risky steps (send, buy, delete, passwords…) always ask regardless.
+    private lazy var autoAllowSession = jevEnabled
+    /// Owner-controlled, not a rule: ask before steps that look like send/buy/delete.
+    private var askBeforeRisky = true
+    private let universalAX = UniversalAX()
     private var recoveryRequestID: String?
     private let recoveryUISession = UUID().uuidString.lowercased()
     private var recoveryAlert: NSAlert?
@@ -500,6 +505,12 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let autoRow = row("Auto-allow steps", nil)
         autoRow.insertArrangedSubview(autoSwitch, at: 0)
         let autoNote = caption("Jev acts without asking each time. Every step is still checked, and Esc or Control-Option-Escape stops.")
+        let riskySwitch = NSSwitch()
+        riskySwitch.state = askBeforeRisky ? .on : .off
+        riskySwitch.target = self
+        riskySwitch.action = #selector(toggleAskBeforeRisky(_:))
+        let riskyRow = row("Ask before send / buy / delete", nil)
+        riskyRow.insertArrangedSubview(riskySwitch, at: 0)
         let voiceRow = row("Voice: " + (speech.isAuthorized ? "ready (on this Mac)" : "not enabled"),
                            speech.isAuthorized ? nil : link("Enable", #selector(enableVoice)))
         let axGranted = hasAccessibilityAccess()
@@ -512,7 +523,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                                         link("Developer tools", #selector(openDeveloperPanel))])
         tools.orientation = .horizontal
         tools.spacing = 6
-        let stack = NSStackView(views: [heading, jevRow, jevNote, autoRow, autoNote, voiceRow, axRow, advanced, tools])
+        let stack = NSStackView(views: [heading, jevRow, jevNote, autoRow, autoNote, riskyRow, voiceRow, axRow, advanced, tools])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
@@ -524,6 +535,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         popover.contentViewController = controller
         settingsPopover = popover
         popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+    }
+
+    @objc private func toggleAskBeforeRisky(_ sender: NSSwitch) {
+        askBeforeRisky = sender.state == .on
     }
 
     @objc private func toggleAutoAllow(_ sender: NSSwitch) {
@@ -1067,6 +1082,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 statusField?.stringValue = "Existing Chrome tab observed. No action was sent."
                 continue
             }
+            if object["type"] as? String == "agent_ax_request" {
+                handleAgentRequest(object)
+                continue
+            }
             if object["type"] as? String == "browse_proposal" {
                 guard let requestID = object["requestId"] as? String, requestID == activeRequestID,
                       let proposalID = object["proposalId"] as? String, let kind = object["kind"] as? String,
@@ -1074,20 +1093,29 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 pendingProposal = (requestID, proposalID)
                 let step = object["step"] as? Int ?? 0
                 let host = (object["destinationUrl"] as? String).flatMap { URL(string: $0)?.host } ?? ""
-                let action: String
+                var action: String
                 switch kind {
                 case "fill": action = "type your words into “\(label)”"
                 case "submit": action = "press “\(label)”"
-                case "click": action = "click “\(label)”"
+                case "click", "press": action = "click “\(label)”"
+                case "type": action = "type your words into “\(label)”"
+                case "key", "scroll": action = label.split(separator: "(").first.map { $0.trimmingCharacters(in: .whitespaces).lowercased() } ?? label
+                case "open_url": action = "open \(label)"
+                case "open_app": action = "open \(label)"
                 case "navigate": action = "open “\(label)”" + (host.isEmpty ? "" : " (\(host))")
                 default: action = "finish here; the goal looks done on “\(label)”"
                 }
-                if autoAllowSession || autoAllowTaskID == requestID {
+                let risky = object["risky"] as? Bool ?? false
+                let appName = (object["app"] as? String).flatMap { $0.isEmpty || $0 == "no app" ? nil : $0 }
+                if let appName, kind != "open_url", kind != "open_app" { action += " in \(appName)" }
+                if !(risky && askBeforeRisky), autoAllowSession || autoAllowTaskID == requestID {
                     commandStatus?.stringValue = "Step \(step): Jev will \(action) (auto-allowed; Esc stops)."
                     confirmProposal((requestID, proposalID), allow: true)
                     continue
                 }
-                commandStatus?.stringValue = "Step \(step): Jev wants to \(action). Allow, or say “yes”."
+                commandStatus?.stringValue = risky
+                    ? "Step \(step): Jev wants to \(action). This could send, buy or delete something; Allow?"
+                    : "Step \(step): Jev wants to \(action). Allow, or say “yes”."
                 approvalRow?.isHidden = false
                 commandPanel?.orderFrontRegardless()
                 continue
@@ -1241,6 +1269,16 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "error": statusField?.stringValue = "The request was rejected or failed. No success is claimed."
         case "browsing":
             statusField?.stringValue = "Jev is reading the page…"
+        case "agent_working":
+            statusField?.stringValue = "Jev is looking at the screen…"
+        case "agent_done":
+            pendingProposal = nil
+            approvalRow?.isHidden = true
+            statusField?.stringValue = "Done."
+        case "agent_paused":
+            pendingProposal = nil
+            approvalRow?.isHidden = true
+            statusField?.stringValue = "Paused: Jev wasn't sure what to do next, or a step was declined. Try rephrasing."
         case "verified_browse":
             browseKeptOpen = true
             pendingProposal = nil
@@ -1400,6 +1438,13 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             confirmProposal(pending, allow: true)
             return
         }
+        if activeRequestID != nil, stopRequestID == nil, !browseKeptOpen {
+            // A new request replaces whatever is running or waiting.
+            queuedRequestText = taskField?.stringValue
+            commandStatus?.stringValue = "Stopping the previous task, then starting this one…"
+            stop()
+            return
+        }
         if browseKeptOpen, activeRequestID != nil, stopRequestID == nil {
             let raw = taskField?.stringValue ?? ""
             let spoken = finalSpeechText != nil && finalSpeechText == raw
@@ -1439,7 +1484,12 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         let text = taskField?.stringValue ?? ""
         let spoken = finalSpeechText != nil && finalSpeechText == text
-        let browseText = spoken ? ScopedBrowse.normalizedSpeech(text) : text
+        if jevEnabled, !text.lowercased().hasPrefix("privately ") {
+            startAgent(text: spoken ? ScopedBrowse.normalizedSpeech(text) : text, spoken: spoken, input: input)
+            return
+        }
+        let privateText = text.lowercased().hasPrefix("privately ") ? String(text.dropFirst(10)) : text
+        let browseText = spoken ? ScopedBrowse.normalizedSpeech(privateText) : privateText
         if let browse = ScopedBrowse.parse(browseText) {
             guard jevEnabled else {
                 commandStatus?.stringValue = "Turn on “Let Jev choose each step” in Settings (⚙) to browse."
@@ -1733,6 +1783,79 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         statusField?.stringValue = "Fixture navigation sent to the local controller…"
+    }
+
+    private func startAgent(text: String, spoken: Bool, input: Pipe) {
+        guard !text.isEmpty else { return }
+        guard hasAccessibilityAccess() else {
+            showAccessibilityDenied()
+            return
+        }
+        accessibilityRecoveryButton?.isHidden = true
+        let me = ProcessInfo.processInfo.processIdentifier
+        let target = capturedApp.flatMap { app in
+            NSRunningApplication(processIdentifier: app.pid).flatMap { $0.isTerminated ? nil : $0 } }
+            ?? NSWorkspace.shared.runningApplications.first { $0.isActive && $0.processIdentifier != me }
+        if let target { universalAX.setTarget(target.processIdentifier) }
+        taskField?.stringValue = text
+        if spoken { finalSpeechText = text }
+        guard taskIntake.submit(.agent(text: text), originalText: text, voice: spoken,
+            send: { [weak self] in self?.send($0, through: input) == true }) else {
+            if hostActionsAvailable { commandStatus?.stringValue = "Could not send the request to the controller." }
+            return
+        }
+        browseKeptOpen = false
+        commandStatus?.stringValue = "Working on it\(target.map { " in \($0.localizedName ?? "the app")" } ?? "")…"
+        // Give the target app the keyboard; the bar stays visible on top.
+        target?.activate()
+    }
+
+    private func handleAgentRequest(_ object: [String: Any]) {
+        guard let requestID = object["requestId"] as? String, let input = controllerInput else { return }
+        let reply: (Bool, Any?, String?) -> Void = { [weak self] ok, value, error in
+            var message: [String: Any] = ["type": "agent_ax_reply", "requestId": requestID, "ok": ok]
+            if let value { message["value"] = value }
+            if let error { message["error"] = error }
+            _ = self?.send(message, through: input, limit: 60_000)
+        }
+        guard let taskID = object["taskId"] as? String, taskID == activeRequestID, activeSurface == .agent,
+              stopRequestID == nil, hostActionsAvailable, let op = object["op"] as? String else {
+            reply(false, nil, "not the active agent task"); return
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                switch op {
+                case "snapshot":
+                    let snap = try self.universalAX.snapshot()
+                    var elements = snap.elements
+                    var value: [String: Any] = [:]
+                    repeat {
+                        value = ["app": snap.app, "bundleId": snap.bundleID, "pid": Int(snap.pid),
+                                 "windowTitle": snap.windowTitle, "url": snap.url, "elements": elements,
+                                 "truncated": snap.truncated || elements.count < snap.elements.count,
+                                 "signature": snap.signature]
+                        let size = (try? JSONSerialization.data(withJSONObject: value).count) ?? 0
+                        if size < 56_000 { break }
+                        elements.removeLast(min(20, elements.count))
+                    } while !elements.isEmpty
+                    reply(true, value, nil)
+                case "press": try self.universalAX.press(object["id"] as? String ?? ""); reply(true, nil, nil)
+                case "type":
+                    try self.universalAX.type(object["id"] as? String ?? "", text: object["text"] as? String ?? "")
+                    reply(true, nil, nil)
+                case "key": try self.universalAX.press(key: object["name"] as? String ?? ""); reply(true, nil, nil)
+                case "scroll": try self.universalAX.scroll(down: object["down"] as? Bool ?? true); reply(true, nil, nil)
+                case "open_url":
+                    guard let text = object["url"] as? String, let url = URL(string: text),
+                          ["https", "http"].contains(url.scheme ?? "") else { throw UniversalAX.AXError.actionFailed }
+                    try await self.universalAX.open(url: url); reply(true, nil, nil)
+                case "open_app":
+                    try await self.universalAX.open(app: object["name"] as? String ?? ""); reply(true, nil, nil)
+                default: reply(false, nil, "unsupported operation")
+                }
+            } catch { reply(false, nil, String(describing: error)) }
+        }
     }
 
     @objc private func allowStep() {

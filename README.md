@@ -1,8 +1,9 @@
 # SystemOne Voice Computer Use
 
-**Try it:** `npm start`, then hold Control-Option-Space and say
-"go to wikipedia and search for Alan Turing" (release to run). Jev proposes
-each step; Allow, Allow all, or Stop. Follow up with "change the page to German". See [Using SystemOne](docs/USING_SYSTEMONE.md).
+**Try it:** `npm start`, then hold Control-Option-Space and say what you want,
+e.g. "play the video" on YouTube, or "go to youtube and search for lofi beats
+and play the first result" (release to run). It works on whatever app is in
+front of you. Plan: [V1 plan](docs/V1_PLAN.md); guide: [Using SystemOne](docs/USING_SYSTEMONE.md). See [Using SystemOne](docs/USING_SYSTEMONE.md).
 
 A native macOS voice/text computer-use product in early development. The intended
 app is a background/menu-bar agent with a transient command panel, one persistent

@@ -1,0 +1,122 @@
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { test } from 'node:test';
+import type { TestContext } from 'node:test';
+import { schema } from '../../protocol/src/contract.ts';
+import type { JSONValue } from '../../protocol/src/json.ts';
+import { bindEndpoint } from '../../protocol/src/session.ts';
+import { AgentAXClient } from '../src/agent-ax-client.ts';
+import type { AgentElement } from '../src/agent-ax-client.ts';
+import { bindCommandSpan, parseAgentGoal } from '../src/agent-goal.ts';
+import { AttemptJournal } from '../src/attempt-journal.ts';
+import { CommittedInputSession } from '../src/committed-input.ts';
+import { PersistentTaskActor } from '../src/persistent-task-actor.ts';
+import { TaskAdmissionRegistry } from '../src/task-authority.ts';
+import { AGENT_POLICY, AGENT_VERIFIER, UniversalAgentTask } from '../src/universal-agent-task.ts';
+import type { AgentDecision, AgentProposal } from '../src/universal-agent-task.ts';
+
+/** A fake app behind the real request/reply channel. */
+class FakeApp {
+  app = 'YouTube Browser';
+  url = '';
+  playing = false;
+  query = '';
+  searched = false;
+  calls: Record<string, JSONValue>[] = [];
+  elements(): AgentElement[] {
+    if (!this.url) return [];
+    return [
+      { id: 'e0', role: 'AXSearchField', label: 'Search', context: 'masthead', editable: true, pressable: false,
+        value: this.query },
+      { id: 'e1', role: 'AXButton', label: 'Search', context: 'masthead', editable: false, pressable: true },
+      { id: 'e2', role: 'AXButton', label: this.playing ? 'Pause (k)' : 'Play (k)', context: 'player',
+        editable: false, pressable: true },
+      { id: 'e3', role: 'AXButton', label: 'Delete playlist', context: 'library', editable: false, pressable: true },
+    ];
+  }
+  answer(request: Record<string, JSONValue>): JSONValue {
+    this.calls.push(request);
+    switch (request.op) {
+      case 'snapshot': return { app: this.app, bundleId: 'com.example.browser', pid: this.url ? 42 : 0,
+        windowTitle: this.url ? 'YouTube' : '', url: this.url, elements: this.elements() as unknown as JSONValue,
+        truncated: false, signature: `${this.url}|${this.playing}|${this.query}|${this.searched}` };
+      case 'open_url': this.url = String(request.url); return null;
+      case 'type': this.query = String(request.text); return null;
+      case 'press': if (request.id === 'e2') this.playing = !this.playing; if (request.id === 'e1') this.searched = true; return null;
+      default: return null;
+    }
+  }
+}
+
+function harness(t: TestContext, text: string, plan: ((c: Record<string, JSONValue>) => boolean)[],
+  confirm: (p: AgentProposal) => boolean = () => true) {
+  const root = mkdtempSync(join(tmpdir(), 'systemone-agent-'));
+  const journal = new AttemptJournal(join(root, 'attempts.sqlite'));
+  t.after(() => { journal.close(); rmSync(root, { recursive: true, force: true }); });
+  const app = new FakeApp();
+  let client!: AgentAXClient;
+  client = new AgentAXClient(request => {
+    queueMicrotask(() => client.receive({ type: 'agent_ax_reply', requestId: request.requestId as string, ok: true,
+      value: app.answer(request) }));
+  });
+  const revision = { taskId: 'agent-task', taskEpoch: 1, goalRevision: 1 };
+  const endpoint = bindEndpoint(['command']);
+  const input = new CommittedInputSession(endpoint, revision);
+  const command = input.accept(endpoint, Buffer.from(JSON.stringify({ ...structuredClone(schema.examples[0]),
+    ...revision, messageId: 'm', utteranceId: 'u', source: 'voice', text }))).input;
+  const goal = parseAgentGoal(command.text, []);
+  const registry = new TaskAdmissionRegistry(revision, input);
+  const admission = registry.admit(command, { admissionId: 'a', goal: command.text, outcomeKind: 'USER_CONFIRMATION',
+    scopeRef: 'agent-session:test', completionVerifierRef: AGENT_VERIFIER, policyRevision: AGENT_POLICY,
+    approvedEffects: ['READ', 'NAVIGATE', 'EXTERNAL_READ', 'LOCAL_EDIT', 'EXTERNAL_WRITE'],
+    parameters: goal.typedText ? [bindCommandSpan(command, 'typed-text', goal.typedText)] : [] });
+  let index = 0;
+  const decision: AgentDecision = { async select(set) {
+    const want = plan[index++];
+    return (set.candidates.find(c => want?.(c))?.candidateId as string | undefined) ?? null;
+  } };
+  const proposals: AgentProposal[] = [];
+  const task = UniversalAgentTask.start(journal, registry, admission, client, { goal, decision,
+    confirmation: { async confirm(p) { proposals.push(p); return confirm(p); } } });
+  return { app, journal, proposals, actor: new PersistentTaskActor(journal, task, 60_000) };
+}
+
+const op = (operation: string, text?: RegExp) => (c: Record<string, JSONValue>) =>
+  c.operation === operation && (!text || text.test(String(c.description)));
+
+test('a spoken goal opens a site, types only the bound words, searches, plays and finishes on confirmation', async t => {
+  const h = harness(t, 'go to youtube and search for lofi beats', [op('navigate'), op('set_value'),
+    op('invoke', /“Search”/u), op('invoke', /Play \(k\)/u), op('finish')]);
+  assert.equal((await h.actor.run()).state, 'completed');
+  assert.deepEqual(h.proposals.map(p => p.kind), ['open_url', 'type', 'press', 'press', 'finish']);
+  assert.equal(h.app.url, 'https://youtube.com/');
+  assert.equal(h.app.query, 'lofi beats');
+  assert.equal(h.app.playing, true);
+  const typed = h.app.calls.find(call => call.op === 'type');
+  assert.equal(typed?.text, 'lofi beats');
+  const attempts = h.journal.attemptsForTask('agent-task');
+  assert.equal(attempts.length, 4);
+  assert.ok(attempts.every(a => a.outcome?.verification === 'matched'));
+});
+
+test('risky labels are flagged, a declined step dispatches nothing, and no-change steps do not block', async t => {
+  const risky = harness(t, 'go to youtube', [op('navigate'), op('invoke', /Delete playlist/u)], p => p.kind !== 'press');
+  assert.equal((await risky.actor.run()).state, 'paused');
+  assert.equal(risky.proposals.at(-1)?.risky, true);
+  assert.ok(!risky.app.calls.some(call => call.op === 'press'));
+
+  const unchanged = harness(t, 'go to youtube', [op('navigate'), op('key_chord'), op('finish')]);
+  assert.equal((await unchanged.actor.run()).state, 'completed');
+  const attempts = unchanged.journal.attemptsForTask('agent-task');
+  assert.equal(attempts.at(-1)?.outcome?.verification, 'not_matched');
+  assert.equal(unchanged.journal.unresolvedAttempts().length, 0);
+});
+
+test('without typed words no typing is offered, and abstention pauses with no effect', async t => {
+  const h = harness(t, 'play the video', [op('set_value')]);
+  h.app.url = 'https://youtube.com/watch';
+  assert.equal((await h.actor.run()).state, 'paused');
+  assert.equal(h.app.calls.filter(call => call.op !== 'snapshot').length, 0);
+});

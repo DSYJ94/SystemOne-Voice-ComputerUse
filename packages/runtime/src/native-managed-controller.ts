@@ -22,6 +22,9 @@ import { NativeFixtureAuthority } from './native-fixture-authority.ts';
 import type { NativeFixtureDecision } from './native-fixture-task.ts';
 import type { BrowseDecision, BrowseProposal } from '../../browser/src/managed-browse-task.ts';
 import { parseBrowseFollowUp, parseScopedBrowse } from './scoped-native-command.ts';
+import { AgentAXClient } from './agent-ax-client.ts';
+import { bindCommandSpan, installedApps, parseAgentGoal } from './agent-goal.ts';
+import type { AgentDecision } from './universal-agent-task.ts';
 import { NativeFieldPipeWorker } from './native-field-pipe-worker.ts';
 import { ChromeReadSession } from './chrome-read-session.ts';
 import { ChromeFillAuthority } from './chrome-fill-authority.ts';
@@ -110,6 +113,13 @@ interface StartBrowse {
   readonly decisionProvider: 'jev';
 }
 
+interface StartAgent {
+  readonly type: 'start_agent';
+  readonly requestId: string;
+  readonly command: Record<string, JSONValue>;
+  readonly decisionProvider: 'jev';
+}
+
 interface ContinueBrowse {
   readonly type: 'continue_browse';
   readonly requestId: string;
@@ -169,7 +179,12 @@ interface NativeRecoveryControl {
 
 type NativeRequest = ReplaceNativeField | ReplaceNativeFixture | NativeRecoveryControl | StartFill | StartNavigate | StartNativeFill | StartNativePress
   | StartNativeLocate | StartNativeOpen
-  | StartChromeFill | StartPortalWorkflow | StartBrowse | ContinueBrowse | ConfirmStep | Stop;
+  | StartChromeFill | StartPortalWorkflow | StartBrowse | ContinueBrowse | StartAgent | ConfirmStep | Stop;
+interface AgentProposalView {
+  readonly step: number; readonly kind: string; readonly label: string; readonly destinationUrl: string | null;
+  readonly pageUrl: string; readonly app: string; readonly risky: boolean;
+}
+
 type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
   | 'verified_dom_fill' | 'unsupported' | 'uncertain' | 'stopping'
   | 'stopped' | 'busy' | 'error' | 'blocked_recovery' | 'paused_budget'
@@ -180,11 +195,14 @@ type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
   | 'observing_chrome' | 'verified_chrome_dom_fill' | 'verified_navigation'
   | 'host_unavailable' | 'portal_located' | 'portal_opened' | 'portal_downloaded'
   | 'verified_portal_download' | 'portal_paused' | 'native_paused' | 'checking_native_recovery' | 'replacing_native_task'
-  | 'browsing' | 'verified_browse' | 'browse_paused';
+  | 'browsing' | 'verified_browse' | 'browse_paused' | 'agent_working' | 'agent_done' | 'agent_paused';
 
 function decisionProviderValid(value: Record<string, JSONValue>): boolean {
   return !Object.hasOwn(value, 'decisionProvider') || value.decisionProvider === 'jev';
 }
+
+/** Per-task universal-agent selector, built only for an explicit agent request. */
+export type AgentDecisionFactory = (requestId: string, goal: string) => Promise<AgentDecision>;
 
 /** Per-task browse selector, built only for an explicit browse request. */
 export type BrowseDecisionFactory = (requestId: string, goal: string) => Promise<BrowseDecision>;
@@ -266,6 +284,13 @@ function requestFromLine(line: Uint8Array): NativeRequest {
     }
     return { type: 'start_browse', requestId: value.requestId as string,
       command: value.command, decisionProvider: 'jev' };
+  }
+  if (value.type === 'start_agent') {
+    if (Object.keys(value).sort().join(',') !== 'command,decisionProvider,requestId,type'
+      || value.decisionProvider !== 'jev' || value.command === undefined || !isRecord(value.command)) {
+      throw new ContractError('invalid agent request');
+    }
+    return { type: 'start_agent', requestId: value.requestId as string, command: value.command, decisionProvider: 'jev' };
   }
   if (value.type === 'continue_browse') {
     if (Object.keys(value).sort().join(',') !== 'command,decisionProvider,requestId,targetRequestId,type'
@@ -469,6 +494,8 @@ export class NativeManagedController {
   readonly #headless: boolean;
   readonly #fixtureDecisions: FixtureDecisionFactory | undefined;
   readonly #browseDecisions: BrowseDecisionFactory | undefined;
+  readonly #agentDecisions: AgentDecisionFactory | undefined;
+  readonly #agentAX: AgentAXClient;
   #pendingStep: { readonly requestId: string; readonly proposalId: string;
     readonly resolve: (allow: boolean) => void } | undefined;
   readonly #nativeWorker: NativeFieldPipeWorker | undefined;
@@ -487,9 +514,12 @@ export class NativeManagedController {
     headless = false, nativeWorker?: NativeFieldPipeWorker,
     chromeOutput?: (value: Record<string, JSONValue>) => void,
     portalStore?: ScriptedPortalStore, requireHostSnapshot = false,
-    fixtureDecisions?: FixtureDecisionFactory, browseDecisions?: BrowseDecisionFactory) {
+    fixtureDecisions?: FixtureDecisionFactory, browseDecisions?: BrowseDecisionFactory,
+    agentDecisions?: AgentDecisionFactory) {
     this.#fixtureDecisions = fixtureDecisions;
     this.#browseDecisions = browseDecisions;
+    this.#agentDecisions = agentDecisions;
+    this.#agentAX = new AgentAXClient(value => this.#chromeOutput?.(value));
     this.#hostLifecycle = new HostLifecycleGate(requireHostSnapshot);
     this.#journal = journal;
     this.#portalStore = portalStore;
@@ -585,6 +615,9 @@ export class NativeManagedController {
       if (line.byteLength > MAX_LINE_BYTES) throw new ContractError('native request too large');
       const parsed = parseJSON(line);
       if (this.#nativeWorker?.receive(parsed)) return;
+      if (isRecord(parsed) && parsed.type === 'agent_ax_reply') {
+        this.#agentAX.receive(parsed); return;
+      }
       if (isRecord(parsed) && parsed.type === 'host_lifecycle') {
         this.#receiveHost(parsed); return;
       }
@@ -731,7 +764,9 @@ export class NativeManagedController {
       surface: 'managed', task: active };
     this.#runs.claim(run);
     this.#send(request.requestId, 'starting');
-    active.done = (request.type === 'start_browse'
+    active.done = (request.type === 'start_agent'
+      ? this.#runAgent(request, active)
+      : request.type === 'start_browse'
       ? this.#runBrowse(request, active)
       : request.type === 'start_navigate'
       ? this.#runNavigate(request, active)
@@ -1166,6 +1201,54 @@ export class NativeManagedController {
     }
   }
 
+  /** Universal computer use on the user's own apps through Accessibility. */
+  async #runAgent(request: StartAgent, active: ActiveTask): Promise<void> {
+    try {
+      const command = request.command;
+      if (command.type !== 'command' || (command.source !== 'text' && command.source !== 'voice')
+        || command.mode !== 'command' || command.isFinal !== true || typeof command.text !== 'string'
+        || command.taskId !== request.requestId || command.taskEpoch !== 1 || command.goalRevision !== 1
+        || command.originSurface === undefined || !isRecord(command.originSurface)
+        || command.originSurface.appBundleId !== 'com.aurium.systemone.dev') {
+        throw new ContractError('agent command binding changed');
+      }
+      const factory = this.#agentDecisions;
+      if (!factory) throw new ContractError('no agent decision provider');
+      const goal = parseAgentGoal(command.text, installedApps());
+      const { UniversalAgentTask, AGENT_POLICY, AGENT_VERIFIER } = await import('./universal-agent-task.ts');
+      const revision = { taskId: request.requestId, taskEpoch: 1, goalRevision: 1 };
+      const endpoint = bindEndpoint(['command']);
+      const input = new CommittedInputSession(endpoint, revision);
+      const route = input.accept(endpoint, Buffer.from(JSON.stringify(command)));
+      if (route.kind !== 'interpret_command') throw new ContractError('not a command');
+      const parameters = goal.typedText ? [bindCommandSpan(route.input, 'typed-text', goal.typedText)] : [];
+      const decision = await factory(request.requestId, route.input.text);
+      if (active.cancelled) return;
+      const registry = new TaskAdmissionRegistry(revision, input);
+      const admission = registry.admit(route.input, { admissionId: randomUUID(), goal: route.input.text,
+        outcomeKind: 'USER_CONFIRMATION', scopeRef: `agent-session:${request.requestId}`,
+        completionVerifierRef: AGENT_VERIFIER, policyRevision: AGENT_POLICY,
+        approvedEffects: ['READ', 'NAVIGATE', 'EXTERNAL_READ', 'LOCAL_EDIT', 'EXTERNAL_WRITE'], parameters });
+      const task = UniversalAgentTask.start(this.#journal, registry, admission, this.#agentAX, { goal, decision,
+        confirmation: { confirm: (proposal, signal) => this.#awaitConfirmation(request.requestId, proposal, signal) } });
+      const actor = new PersistentTaskActor(this.#journal, task, 60_000);
+      active.actor = actor;
+      if (active.cancelled) { await actor.stop(); return; }
+      this.#send(request.requestId, 'agent_working');
+      const result = await actor.run(record => {
+        if (!active.cancelled && record.state === 'active') this.#send(request.requestId, 'agent_working');
+      });
+      if (active.cancelled) return;
+      this.#send(request.requestId, result.state === 'completed' ? 'agent_done' : 'agent_paused');
+    } catch {
+      if (!active.cancelled) this.#send(request.requestId, 'error');
+    } finally {
+      this.#pendingStep?.resolve(false); this.#pendingStep = undefined;
+      this.#agentAX.cancelAll();
+      active.browserFenced = true;
+    }
+  }
+
   /** Hands a finished browse's open window to a new, separately admitted task.
    * Scope stays the original site; the old task stays completed. */
   #continueBrowse(request: ContinueBrowse): void {
@@ -1193,7 +1276,7 @@ export class NativeManagedController {
     });
   }
 
-  #awaitConfirmation(requestId: string, proposal: BrowseProposal, signal: AbortSignal): Promise<boolean> {
+  #awaitConfirmation(requestId: string, proposal: BrowseProposal | AgentProposalView, signal: AbortSignal): Promise<boolean> {
     if (signal.aborted || this.#pendingStep) return Promise.resolve(false);
     const proposalId = randomUUID();
     return new Promise(resolve => {
@@ -1206,7 +1289,8 @@ export class NativeManagedController {
       this.#pendingStep = { requestId, proposalId, resolve: settle };
       this.#chromeOutput?.({ type: 'browse_proposal', requestId, proposalId, step: proposal.step,
         kind: proposal.kind, label: proposal.label, destinationUrl: proposal.destinationUrl,
-        pageUrl: proposal.pageUrl });
+        pageUrl: proposal.pageUrl, app: 'app' in proposal ? proposal.app : '',
+        risky: 'risky' in proposal ? proposal.risky : false });
     });
   }
 
@@ -1435,7 +1519,16 @@ async function main(): Promise<void> {
   const controller = new NativeManagedController(journal, write,
     process.env.SYSTEMONE_MANAGED_HEADLESS === '1', worker,
     value => { process.stdout.write(`${JSON.stringify(value)}\n`); }, portalStore,
-    process.env.SYSTEMONE_HOST_LIFECYCLE_REQUIRED === '1', fixtureDecisions, browseDecisions);
+    process.env.SYSTEMONE_HOST_LIFECYCLE_REQUIRED === '1', fixtureDecisions, browseDecisions,
+    async (requestId, goal) => {
+      const { execFileSync } = await import('node:child_process');
+      const { createJevAgentDecision } = await import('../../providers/src/jev-agent-decision.ts');
+      const apiKey = execFileSync('/usr/bin/security', ['find-generic-password', '-s', 'systemone-jev', '-w'],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000 }).trim();
+      return createJevAgentDecision({ apiKey, goal, report: event => {
+        process.stdout.write(`${JSON.stringify({ type: 'decision', requestId, ...event })}\n`);
+      } });
+    });
   write('startup', controller.startupPhase());
   let pending = Buffer.alloc(0);
   process.stdin.on('data', chunk => {

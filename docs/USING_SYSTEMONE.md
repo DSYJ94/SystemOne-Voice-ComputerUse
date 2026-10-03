@@ -25,42 +25,32 @@ First time after setting up signing:
 
 ## Use the bar
 
-**Hold Control-Option-Space and speak; release to run.** A quick tap just
-opens the bar. You can also click the mic (click again to finish), or type
-and press Return. The first time, allow Microphone and Speech Recognition.
+**Hold Control-Option-Space, say what you want, release.** SystemOne works on
+the app you were using (your own browser included) or opens what you ask for.
+A quick tap just opens the bar; you can also type and press Return.
 
-Examples:
+Try:
+- `play the video` (on a YouTube page)
+- `go to youtube and search for lofi beats and play the first result`
+- `open Notes and type "buy milk"`
+- `show me my Downloads in Finder`
 
-- `go to wikipedia and search for Alan Turing` (a bare name means
-  wikipedia.org; other single words mean <name>.com)
-- `search github for playwright`
-- then, while that page is open: `change the page to German` or
-  `now search for Enigma`. A follow-up continues in the same window. A new
-  "go to …" closes it and starts fresh.
+Jev picks one step at a time from what is on screen. Each pick is either
+auto-allowed or shown with **Allow / Allow all for this task / Stop**.
+Auto-allow is on by default with `npm start`. Steps that look like send,
+buy or delete still ask while ⚙ "Ask before send / buy / delete" is on.
+Say "stop", press Esc or press Control-Option-Escape at any time. A new
+request replaces the running one. Typed text comes only from your own words
+(quotes, or what follows "search for" or "type").
 
-A private, isolated Chromium window opens on that site and its subdomains
-only, using HTTPS and GET requests.
-
-For each step Jev proposes one action under the bar, for example
-`Step 2: Jev wants to press “Search”`, with three buttons:
-
-- **Allow** (Return, or say **"yes"** with the hotkey): run this one step.
-- **Allow all for this task**: Jev continues without asking; each step is
-  still checked.
-- **Stop** (Esc, say **"stop"**, or Control-Option-Escape): stop; the browser
-  closes.
-
-**⚙ Settings → Auto-allow steps** turns on auto mode for the whole session.
-Jev chooses only from what the page offers: on-site links (including ones in
-collapsed menus), the search field (filled only with your own words), search
-buttons and ordinary buttons such as tabs or "show more". It never invents
-URLs or text. When the goal looks done it proposes **finish**; the result
-stays open for a follow-up.
+`privately go to <site> …` uses an isolated Chromium window instead of your
+browser.
 
 ## What leaves the Mac
 
-With Jev on, each step sends TypeSafe your request text, the page title and
-URL, and the offered choices (visible labels and on-site link URLs). It never
+With Jev on, each step sends TypeSafe your request text, the front app's name,
+window title and page URL, and the offered choices (visible labels of
+buttons, links, fields and menus). It never
 sends cookies, page bodies, handles or credentials. Speech recognition stays
 on the Mac.
 

@@ -12,6 +12,7 @@ native_dev_sources=(
   "$repository_root/apps/native-dev/NativeWorkerPermitLedger.swift"
   "$repository_root/apps/native-dev/NativeHostPermit.swift"
   "$repository_root/apps/native-dev/NativeWorkerPermitDigest.swift"
+  "$repository_root/apps/native-dev/UniversalAX.swift"
   "$repository_root/packages/protocol/swift/Sources/PeerIdentity/PeerIdentity.swift"
   "$repository_root/packages/protocol/swift/Sources/ProtocolDigest/CanonicalJSON.swift"
   "$repository_root/packages/native-ax/Sources/NativeAX/Observation.swift"
