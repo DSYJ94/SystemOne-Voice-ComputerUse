@@ -60,6 +60,11 @@ struct ScopedManagedFill: Equatable {
 struct ScopedBrowse: Equatable {
     let site: String
 
+    /// Identical to BARE_SITES in scoped-native-command.ts.
+    static let bareSites = ["wikipedia": "wikipedia.org", "wiki": "wikipedia.org", "bbc": "bbc.co.uk",
+                            "python": "python.org", "mozilla": "mozilla.org", "archive": "archive.org",
+                            "gov": "gov.uk"]
+
     static func parse(_ text: String) -> Self? {
         guard text.utf8.count <= 1_300 else { return nil }
         let patterns = [#"^(?:go to|open|visit|navigate to) (\S+?)(?: and (?:search|look up|find)(?: for)? .+)?$"#,
@@ -69,6 +74,9 @@ struct ScopedBrowse: Equatable {
                   let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
                   let range = Range(match.range(at: 1), in: text) else { continue }
             let site = String(text[range]).lowercased()
+            if site.range(of: #"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"#, options: .regularExpression) != nil {
+                return Self(site: bareSites[site] ?? "\(site).com")
+            }
             if site.range(of: #"^(?:http://)?127\.0\.0\.1:\d{1,5}/?$"#, options: .regularExpression) != nil
                 || site.replacingOccurrences(of: "https://", with: "").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                     .range(of: #"^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$"#, options: .regularExpression) != nil {

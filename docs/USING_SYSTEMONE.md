@@ -25,13 +25,13 @@ First time after setting up signing:
 
 ## Use the bar
 
-Press **Control-Option-Space**. Hold the mic and speak, or type, for example:
+Press **Control-Option-Space**. Click the mic, speak, click it again (or type), for example:
 
-- `go to wikipedia.org and search for Alan Turing`
+- `go to wikipedia and search for Alan Turing` (a bare name means wikipedia.org; other single words mean <name>.com)
 - `search github.com for playwright`
 - `go to en.wikipedia.org`
 
-A spoken request starts as soon as the transcript is final. A typed one
+The first mic click asks for Microphone and Speech Recognition permission. A spoken request starts as soon as the transcript is final. A typed one
 starts on Return. A private, isolated Chromium window opens on that site
 only: the site and its subdomains, HTTPS, GET requests.
 

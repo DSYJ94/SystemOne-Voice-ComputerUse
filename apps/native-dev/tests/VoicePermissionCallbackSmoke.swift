@@ -37,7 +37,7 @@ struct VoicePermissionCallbackSmoke {
         retained.append(speech)
         speech.onStatus = { status in
             let expected = allowed
-                ? "Voice is ready. Hold Talk, then review and run the final transcript."
+                ? "Voice is ready. Click the mic, speak, then click it again."
                 : "Microphone permission was not granted."
             guard status == expected else {
                 fputs("unexpected status: \(status)\n", stderr)

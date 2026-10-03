@@ -1,7 +1,7 @@
 # SystemOne Voice Computer Use
 
-**Try it:** `npm start`, press Control-Option-Space, then say or type
-`go to wikipedia.org and search for Alan Turing`. Jev proposes each step;
+**Try it:** `npm start`, press Control-Option-Space, click the mic and say (or type)
+`go to wikipedia and search for Alan Turing`. Jev proposes each step;
 Return or "yes" allows it, Esc stops. See [Using SystemOne](docs/USING_SYSTEMONE.md).
 
 A native macOS voice/text computer-use product in early development. The intended

@@ -101,3 +101,16 @@ test('browse without a provider, or with a malformed request, is refused before 
   const unsupported = randomUUID(); h.send(browse(unsupported, 'delete everything on example.com'));
   await waitFor(() => h.has(unsupported, 'error'));
 });
+
+test('browse parsing resolves bare spoken site names deterministically and binds only the search words', async () => {
+  const { parseScopedBrowse, BARE_SITES } = await import('../src/scoped-native-command.ts');
+  assert.deepEqual(parseScopedBrowse('Go to wikipedia and search for alan turing'), { site: 'wikipedia.org',
+    startUrl: 'https://wikipedia.org/', searchText: 'alan turing', prefix: 'Go to wikipedia and search for ' });
+  assert.equal(parseScopedBrowse('go to github').site, 'github.com');
+  assert.equal(parseScopedBrowse('search bbc for weather').site, BARE_SITES.bbc);
+  assert.equal(parseScopedBrowse('open en.wikipedia.org').startUrl, 'https://en.wikipedia.org/');
+  for (const bad of ['go to http://example.org', 'go to ../etc', 'go to exa_mple', 'fill Name with x',
+    'go to example.org and search for  padded ']) {
+    assert.throws(() => parseScopedBrowse(bad), bad);
+  }
+});

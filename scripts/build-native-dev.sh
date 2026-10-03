@@ -67,7 +67,7 @@ metadata = {
     'CFBundleVersion': '1',
     'CFBundleShortVersionString': '0.1.0',
     'NSHighResolutionCapable': True,
-    'NSMicrophoneUsageDescription': 'Capture speech only while you hold Talk to draft a task request on this Mac.',
+    'NSMicrophoneUsageDescription': 'Capture speech only while the mic is on, to draft a task request on this Mac.',
     'NSSpeechRecognitionUsageDescription': 'Transcribe held speech on this Mac into an editable task request.',
     'SystemOneNodeExecutable': node,
     'SystemOneControllerScript': controller,

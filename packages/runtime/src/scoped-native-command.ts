@@ -39,6 +39,11 @@ export function parseScopedManagedFill(text: string): {
     prefix: match[1]! + match[2] + match[3]! + match[4] + match[5]! });
 }
 
+/** Bare names that are not <name>.com. Kept identical in ScopedTaskCommand.swift. */
+export const BARE_SITES: Readonly<Record<string, string>> = Object.freeze({
+  wikipedia: 'wikipedia.org', wiki: 'wikipedia.org', bbc: 'bbc.co.uk', python: 'python.org',
+  mozilla: 'mozilla.org', archive: 'archive.org', gov: 'gov.uk' });
+
 /** "go to <site>[ and search for <words>]" or "search <site> for <words>".
  * The site becomes the whole approved browsing scope (it and its subdomains,
  * HTTPS only; exact loopback for local tests). Search words are a literal
@@ -65,7 +70,11 @@ export function parseScopedBrowse(text: string): {
   if (loopback) {
     return Object.freeze({ site: null, startUrl: `http://127.0.0.1:${loopback[1]}/`, searchText, prefix });
   }
-  const host = target.replace(/^https:\/\//iu, '').replace(/\/$/u, '').toLowerCase();
+  const typed = target.replace(/^https:\/\//iu, '').replace(/\/$/u, '').toLowerCase();
+  // A bare spoken name maps deterministically: a few well-known non-.com
+  // sites, otherwise <name>.com. The bar shows the resolved site before use.
+  const host = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(typed)
+    ? BARE_SITES[typed] ?? `${typed}.com` : typed;
   if (!/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u.test(host)) {
     throw new ContractError('browse site must be a plain domain such as wikipedia.org');
   }

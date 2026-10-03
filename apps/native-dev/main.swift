@@ -8,18 +8,7 @@ private let systemOneHotkeySignature: OSType = 0x53314B59 // S1KY
 private let openPanelHotkeyID: UInt32 = 1
 private let stopHotkeyID: UInt32 = 2
 
-private final class HoldToTalkButton: NSButton {
-    var onPress: (() -> Void)?
-    var onRelease: (() -> Void)?
-
-    override func mouseDown(with event: NSEvent) {
-        onPress?()
-        super.mouseDown(with: event)
-        onRelease?()
-    }
-}
-
-/// Borderless glass bar that still accepts typing; Esc hides it.
+/// Borderless glass bar that still accepts typing.
 private final class GlassCommandPanel: NSPanel {
     /// Esc: stop the running task if there is one, otherwise hide the bar.
     var onCancel: (() -> Void)?
@@ -115,6 +104,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// A finished browse leaves its result page open until the next request.
     private var browseKeptOpen = false
     private var queuedRequestText: String?
+    private var micButton: NSButton?
     private var recoveryRequestID: String?
     private let recoveryUISession = UUID().uuidString.lowercased()
     private var recoveryAlert: NSAlert?
@@ -318,18 +308,16 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             button.toolTip = label
             return button
         }
-        let talk = HoldToTalkButton()
+        let talk = NSButton()
         talk.isBordered = false
-        talk.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Hold to talk")?
+        talk.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Talk")?
             .withSymbolConfiguration(.init(pointSize: 22, weight: .medium))
         talk.contentTintColor = .controlAccentColor
-        talk.setAccessibilityLabel("Hold to talk")
-        talk.toolTip = "Hold to talk (on this Mac)"
-        talk.onPress = { [weak self] in
-            guard let self, self.hostActionsAvailable else { return }
-            self.speech.start()
-        }
-        talk.onRelease = { [weak self] in self?.speech.stop() }
+        talk.setAccessibilityLabel("Talk: click to start, click again to finish")
+        talk.toolTip = "Click to talk, click again when done (speech stays on this Mac)"
+        talk.target = self
+        talk.action = #selector(toggleTalk)
+        micButton = talk
         let field = NSTextField()
         field.isBordered = false
         field.drawsBackground = false
@@ -421,6 +409,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         speech.onStatus = { [weak self] message in
             self?.commandStatus?.stringValue = message
+            self?.updateMic()
         }
         commandPanel = window
     }
@@ -1267,6 +1256,28 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.makeFirstResponder(urlField)
     }
 
+    /// Click to start listening, click again to finish. The first click asks
+    /// for microphone and speech permission instead of failing silently.
+    @objc private func toggleTalk() {
+        if speech.isCapturing {
+            speech.stop()
+        } else if !speech.isAuthorized {
+            commandStatus?.stringValue = "Allow Microphone and Speech Recognition for SystemOne, then click the mic again."
+            speech.requestPermissions()
+        } else if !hostActionsAvailable {
+            commandStatus?.stringValue = "SystemOne is waiting for this Mac session to be active. Try again in a moment."
+        } else {
+            speech.start()
+        }
+        updateMic()
+    }
+
+    private func updateMic() {
+        micButton?.contentTintColor = speech.isCapturing ? .systemRed : .controlAccentColor
+        micButton?.image = NSImage(systemSymbolName: speech.isCapturing ? "waveform.circle.fill" : "mic.fill",
+            accessibilityDescription: "Talk")?.withSymbolConfiguration(.init(pointSize: 22, weight: .medium))
+    }
+
     @objc private func enableVoice() {
         guard hostActionsAvailable else { return }
         speech.requestPermissions()
@@ -1371,7 +1382,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         guard let parsed = ScopedNativeFill.parse(text) else {
-            commandStatus?.stringValue = "Supported: Fill <field> with <value>, or Fill <field> on <HTTPS URL> with <value>."
+            commandStatus?.stringValue = "Try: go to wikipedia and search for Alan Turing · or Fill <field> with <value>."
             return
         }
         guard let capturedApp,

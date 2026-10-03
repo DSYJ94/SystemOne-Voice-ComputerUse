@@ -45,7 +45,7 @@ final class OnDeviceSpeech {
                 self.microphoneAuthorization { @Sendable [weak self] allowed in
                     Task { @MainActor [weak self] in
                         self?.onStatus?(allowed
-                            ? "Voice is ready. Hold Talk, then review and run the final transcript."
+                            ? "Voice is ready. Click the mic, speak, then click it again."
                             : "Microphone permission was not granted.")
                     }
                 }
@@ -57,7 +57,7 @@ final class OnDeviceSpeech {
         guard !listening && !finishing else { return }
         guard SFSpeechRecognizer.authorizationStatus() == .authorized,
               AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
-            onStatus?("Choose Enable Voice to grant microphone and speech access, then hold Talk again.")
+            onStatus?("Click the mic to allow microphone and speech access.")
             return
         }
         guard let recognizer = SFSpeechRecognizer(locale: Locale.current),
@@ -98,7 +98,7 @@ final class OnDeviceSpeech {
                 guard let self, self.epoch == currentEpoch else { return }
                 if let text, !text.isEmpty { self.onText?(text, isFinal) }
                 if isFinal {
-                    self.onStatus?("Final transcript ready. Review it, then choose Run request.")
+                    self.onStatus?("Got it. Press Return to run, or edit first.")
                     self.reset()
                 } else if failed {
                     self.onStatus?("Speech recognition stopped without a final transcript. Try again.")
@@ -106,7 +106,7 @@ final class OnDeviceSpeech {
                 }
             }
         }
-        onStatus?("Listening on this Mac while Talk is held…")
+        onStatus?("Listening on this Mac… click the mic again when you are done.")
     }
 
     func stop() {
