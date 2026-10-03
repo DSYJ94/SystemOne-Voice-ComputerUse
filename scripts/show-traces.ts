@@ -17,7 +17,7 @@ for (const file of files) {
     if (event.kind === 'step') {
       console.log(`  ${event.step}. [${event.app}${event.url ? ` ${String(event.url).slice(0, 60)}` : ''}] `
         + `${event.chosen} “${String(event.label).slice(0, 70)}”${event.risky ? ' (risky)' : ''}  `
-        + `(${event.options} options, ${event.elements} elements; read ${event.observeMs ?? '?'} ms, Jev ${event.decideMs ?? '?'} ms)`);
+        + `(${event.options} options, ${event.elements} elements; read ${event.readMs ?? event.observeMs ?? '?'} ms over ${event.visited ?? '?'} nodes, Jev ${event.decideMs ?? '?'} ms)`);
     } else if (event.kind === 'result') {
       console.log(`     → ${event.changed ? 'changed' : 'nothing visibly changed'} (act ${event.actMs ?? '?'} ms, check ${event.verifyMs ?? '?'} ms)`);
     }

@@ -18,6 +18,7 @@ final class UniversalAX {
         let elements: [[String: Any]]
         let truncated: Bool
         let signature: String
+        let visited: Int
     }
 
     private var elements: [String: AXUIElement] = [:]
@@ -34,7 +35,17 @@ final class UniversalAX {
 
     // MARK: observe
 
+    /// Roles whose children are only their own label text: never walked into.
+    nonisolated static let leafRoles: Set<String> = [
+        "AXStaticText", "AXImage", "AXButton", "AXLink", "AXTextField", "AXTextArea", "AXSearchField", "AXCheckBox",
+        "AXRadioButton", "AXPopUpButton", "AXMenuButton", "AXSlider", "AXIncrementor", "AXComboBox", "AXDisclosureTriangle"]
+
+    /// Milliseconds the last snapshot took, for traces.
+    private(set) var lastReadMs = 0
+
     func snapshot() throws -> Snapshot {
+        let started = Date()
+        defer { lastReadMs = Int(Date().timeIntervalSince(started) * 1000) }
         guard let pid = targetPID, let app = NSRunningApplication(processIdentifier: pid),
               !app.isTerminated else { throw AXError.noTarget }
         let appElement = AXUIElementCreateApplication(pid)
@@ -82,6 +93,11 @@ final class UniversalAX {
                 described["id"] = id
                 collected.append(described)
             }
+            // Leaf controls hold only their label text, and a branch entirely
+            // outside the window (far down a long page) cannot be acted on.
+            if Self.leafRoles.contains(role) { continue }
+            if let box = node.frame, let windowFrame, box.width > 0, box.height > 0,
+               !box.intersects(windowFrame.insetBy(dx: -40, dy: -40)) { continue }
             let grouping = ["AXGroup", "AXList", "AXToolbar", "AXTabGroup", "AXTable", "AXOutline",
                             "AXSheet", "AXDialog", "AXWebArea"].contains(role)
             let groupLabel = grouping ? (node.title.isEmpty ? node.desc : node.title) : ""
@@ -121,7 +137,7 @@ final class UniversalAX {
             + collected.map { "\($0["label"] ?? "")\($0["value"] ?? "")\($0["selected"] ?? "")" }.joined(separator: "¦")
         return Snapshot(app: app.localizedName ?? app.bundleIdentifier ?? "app", bundleID: app.bundleIdentifier ?? "",
                         pid: pid, windowTitle: windowTitle, url: url, elements: collected,
-                        truncated: collected.count >= limit, signature: String(signature.hashValue))
+                        truncated: collected.count >= limit, signature: String(signature.hashValue), visited: visited)
     }
 
     /// The attributes the walk needs, fetched in one call.

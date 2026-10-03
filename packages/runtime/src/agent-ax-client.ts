@@ -26,6 +26,9 @@ export interface AgentSnapshot {
   readonly signature: string;
   /** Other apps the user has open (regular apps only), for switching. */
   readonly runningApps?: readonly string[];
+  /** Executor-measured read time and nodes visited, for traces. */
+  readonly readMs?: number;
+  readonly visited?: number;
 }
 
 export type AgentOperation = 'snapshot' | 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste';

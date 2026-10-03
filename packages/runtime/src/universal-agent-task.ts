@@ -180,7 +180,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         risky: !finish && RISKY.test(`${option!.label} ${option!.element?.context ?? ''}`) });
       this.#trace?.({ kind: 'step', step, app: view.app, window: view.windowTitle, url: view.url,
         elements: view.elements.length, options: options.length, chosen: proposal.kind, label: proposal.label,
-        risky: proposal.risky, history: [...this.#history], observeMs, decideMs });
+        risky: proposal.risky, history: [...this.#history], observeMs, decideMs,
+        readMs: view.readMs ?? null, visited: view.visited ?? null });
       const confirmed = await this.#confirmation.confirm(proposal, this.#abort.signal);
       this.#active(generation);
       if (!confirmed) throw new ContractError('user declined the agent step');

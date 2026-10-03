@@ -1942,7 +1942,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                         value = ["app": snap.app, "bundleId": snap.bundleID, "pid": Int(snap.pid),
                                  "windowTitle": snap.windowTitle, "url": snap.url, "elements": elements,
                                  "truncated": snap.truncated || elements.count < snap.elements.count,
-                                 "signature": snap.signature, "runningApps": UniversalAX.runningApps()]
+                                 "signature": snap.signature, "runningApps": UniversalAX.runningApps(),
+                                 "readMs": self.universalAX.lastReadMs, "visited": snap.visited]
                         let size = (try? JSONSerialization.data(withJSONObject: value).count) ?? 0
                         if size < 56_000 { break }
                         elements.removeLast(min(20, elements.count))
