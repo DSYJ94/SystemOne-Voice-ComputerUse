@@ -16,6 +16,10 @@ final class OnDeviceSpeech {
     private let speechAuthorization: (@escaping @Sendable (SFSpeechRecognizerAuthorizationStatus) -> Void) -> Void
     private let microphoneAuthorization: (@escaping @Sendable (Bool) -> Void) -> Void
     var isCapturing: Bool { listening || finishing }
+    var isAuthorized: Bool {
+        SFSpeechRecognizer.authorizationStatus() == .authorized
+            && AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+    }
 
     init(speechAuthorization: @escaping (@escaping @Sendable (SFSpeechRecognizerAuthorizationStatus) -> Void) -> Void = { completion in
              SFSpeechRecognizer.requestAuthorization(completion)

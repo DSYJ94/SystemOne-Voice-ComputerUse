@@ -1,5 +1,6 @@
 import unittest
-from development_signing import choose_certificate, parse_identities, resolve_identity
+from development_signing import (LOCAL_NAME, choose_certificate, parse_identities,
+                                 parse_local_identities, resolve_identity)
 
 
 class SigningTests(unittest.TestCase):
@@ -32,6 +33,16 @@ class SigningTests(unittest.TestCase):
             choose_certificate("-", self.identity)
         with self.assertRaises(ValueError):
             choose_certificate("B" * 40, self.identity)
+
+    def test_only_the_named_self_signed_certificate_is_accepted_untrusted(self):
+        output = ('  1) ' + "C" * 40 + ' "' + LOCAL_NAME + '" (CSSMERR_TP_NOT_TRUSTED)\n'
+                  '  2) ' + "D" * 40 + ' "Some Other Self Signed" (CSSMERR_TP_NOT_TRUSTED)\n')
+        local = parse_local_identities(output)
+        self.assertEqual(local, [("C" * 40, LOCAL_NAME)])
+        self.assertEqual(parse_identities(output), [])
+        self.assertEqual(choose_certificate(None, local), "C" * 40)
+        with self.assertRaises(ValueError):
+            choose_certificate(None, local + self.identity)
 
 
 if __name__ == "__main__":

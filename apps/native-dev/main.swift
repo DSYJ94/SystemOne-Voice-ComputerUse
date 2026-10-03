@@ -101,9 +101,11 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var fixtureTaskPaused = false
     /// Per-task opt-in; on only when the launcher enabled Jev for this session. Fixture surface only.
     private var jevChoiceCheckbox: NSButton?
-    /// Set only by the launcher (`npm start`); the panel shows it while active.
-    private let sessionDecisionProvider = ProcessInfo.processInfo.environment["SYSTEMONE_DECISION_PROVIDER"] == "jev"
-        ? "jev" : nil
+    /// Starts on only when the launcher (`npm start`) enabled Jev; Settings can
+    /// turn it off or on for this session. The chip shows it while active.
+    private var jevEnabled = ProcessInfo.processInfo.environment["SYSTEMONE_DECISION_PROVIDER"] == "jev"
+    private var jevChip: NSTextField?
+    private var settingsPopover: NSPopover?
     private var recoveryRequestID: String?
     private let recoveryUISession = UUID().uuidString.lowercased()
     private var recoveryAlert: NSAlert?
@@ -324,17 +326,18 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         field.action = #selector(runTaskRequest)
         field.cell?.sendsActionOnEndEditing = false
         taskField = field
-        let chip = NSTextField(labelWithString: sessionDecisionProvider == "jev" ? " Jev " : "")
+        let chip = NSTextField(labelWithString: " Jev ")
         chip.font = .systemFont(ofSize: 11, weight: .semibold)
         chip.textColor = .secondaryLabelColor
         chip.wantsLayer = true
         chip.layer?.cornerRadius = 6
         chip.layer?.backgroundColor = NSColor.secondaryLabelColor.withAlphaComponent(0.15).cgColor
-        chip.isHidden = sessionDecisionProvider != "jev"
+        chip.isHidden = !jevEnabled
+        jevChip = chip
         chip.toolTip = "Jev (TypeSafe) chooses steps; this sends the task and visible control labels to TypeSafe."
-        let more = symbolButton("ellipsis.circle", "More", size: 18)
+        let more = symbolButton("gearshape", "Settings", size: 18)
         more.target = self
-        more.action = #selector(showCommandMenu(_:))
+        more.action = #selector(showSettings(_:))
         let run = symbolButton("arrow.up.circle.fill", "Run request", size: 26)
         run.contentTintColor = .controlAccentColor
         run.target = self
@@ -392,17 +395,93 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         commandPanel = window
     }
 
-    @objc private func showCommandMenu(_ sender: NSButton) {
-        let menu = NSMenu()
-        for (title, action) in [("Enable Voice", #selector(enableVoice)),
-                                ("Show Fields in Target App", #selector(showCapturedFields)),
-                                ("Developer Tools", #selector(openDeveloperPanel)),
-                                ("Accessibility…", #selector(openAccessibilityRecovery))] {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-            item.target = self
-            menu.addItem(item)
+    @objc private func showSettings(_ sender: NSButton) {
+        if let settingsPopover, settingsPopover.isShown { settingsPopover.close(); return }
+        func caption(_ text: String) -> NSTextField {
+            let label = NSTextField(wrappingLabelWithString: text)
+            label.font = .systemFont(ofSize: 11)
+            label.textColor = .secondaryLabelColor
+            label.preferredMaxLayoutWidth = 300
+            return label
         }
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
+        func row(_ title: String, _ button: NSButton?) -> NSStackView {
+            let label = NSTextField(labelWithString: title)
+            label.font = .systemFont(ofSize: 13)
+            let views: [NSView] = button.map { [label, $0] } ?? [label]
+            let stack = NSStackView(views: views)
+            stack.orientation = .horizontal
+            stack.spacing = 8
+            return stack
+        }
+        func link(_ title: String, _ action: Selector) -> NSButton {
+            let button = NSButton(title: title, target: self, action: action)
+            button.bezelStyle = .inline
+            return button
+        }
+        let heading = NSTextField(labelWithString: "Settings")
+        heading.font = .boldSystemFont(ofSize: 14)
+        let jevSwitch = NSSwitch()
+        jevSwitch.state = jevEnabled ? .on : .off
+        jevSwitch.target = self
+        jevSwitch.action = #selector(toggleJev(_:))
+        let jevRow = row("Let Jev choose each step", nil)
+        jevRow.insertArrangedSubview(jevSwitch, at: 0)
+        let jevNote = caption("Sends your request and the visible control labels to TypeSafe (jev-1.13.0). Off keeps everything on this Mac.")
+        let voiceRow = row("Voice: " + (speech.isAuthorized ? "ready (on this Mac)" : "not enabled"),
+                           speech.isAuthorized ? nil : link("Enable", #selector(enableVoice)))
+        let axGranted = hasAccessibilityAccess()
+        let axRow = row("Accessibility: " + (axGranted ? "granted to this build" : "not granted to this build"),
+                        link(axGranted ? "Details" : "Fix…", #selector(openAccessibilityRecovery)))
+        let advanced = NSTextField(labelWithString: "Advanced")
+        advanced.font = .boldSystemFont(ofSize: 12)
+        advanced.textColor = .secondaryLabelColor
+        let tools = NSStackView(views: [link("Show fields", #selector(showCapturedFields)),
+                                        link("Test fixture", #selector(openTestFixture)),
+                                        link("Developer tools", #selector(openDeveloperPanel))])
+        tools.orientation = .horizontal
+        tools.spacing = 6
+        let stack = NSStackView(views: [heading, jevRow, jevNote, voiceRow, axRow, advanced, tools])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 10
+        stack.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 16)
+        let controller = NSViewController()
+        controller.view = stack
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentViewController = controller
+        settingsPopover = popover
+        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+    }
+
+    @objc private func toggleJev(_ sender: NSSwitch) {
+        setJevEnabled(sender.state == .on)
+    }
+
+    @objc private func toggleJevCheckbox(_ sender: NSButton) {
+        setJevEnabled(sender.state == .on)
+    }
+
+    private func setJevEnabled(_ enabled: Bool) {
+        jevEnabled = enabled
+        jevChip?.isHidden = !enabled
+        jevChoiceCheckbox?.state = enabled ? .on : .off
+        commandStatus?.stringValue = enabled
+            ? "Jev chooses steps; your request and visible control labels go to TypeSafe."
+            : "Jev off. Requests stay on this Mac."
+    }
+
+    /// The synthetic test target lives beside the controller in this checkout.
+    @objc private func openTestFixture() {
+        guard let script = Bundle.main.object(forInfoDictionaryKey: "SystemOneControllerScript") as? String else { return }
+        let root = URL(fileURLWithPath: script).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let fixture = root.appendingPathComponent(".build/native-mock/SystemOne Fixture.app")
+        guard FileManager.default.fileExists(atPath: fixture.path) else {
+            commandStatus?.stringValue = "Test fixture not built. Run npm start with test fixtures, or npm run build:native-mock."
+            return
+        }
+        NSWorkspace.shared.openApplication(at: fixture, configuration: .init())
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -534,7 +613,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let jevChoice = NSButton(checkboxWithTitle:
             "Let Jev choose each fixture step (sends this synthetic window's title and button labels to TypeSafe)",
             target: nil, action: nil)
-        jevChoice.state = sessionDecisionProvider == "jev" ? .on : .off
+        jevChoice.state = jevEnabled ? .on : .off
+        jevChoice.target = self
+        jevChoice.action = #selector(toggleJevCheckbox(_:))
         jevChoice.setAccessibilityLabel("Let the Jev model choose fixture steps; sends fixture text to TypeSafe")
         jevChoiceCheckbox = jevChoice
         let nativeActions = NSStackView(views: [access, inspect, nativeFill])
@@ -1199,7 +1280,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 commandStatus?.stringValue = "Could not send the fixture request to the controller."
                 return
             }
-            commandStatus?.stringValue = jevChoiceCheckbox?.state == .on
+            commandStatus?.stringValue = jevEnabled
                 ? "Jev is choosing each step in SystemOne Fixture…"
                 : "Running the scripted SystemOne Fixture steps…"
             return
@@ -1475,7 +1556,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func withDecisionChoice(_ request: [String: Any]) -> [String: Any] {
-        guard jevChoiceCheckbox?.state == .on else { return request }
+        guard jevEnabled else { return request }
         var opted = request
         opted["decisionProvider"] = "jev"
         return opted

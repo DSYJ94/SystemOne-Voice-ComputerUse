@@ -11,11 +11,21 @@ import sys
 
 
 FINGERPRINT = re.compile(r"[A-Fa-f0-9]{40}\Z")
+# The one self-signed name accepted, created by the owner in Keychain Access
+# (Certificate Assistant, Self Signed Root, Code Signing). It is untrusted by
+# design, so it appears only in the unfiltered identity list.
+LOCAL_NAME = "SystemOne Local Dev"
 
 
 def parse_identities(output):
     return [(fingerprint.upper(), name) for fingerprint, name in re.findall(
         r'^\s*\d+\) ([A-Fa-f0-9]{40}) "([^"\n]+)"\s*$', output, re.MULTILINE)]
+
+
+def parse_local_identities(output):
+    """Unfiltered `find-identity` rows for the owner's self-signed certificate only."""
+    rows = re.findall(r'^\s*\d+\) ([A-Fa-f0-9]{40}) "([^"\n]+)"(?: \([A-Z_]+\))?\s*$', output, re.MULTILINE)
+    return sorted({(fingerprint.upper(), name) for fingerprint, name in rows if name == LOCAL_NAME})
 
 
 def resolve_identity(explicit, pinned, identities):
@@ -31,7 +41,7 @@ def resolve_identity(explicit, pinned, identities):
 
 def choose_certificate(requested, identities):
     candidates = [(fingerprint, name) for fingerprint, name in identities
-                  if name.startswith(("Apple Development:", "Developer ID Application:"))]
+                  if name.startswith(("Apple Development:", "Developer ID Application:")) or name == LOCAL_NAME]
     if requested is not None:
         if not FINGERPRINT.fullmatch(requested):
             raise ValueError("Use the certificate's 40-character fingerprint, not a name or private key.")
@@ -41,7 +51,8 @@ def choose_certificate(requested, identities):
     if not candidates:
         raise ValueError("No Apple development signing certificate is available. Install Xcode, sign in "
                          "under Settings > Apple Accounts, then Manage Certificates > + > Apple Development. "
-                         "A regular Apple ID can use a Personal Team for local development. "
+                         "A regular Apple ID can use a Personal Team for local development, or create a "
+                         f"self-signed Code Signing certificate named '{LOCAL_NAME}' in Keychain Access. "
                          "See docs/DEVELOPMENT_SIGNING.md.")
     raise ValueError("Multiple certificates are available. Run security find-identity -v -p codesigning, "
                      "then configure with --identity <certificate fingerprint>.")
@@ -57,6 +68,9 @@ def main():
     identities = parse_identities(subprocess.run(
         ["/usr/bin/security", "find-identity", "-v", "-p", "codesigning"],
         check=True, text=True, capture_output=True).stdout)
+    identities += [row for row in parse_local_identities(subprocess.run(
+        ["/usr/bin/security", "find-identity", "-p", "codesigning"],
+        check=True, text=True, capture_output=True).stdout) if row not in identities]
     if args.operation == "resolve":
         pinned = pin.read_text().strip() if pin.exists() else None
         if pinned is not None and not FINGERPRINT.fullmatch(pinned):
