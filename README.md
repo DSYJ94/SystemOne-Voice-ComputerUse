@@ -29,6 +29,11 @@ setup, live permission recovery and physical multi-monitor use remain pending.
 
 ## Current implementation
 
+- [Native field fills](docs/NATIVE_FIELD_ACTOR.md) now use the persistent actor,
+  budgeted eligibility checkpoints and independent terminal value verification.
+  Retained field actors support fresh Check recovery / explicit Resume and Stop.
+  Linux checks pass; Swift and live Mac qualification remain open.
+
 - The [native fixture controller](docs/NATIVE_CONTROLLER_ACTOR.md) now runs
   NAVIGATE/LOCATE/OPEN through the persistent actor. Paused history blocks new
   controller intake across restart; explicit Stop fences a retained native
@@ -57,7 +62,7 @@ setup, live permission recovery and physical multi-monitor use remain pending.
   intent against a fresh, scope-matched checkpoint recheck, preserving deadlines
   and quotas. Committed corrections cancel old execution authority and retain
   uncertain effects. General/native-controller and panel integration remain next;
-  the user's goal remains stopped.
+  the previous owner goal remains dropped.
 - [Durable progress](docs/TASK_PROGRESS.md) now expires action facts on fresh
   reads, dispatch, Stop and restart in synthetic native navigation/LOCATE/OPEN
   and the fixed portal workflow.

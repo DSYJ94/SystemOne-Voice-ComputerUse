@@ -10,6 +10,11 @@ import { buildActionCandidates, fromNativeObservation,
   selectBoundCandidate } from './action-candidates.ts';
 import type { JSONValue } from '../../protocol/src/json.ts';
 import type { PreparedAttempt } from './attempt-journal.ts';
+import { PersistentTaskActor } from './persistent-task-actor.ts';
+import { NativeFieldTask } from './native-field-task.ts';
+import { NativeActorRecovery } from './native-actor-recovery.ts';
+import type { NativeRecoveryPrompt } from './native-fixture-authority.ts';
+import type { TaskProgressLimits } from './task-progress.ts';
 
 const ID = /^[A-Za-z0-9_.:-]{1,160}$/;
 const BUNDLE_ID = /^[A-Za-z0-9.-]{3,160}$/;
@@ -72,16 +77,7 @@ export interface NativeFillRequest {
 export type NativeFillResult = 'verified' | 'already_matched' | 'unsupported'
   | 'uncertain' | 'stopped' | 'error';
 
-interface Active {
-  readonly requestId: string;
-  readonly abort: AbortController;
-  stopped: boolean;
-  journalStarted: boolean;
-  workerTouched: boolean;
-  done: Promise<NativeFillResult>;
-}
-
-function validRequest(request: NativeFillRequest): boolean {
+export function validNativeFillRequest(request: NativeFillRequest): boolean {
   return ID.test(request.requestId) && BUNDLE_ID.test(request.bundleId)
     && (request.targetPid === undefined && request.targetLaunchMillis === undefined
       || Number.isSafeInteger(request.targetPid) && request.targetPid! > 0
@@ -94,7 +90,7 @@ function validRequest(request: NativeFillRequest): boolean {
     && Buffer.byteLength(request.value, 'utf8') <= MAX_VALUE_BYTES;
 }
 
-function validObservation(value: NativeFieldObservation, bundleId: string): boolean {
+export function validNativeFieldObservation(value: NativeFieldObservation, bundleId: string): boolean {
   if (!ID.test(value.observationId) || !ID.test(value.scopeRef)
     || value.bundleId !== bundleId || typeof value.complete !== 'boolean'
     || !Array.isArray(value.controls) || value.controls.length > 80) return false;
@@ -112,242 +108,142 @@ function validObservation(value: NativeFieldObservation, bundleId: string): bool
   return true;
 }
 
-/** One host-owned native task at a time. The worker interface is trusted only
- * inside the development process; release IPC must authenticate its OS peer
- * and verify permits on the worker side. */
+
+interface Pending {
+  readonly requestId: string;
+  readonly abort: AbortController;
+  stopped: boolean;
+  touched: boolean;
+  actor?: PersistentTaskActor;
+}
+
+/** Exact native field command intake; the persistent actor owns execution,
+ * interruption and recovery after its fresh scoped admission. */
 export class NativeFillAuthority {
   readonly #journal: AttemptJournal;
   readonly #worker: NativeFieldWorker;
+  readonly #limits: TaskProgressLimits | undefined;
   readonly #seen = new Set<string>();
-  #active: Active | undefined;
-  #workerFenceFailed = false;
+  #pending: Pending | undefined;
+  #actor: PersistentTaskActor | undefined;
+  #recovery: NativeActorRecovery | undefined;
+  #recovering = false;
+  #fenceFailed = false;
   #requiresRecovery = false;
-
-  constructor(journal: AttemptJournal, worker: NativeFieldWorker) {
-    this.#journal = journal;
-    this.#worker = worker;
+  #stopping = false;
+  #stopPromise: Promise<{ workerFenced: boolean; unresolvedExecutionIds: readonly string[] }> | undefined;
+  constructor(journal: AttemptJournal, worker: NativeFieldWorker, limits?: TaskProgressLimits) {
+    this.#journal = journal; this.#worker = worker; this.#limits = limits ? Object.freeze({ ...limits }) : undefined;
   }
-
-  get needsRecovery(): boolean {
-    return this.#workerFenceFailed || this.#requiresRecovery
-      || this.#journal.unresolvedAttempts().length > 0;
-  }
-
-  start(request: NativeFillRequest): Promise<NativeFillResult> {
-    if (!validRequest(request) || this.#seen.has(request.requestId)
-      || this.#seen.size >= 1_000) return Promise.resolve('error');
+  get taskId(): string | undefined { return this.#pending?.requestId ?? this.#actor?.taskId; }
+  get needsRecovery(): boolean { return this.#fenceFailed || this.#requiresRecovery || this.#stopping
+    || this.#actor?.needsRecovery === true || this.#journal.unresolvedAttempts().length > 0; }
+  async start(request: NativeFillRequest): Promise<NativeFillResult | 'paused'> {
+    if (!validNativeFillRequest(request) || this.#seen.has(request.requestId) || this.#seen.size >= 1000
+      || this.#pending || this.#recovering) return 'error';
     this.#seen.add(request.requestId);
-    if (this.#active) return Promise.resolve('error');
-    if (this.needsRecovery) {
-      return Promise.resolve('uncertain');
-    }
-    const active: Active = { requestId: request.requestId,
-      abort: new AbortController(), stopped: false, journalStarted: false,
-      workerTouched: false,
-      done: Promise.resolve('error') };
-    this.#active = active;
-    active.done = this.#run(request, active).finally(() => {
-      if (this.#active === active) this.#active = undefined;
-    });
-    return active.done;
-  }
-
-  async stop(): Promise<{ readonly workerFenced: boolean;
-    readonly unresolvedExecutionIds: readonly string[] }> {
-    const active = this.#active;
-    if (!active) return { workerFenced: !this.#workerFenceFailed,
-      unresolvedExecutionIds: this.#journal.unresolvedAttempts()
-        .map(item => item.executionId) };
-    active.stopped = true;
-    active.abort.abort();
-    if (active.journalStarted
-      && this.#journal.getTaskState(active.requestId) === 'active') {
-      this.#journal.cancelTask(active.requestId);
-    }
-    if (active.journalStarted && this.#journal.attemptsForTask(active.requestId)
-      .some(attempt => attempt.phase === 'at_dispatch_boundary'
-        || (attempt.outcome?.deliveryStatus !== undefined
-          && attempt.outcome.deliveryStatus !== 'not_dispatched'))) {
-      // A late verified receipt can settle the attempt without authorizing a
-      // retry of a stopped goal. Fresh recovery observation is still required.
-      this.#requiresRecovery = true;
-    }
-    const workerFenced = await this.#boundedStop(active.requestId);
-    if (!workerFenced) this.#workerFenceFailed = true;
-    return { workerFenced, unresolvedExecutionIds: this.#journal
-      .unresolvedAttempts(active.requestId).map(item => item.executionId) };
-  }
-
-  async #boundedStop(taskId: string): Promise<boolean> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      return await Promise.race([
-        this.#worker.stop(taskId).then(value => value === true, () => false),
-        new Promise<boolean>(resolve => {
-          timer = setTimeout(() => resolve(false), 3_000);
-        }),
-      ]);
-    } finally { if (timer) clearTimeout(timer); }
-  }
-
-  async #run(request: NativeFillRequest, active: Active): Promise<NativeFillResult> {
-    let executionId: string | undefined;
+    if (this.needsRecovery || this.#journal.pendingTaskIds().length) return 'uncertain';
+    const pending: Pending = { requestId: request.requestId, abort: new AbortController(), stopped: false, touched: false };
+    this.#pending = pending; this.#stopPromise = undefined; this.#actor = undefined;
+    this.#recovery?.close(); this.#recovery = undefined;
     try {
       const command = request.command;
       const canonicalPrefix = `Fill ${request.fieldLabel} in ${request.bundleId} with text: `;
-      const scoped = typeof command.text === 'string'
-        && !command.text.startsWith(canonicalPrefix)
+      const scoped = typeof command.text === 'string' && !command.text.startsWith(canonicalPrefix)
         ? parseScopedNativeFill(command.text) : undefined;
       const valuePrefix = scoped?.prefix ?? canonicalPrefix;
-      if (scoped && (request.targetPid === undefined
-        || request.targetLaunchMillis === undefined)) return 'error';
-      if (command.type !== 'command'
-        || (command.source !== 'text' && command.source !== 'voice')
-        || command.mode !== 'command' || command.isFinal !== true
-        || command.taskId !== request.requestId || command.taskEpoch !== 1
-        || command.goalRevision !== 1
-        || (scoped !== undefined
-          ? scoped.fieldLabel !== request.fieldLabel || scoped.value !== request.value
+      if ((scoped && (request.targetPid === undefined || request.targetLaunchMillis === undefined))
+        || !['text', 'voice'].includes(String(command.source)) || command.mode !== 'command'
+        || command.taskId !== request.requestId || command.taskEpoch !== 1 || command.goalRevision !== 1
+        || (scoped ? scoped.fieldLabel !== request.fieldLabel || scoped.value !== request.value
           : command.text !== canonicalPrefix + request.value)
-        || command.originSurface === undefined
-        || command.originSurface === null
-        || typeof command.originSurface !== 'object'
-        || Array.isArray(command.originSurface)
-        || command.originSurface.appBundleId !== 'com.aurium.systemone.dev') {
-        return 'error';
-      }
+        || !command.originSurface || typeof command.originSurface !== 'object' || Array.isArray(command.originSurface)
+        || command.originSurface.appBundleId !== 'com.aurium.systemone.dev') return 'error';
       const revision = { taskId: request.requestId, taskEpoch: 1, goalRevision: 1 };
-      const endpoint = bindEndpoint(['command']);
-      const input = new CommittedInputSession(endpoint, revision);
-      const route = input.accept(endpoint, Buffer.from(JSON.stringify(command)));
+      const endpoint = bindEndpoint(['command']); const session = new CommittedInputSession(endpoint, revision);
+      const route = session.accept(endpoint, Buffer.from(JSON.stringify(command)));
       if (route.kind !== 'interpret_command') return 'error';
-      const fillParameter = bindCommandValue(route.input, 'fill-value',
-        valuePrefix,
-        request.value);
-      active.workerTouched = true;
-      const observation = await this.#worker.observe({
-        taskId: request.requestId, bundleId: request.bundleId,
-        ...(request.targetPid === undefined ? {} : {
-          targetPid: request.targetPid,
-          targetLaunchMillis: request.targetLaunchMillis,
-        }),
-        signal: active.abort.signal,
-      });
-      if (active.stopped) return 'stopped';
-      if (!validObservation(observation, request.bundleId)) return 'error';
-      const matching = observation.controls.filter(control =>
-        control.label === request.fieldLabel && control.enabled
-        && !control.secure && control.canSetValue);
-      const offered = buildActionCandidates({
-        source: fromNativeObservation(observation),
-        text: { textRef: 'fill-value', source: 'final_command',
-          allowedTargetRefs: matching.map(control => control.id) },
-        policyRevision: 'native-ax-policy-v1',
-      });
-      if (!selectBoundCandidate(offered, 'set_value',
-        matching.map(control => control.id)) || matching.length !== 1) {
-        return 'unsupported';
-      }
-      const candidate = matching[0]!;
-      const registry = new TaskAdmissionRegistry(revision, input);
-      const admission = registry.admit(route.input, {
-        admissionId: randomUUID(), goal: route.input.text,
-        outcomeKind: 'FILL', scopeRef: observation.scopeRef,
-        completionVerifierRef: 'native-ax-value-v1',
-        policyRevision: 'native-ax-policy-v1',
-        approvedEffects: ['READ', 'LOCAL_EDIT'],
-        parameters: [fillParameter],
-      });
-      this.#journal.startAdmittedTask(registry, admission);
-      active.journalStarted = true;
-      if (active.stopped) return 'stopped';
-      const action = { taskId: request.requestId,
-        scopeRef: observation.scopeRef, observationId: observation.observationId,
-        candidateId: candidate.id, label: candidate.label,
-        valueDigest: digest(request.value), policyRevision: admission.policyRevision };
-      const permit: PreparedAttempt = Object.freeze({
-        executionId: randomUUID(), permitRef: randomUUID(),
-        taskId: request.requestId, taskEpoch: 1, goalRevision: 1,
-        scopeRef: observation.scopeRef,
-        observationId: observation.observationId,
-        candidateId: candidate.id,
-        candidateSetDigest: digest(observation.controls.map(control => ({
-          id: control.id, role: control.role, label: control.label,
-          enabled: control.enabled, secure: control.secure,
-          canSetValue: control.canSetValue,
-        }))),
-        actionDigest: digest(action),
-        policyRevision: admission.policyRevision, leaseGeneration: 1,
-      });
-      const prepared = await this.#worker.prepare({
-        taskId: request.requestId,
-        observationId: observation.observationId,
-        candidateId: candidate.id, value: request.value,
-        executionId: permit.executionId, permitRef: permit.permitRef,
-        actionDigest: permit.actionDigest,
-        candidateSetDigest: permit.candidateSetDigest,
-        policyRevision: permit.policyRevision,
-        signal: active.abort.signal,
-      });
-      if (active.stopped) return 'stopped';
-      if (prepared.kind === 'unsupported') return 'unsupported';
-      if (prepared.kind === 'matched_at_preflight') {
-        const matched = await this.#worker.verify({ taskId: request.requestId,
-          observationId: observation.observationId,
-          candidateId: candidate.id, value: request.value });
-        if (active.stopped) return 'stopped';
-        if (!matched) return 'unsupported';
-        this.#journal.completeTask(request.requestId,
-          `native-current-${request.requestId}`);
-        return 'already_matched';
-      }
-      if (prepared.kind !== 'ready' || !ID.test(prepared.preparationRef)) {
-        return 'error';
-      }
-      this.#journal.prepare(permit);
-      executionId = permit.executionId;
-      if (active.stopped) return 'stopped';
-      // The durable marker precedes the private worker message. No await or
-      // second action can interleave before the worker commit call is issued.
-      this.#journal.markDispatchBoundary(permit.executionId);
-      const result = await this.#worker.commit({ taskId: request.requestId,
-        executionId: permit.executionId, permitRef: permit.permitRef,
-        preparationRef: prepared.preparationRef, permit });
-      const outcome = result === 'verified'
-        ? { deliveryStatus: 'dispatched' as const, effectStatus: 'applied' as const,
-          verification: 'matched' as const,
-          evidenceRef: `native-ax-${permit.executionId}` }
-        : result === 'not_dispatched'
-          ? { deliveryStatus: 'not_dispatched' as const,
-            effectStatus: 'not_applied' as const, verification: 'unavailable' as const }
-          : { deliveryStatus: 'unknown' as const,
-            effectStatus: 'unknown' as const, verification: 'unavailable' as const };
-      this.#journal.recordOutcome(permit.executionId, outcome);
-      if (active.stopped) return 'stopped';
-      if (result !== 'verified') return result === 'not_dispatched'
-        ? 'unsupported' : 'uncertain';
-      this.#journal.completeTask(request.requestId, outcome.evidenceRef!);
-      return 'verified';
-    } catch {
-      if (executionId && this.#journal.getAttempt(executionId)?.phase
-        === 'at_dispatch_boundary') {
-        this.#journal.recordOutcome(executionId, { deliveryStatus: 'unknown',
-          effectStatus: 'unknown', verification: 'unavailable' });
-        return 'uncertain';
-      }
-      return active.stopped ? 'stopped' : 'error';
-    } finally {
-      if (active.journalStarted
-        && this.#journal.getTaskState(active.requestId) === 'active') {
-        this.#journal.cancelTask(active.requestId);
-      }
-      if (active.workerTouched && !active.stopped
-        && (!active.journalStarted
-          || this.#journal.getTaskState(active.requestId) !== 'completed')) {
-        if (!await this.#boundedStop(active.requestId)) {
-          this.#workerFenceFailed = true;
-        }
-      }
+      const valueParameter = bindCommandValue(route.input, 'fill-value', valuePrefix, request.value);
+      const captured = Object.freeze({ ...request, command: route.input });
+      pending.touched = true;
+      const observed = await this.#worker.observe({ taskId: request.requestId, bundleId: request.bundleId,
+        ...(request.targetPid === undefined ? {} : { targetPid: request.targetPid, targetLaunchMillis: request.targetLaunchMillis! }),
+        signal: pending.abort.signal });
+      if (pending.stopped) return 'stopped';
+      if (!validNativeFieldObservation(observed, request.bundleId)) return 'error';
+      const matching = observed.controls.filter(c => c.label === request.fieldLabel && c.enabled && !c.secure && c.canSetValue);
+      const offered = buildActionCandidates({ source: fromNativeObservation(observed),
+        text: { textRef: 'fill-value', source: 'final_command', allowedTargetRefs: matching.map(c => c.id) },
+        policyRevision: 'native-ax-policy-v1' });
+      if (!selectBoundCandidate(offered, 'set_value', matching.map(c => c.id)) || matching.length !== 1) return 'unsupported';
+      const registry = new TaskAdmissionRegistry(revision, session);
+      const admission = registry.admit(route.input, { admissionId: randomUUID(), goal: route.input.text,
+        outcomeKind: 'FILL', scopeRef: observed.scopeRef, completionVerifierRef: 'native-ax-value-v1',
+        policyRevision: 'native-ax-policy-v1', approvedEffects: ['READ', 'LOCAL_EDIT'], parameters: [valueParameter,
+          { parameterRef: 'fill-field', sourceRef: `utterance.${route.input.utteranceId}.r${route.input.utteranceRevision}`,
+            valueDigest: digest(request.fieldLabel), sourceStart: 5, sourceEnd: 5 + Buffer.byteLength(request.fieldLabel), offsetUnit: 'utf8_bytes' }] });
+      const workflow = NativeFieldTask.start(this.#journal, this.#worker, registry, admission, captured, observed, this.#limits);
+      const actor = new PersistentTaskActor(this.#journal, workflow, 3000);
+      pending.actor = actor; this.#actor = actor; this.#recovery = new NativeActorRecovery(actor);
+      return this.#result(await actor.run(), pending.stopped);
+    } catch { return pending.stopped ? 'stopped' : this.#journal.unresolvedAttempts().length ? 'uncertain' : 'error'; }
+    finally {
+      if (pending.touched && !pending.actor && !pending.stopped) await this.#fence(pending.requestId);
+      if (this.#pending === pending) this.#pending = undefined;
     }
+  }
+  #result(record: PersistentTaskActor['snapshot'], stopped: boolean): NativeFillResult | 'paused' {
+    if (stopped || record.state === 'cancelled') return 'stopped';
+    if (this.#journal.unresolvedAttempts(record.taskId).length) return 'uncertain';
+    if (record.state === 'paused') return 'paused';
+    if (record.state !== 'completed' || !record.completion) return 'error';
+    return record.progress?.checkpoints.some(c => c.executionId) ? 'verified' : 'already_matched';
+  }
+  #require(taskId: string): NativeActorRecovery {
+    if (!this.#actor || this.#actor.taskId !== taskId || !this.#recovery || this.#pending || this.#recovering
+      || this.#actor.busy || this.#stopping || this.#fenceFailed || this.#requiresRecovery
+      || this.#actor.snapshot.state !== 'paused') throw new ContractError('no settled paused field actor');
+    return this.#recovery;
+  }
+  async prepareRecovery(taskId: string, uiSessionRef: string): Promise<NativeRecoveryPrompt> {
+    const recovery = this.#require(taskId); this.#recovering = true;
+    try { return await recovery.prepare(uiSessionRef); } finally { this.#recovering = false; }
+  }
+  presented(taskId: string, promptId: string, presentationDigest: string, uiSessionRef: string): void {
+    this.#require(taskId).presented(promptId, presentationDigest, uiSessionRef);
+  }
+  dismiss(taskId: string, promptId: string, uiSessionRef: string): void { this.#require(taskId).dismiss(promptId, uiSessionRef); }
+  async resume(taskId: string, bytes: Uint8Array): Promise<NativeFillResult | 'paused'> {
+    this.#require(taskId).activate(bytes);
+    const pending: Pending = { requestId: taskId, abort: new AbortController(), stopped: false, touched: true, actor: this.#actor! };
+    this.#pending = pending; this.#stopPromise = undefined;
+    try { return this.#result(await this.#actor!.run(), pending.stopped); }
+    finally { if (this.#pending === pending) this.#pending = undefined; }
+  }
+  stop(): Promise<{ workerFenced: boolean; unresolvedExecutionIds: readonly string[] }> {
+    this.#recovery?.close();
+    if (this.#stopPromise) return this.#stopPromise;
+    const pending = this.#pending; if (pending) { pending.stopped = true; pending.abort.abort(); }
+    const actor = pending ? pending.actor : this.#actor;
+    const taskId = pending?.requestId ?? actor?.taskId;
+    if (taskId && this.#journal.attemptsForTask(taskId).some(a => a.phase === 'at_dispatch_boundary'
+      || a.outcome?.deliveryStatus === 'dispatched' || a.outcome?.deliveryStatus === 'unknown')) this.#requiresRecovery = true;
+    this.#stopping = true;
+    this.#stopPromise = (async () => {
+      const workerFenced = actor ? (await actor.stop()).workerFenced : taskId ? await this.#fence(taskId) : !this.#fenceFailed;
+      if (!workerFenced) this.#fenceFailed = true;
+      return { workerFenced, unresolvedExecutionIds: this.#journal.unresolvedAttempts().map(a => a.executionId) };
+    })().finally(() => { this.#stopping = false; });
+    return this.#stopPromise;
+  }
+  async settleBeforeClose(): Promise<void> { this.#recovery?.close(); await this.#actor?.settleOperation(); }
+  async #fence(taskId: string): Promise<boolean> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = await Promise.race([this.#worker.stop(taskId).then(v => v === true, () => false),
+        new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), 3000); })]);
+      if (!result) this.#fenceFailed = true; return result;
+    } catch { this.#fenceFailed = true; return false; }
+    finally { if (timer) clearTimeout(timer); }
   }
 }

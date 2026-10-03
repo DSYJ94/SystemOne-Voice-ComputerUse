@@ -75,10 +75,11 @@ recovery remain open.
 
 ## Remaining v1 work
 
-Extend recovery/correction beyond retained paused fixture actors, move native
-field fills under the actor, extend legal semantic actions, and qualify
+[Native field fills](NATIVE_FIELD_ACTOR.md) now run under the actor with retained
+recovery. Extend correction beyond retained paused fixture actors, extend legal
+semantic actions, and qualify
 sleep/lock, persistent browser sessions and unknown-effect reconciliation.
 Prove existing-profile Chrome continuity and authenticated release workers.
 CLM decisions require their own artifact/calibration and closed-loop evidence.
 See [v1 readiness](V1_READINESS.md), [recovery contract](TASK_RECOVERY.md) and
-[validation](VALIDATION.md). None of these checks resumes the owner's stopped goal.
+[validation](VALIDATION.md). The previous owner goal remains dropped.

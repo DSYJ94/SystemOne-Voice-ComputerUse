@@ -477,6 +477,7 @@ export class NativeManagedController {
       this.#runs.claim(run);
       active.done = authority.start(request).then(result => {
         const phase: Phase = result === 'verified' ? 'verified_native_fill'
+          : result === 'paused' ? 'native_paused'
           : result === 'already_matched' ? 'already_matched'
             : result === 'unsupported' ? 'unsupported'
               : result === 'uncertain' ? 'uncertain'
@@ -594,8 +595,8 @@ export class NativeManagedController {
   }
 
   #recoverNative(request: NativeRecoveryControl): void {
-    const authority = this.#pressAuthority;
     const taskId = request.targetRequestId;
+    const authority = this.#nativeAuthority?.taskId === taskId ? this.#nativeAuthority : this.#pressAuthority;
     if (this.#runs.active) { this.#send(taskId, 'busy'); return; }
     if (!authority || !this.#chromeOutput || this.#workerFenceFailed
       || authority.taskId !== taskId || this.#journal.getTaskState(taskId) !== 'paused') {
@@ -621,7 +622,7 @@ export class NativeManagedController {
       : authority.resume(taskId, Buffer.from(JSON.stringify(request.intent))).then(result => {
         if (result !== 'stopped') this.#send(taskId, result === 'verified_navigation' ? 'verified_native_navigation'
           : result === 'verified_locate' ? 'verified_native_locate' : result === 'verified_open' ? 'verified_native_open'
-          : result === 'paused' ? 'native_paused' : result);
+          : result === 'paused' ? 'native_paused' : result === 'verified' ? 'verified_native_fill' : result);
       })).catch(() => { this.#send(taskId, 'blocked_recovery'); })
       .finally(() => { this.#adapterSettled(run, authority); });
   }
@@ -641,6 +642,7 @@ export class NativeManagedController {
     }
     this.#nativeWorker?.close();
     await this.#pressAuthority?.settleBeforeClose();
+    await this.#nativeAuthority?.settleBeforeClose();
     const active = run?.surface === 'managed' ? run.task : undefined;
     if (active) {
       active.cancelled = true;
@@ -993,12 +995,14 @@ export class NativeManagedController {
     const run = this.#runs.active;
     // A paused actor has settled its run and released the dispatch slot, but
     // remains the durable owner. Explicit Stop must fence that exact task too.
-    const retainedId = this.#pressAuthority?.taskId;
+    const retainedAuthority = this.#nativeAuthority?.taskId === request.targetRequestId
+      ? this.#nativeAuthority : this.#pressAuthority;
+    const retainedId = retainedAuthority?.taskId;
     const targetMatchesRetained = retainedId && (retainedId === request.targetRequestId
       || this.#journal.getTaskRecord(request.targetRequestId)?.replacement?.taskId === retainedId);
     if (!run && targetMatchesRetained && this.#journal.getTaskState(retainedId) === 'paused') {
       this.#send(request.requestId, 'stopping');
-      const authority = this.#pressAuthority;
+      const authority = retainedAuthority!;
       const result = await authority.stop().catch(() => ({ workerFenced: false }));
       if (!result.workerFenced) this.#workerFenceFailed = true;
       this.#send(request.requestId, result.workerFenced && !authority.needsRecovery ? 'stopped' : 'uncertain');
@@ -1025,8 +1029,7 @@ export class NativeManagedController {
     }
     const nativeActive = run?.surface === 'native' ? run.task : undefined;
     if (nativeActive && (nativeActive.requestId === request.targetRequestId
-      || (nativeActive.authority instanceof NativeFixtureAuthority
-        && nativeActive.authority.taskId === request.targetRequestId))) {
+      || nativeActive.authority.taskId === request.targetRequestId)) {
       if (!this.#runs.beginStop(run!)) {
         this.#send(request.requestId, 'uncertain'); return;
       }

@@ -800,7 +800,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "checking_native_recovery":
             statusField?.stringValue = "Checking the native fixture checkpoint…"
         case "native_paused":
-            statusField?.stringValue = "Native fixture task paused. Check recovery or Stop before starting another task."
+            statusField?.stringValue = "Native task paused. Check recovery or Stop before starting another task."
         case "paused_budget":
             statusField?.stringValue = "Task paused at its action or time limit. An earlier action may have taken effect. Inspect the result before starting again."
         case "verified_native_fill":
@@ -836,7 +836,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 stopRequestID = nil
                 if quitPending { quitPending = false; NSApp.reply(toApplicationShouldTerminate: false) }
             }
-        case "blocked_recovery": statusField?.stringValue = "Task paused or effect unresolved. For a native fixture, use Check recovery; otherwise inspect its state and Stop."
+        case "blocked_recovery": statusField?.stringValue = "Task paused or effect unresolved. For a native task, use Check recovery; otherwise inspect its state and Stop."
         case "stopping": statusField?.stringValue = nativeActionActive
             ? "Fencing the native worker; a dispatched edit may already have happened…"
             : "Stopping browser and fencing future actions…"
@@ -1304,7 +1304,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func checkNativeRecovery() {
         guard let surface = activeSurface,
-              [DevTaskIntake.Surface.nativeNavigation, .nativeLocate, .nativeOpen].contains(surface),
+              [DevTaskIntake.Surface.native, .nativeNavigation, .nativeLocate, .nativeOpen].contains(surface),
               let target = activeRequestID, let input = controllerInput,
               stopRequestID == nil, recoveryAlert == nil, taskIntake.replacementRequestID == nil, fixtureTaskPaused else { return }
         let requestID = UUID().uuidString.lowercased()

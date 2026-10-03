@@ -142,7 +142,7 @@ test('private pipe carries a journaled native task and fences a late result', as
       && s.phase === 'verified_native_fill'));
     await waitFor(() => statuses.some(s => s.requestId === first
       && s.phase === 'ready'));
-    assert.deepEqual(operations.slice(0, 3), ['observe', 'prepare', 'commit']);
+    assert.deepEqual(operations.slice(0, 4), ['observe', 'prepare', 'commit', 'verify']);
     holdCommit = true;
     const second = randomUUID();
     start(second);
