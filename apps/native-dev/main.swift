@@ -175,6 +175,23 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 : "FAIL: command window hides or loses floating visibility on deactivation (hides=\(commandPanel.hidesOnDeactivate), level=\(commandPanel.level.rawValue), managed=\(managed))")
             exit(managed && staysVisible ? 0 : 1)
         }
+        if CommandLine.arguments.contains("--check-host-lifecycle") {
+            // Same startup order as a normal launch, against a throwaway journal.
+            identityCheckSupport = FileManager.default.temporaryDirectory
+                .appendingPathComponent("systemone-host-check-\(UUID().uuidString)", isDirectory: true)
+            makeCommandPanel()
+            observeHostLifecycle()
+            startController()
+            let deadline = Date().addingTimeInterval(8)
+            while !hostActionsAvailable && controller?.isRunning == true && Date() < deadline {
+                _ = RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.02))
+            }
+            print("hostActionsAvailable=\(hostActionsAvailable) sleeping=\(hostSleeping) sessionActive=\(hostSessionActive) sequence=\(hostSequence) acknowledged=\(hostAcknowledgedSequence) settled=\(hostInterruptionSettled) controllerRunning=\(controller?.isRunning == true) identity=\(controllerIdentityValid())")
+            controllerInput?.fileHandleForWriting.closeFile()
+            controller?.waitUntilExit()
+            if let identityCheckSupport { try? FileManager.default.removeItem(at: identityCheckSupport) }
+            exit(hostActionsAvailable ? 0 : 1)
+        }
         if CommandLine.arguments.contains("--check-controller-identity") {
             identityCheckSupport = FileManager.default.temporaryDirectory
                 .appendingPathComponent("systemone-controller-id-\(UUID().uuidString)",
@@ -704,8 +721,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // These notifications alone do not establish physical screen-lock coverage.
     private func observeHostLifecycle() {
         if let session = CGSessionCopyCurrentDictionary() as? [String: Any] {
-            hostSessionActive = session["kCGSessionOnConsoleKey"] as? Bool == true
-                && session["kCGSessionLoginDoneKey"] as? Bool == true
+            // SDK constants, not literals: the console key's value is
+            // "kCGSSessionOnConsoleKey", so a typed name silently never matched.
+            hostSessionActive = session[kCGSessionOnConsoleKey as String] as? Bool == true
+                && session[kCGSessionLoginDoneKey as String] as? Bool == true
         } else { hostSessionActive = false }
         let center = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification,
@@ -1358,7 +1377,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if spoken { finalSpeechText = browseText }
             guard taskIntake.submit(.browse(text: browseText), originalText: browseText, voice: spoken,
                 send: { [weak self] in self?.send($0, through: input) == true }) else {
-                commandStatus?.stringValue = "Could not send the browse request to the controller."
+                if hostActionsAvailable {
+                    commandStatus?.stringValue = "Could not send the browse request to the controller."
+                }
                 return
             }
             browseKeptOpen = false

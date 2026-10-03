@@ -29,6 +29,7 @@
     "test:voice-permission-callback": "zsh scripts/check-voice-permission-callback.sh",
     "test:dev-task-intake": "zsh scripts/check-dev-task-intake.sh",
     "test:window-visibility": "zsh scripts/check-command-window-visibility.sh",
+    "test:host-lifecycle": "zsh scripts/check-host-lifecycle.sh",
     "test:field-preflight": "zsh scripts/check-command-field-preflight.sh",
     "configure:dev-signing": "python3 scripts/development_signing.py configure",
     "test:dev-signing": "python3 -m unittest discover -s scripts -p 'test_development_signing.py'",
