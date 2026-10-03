@@ -1,5 +1,9 @@
 # SystemOne Voice Computer Use
 
+**Try it:** `npm start`, press Control-Option-Space, then say or type
+`go to wikipedia.org and search for Alan Turing`. Jev proposes each step;
+Return or "yes" allows it, Esc stops. See [Using SystemOne](docs/USING_SYSTEMONE.md).
+
 A native macOS voice/text computer-use product in early development. The intended
 app is a background/menu-bar agent with a transient command panel, one persistent
 task controller, semantic Accessibility/DOM adapters, and CLM as its primary

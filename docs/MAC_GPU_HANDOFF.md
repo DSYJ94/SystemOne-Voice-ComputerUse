@@ -129,6 +129,19 @@ mode), plus a harder corpus built from real observations. The key lives in
 the login Keychain item `systemone-jev`; never put it in a file in this
 OneDrive checkout. The CLM harness stays in place for re-testing.
 
+## Update, 3 October 2026 (later): one glass bar, Jev browsing
+
+The owner path is now `npm start` and the glass bar ([Using SystemOne](USING_SYSTEMONE.md)).
+"go to <site> and search for <words>", spoken or typed, runs a
+confirm-each-step managed browse chosen by Jev. The next owner-requested
+priorities:
+1. Real apps through Jev, native, starting with Finder.
+2. Voice confirmation polish.
+3. The existing Chrome profile.
+
+The owner's one-time keychain approval (Mac login password, Always Allow)
+is needed before certificate-signed builds work.
+
 ## Next steps, in order
 
 1. **Full-encoder parity** against the pinned Linux/vLLM recipe

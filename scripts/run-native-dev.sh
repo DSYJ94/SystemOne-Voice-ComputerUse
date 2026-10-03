@@ -23,6 +23,12 @@ if [[ -n "$other_dev" ]]; then
   exit 1
 fi
 needs_build=0
+# A pinned certificate must replace any ad-hoc test build, or the Accessibility
+# grant would bind to a throwaway signature again.
+if [[ -f "$repository_root/.build/development-signing-identity" && -x "$binary" ]] &&
+   /usr/bin/codesign -dv "$app_dir" 2>&1 | /usr/bin/grep -q 'Signature=adhoc'; then
+  needs_build=1
+fi
 if [[ ! -x "$binary" || "$script_dir/build-native-dev.sh" -nt "$binary" ||
       "$script_dir/native-dev-sources.zsh" -nt "$binary" ||
       "$script_dir/development_signing.py" -nt "$binary" ||

@@ -1,5 +1,48 @@
 # Initial foundation validation
 
+## Jev-driven, confirm-each-step browsing from the glass bar, 3 October 2026
+
+`codex/mac-first-validation`, owner M5. Owner decisions recorded this day:
+- CLM is parked.
+- Jev (`jev-1.13.0`) drives with no hard spending cap.
+- Each real-app step is confirmed by the owner.
+- Browser navigation and search come first.
+- A single glass-bar interface replaces the separate panels; the test fixture window is removed from the owner path.
+- A self-signed "SystemOne Local Dev" certificate is pinned for stable signing.
+
+`make test`: typecheck, **485/485** on three consecutive runs, oracle 115/115,
+release inventory 7/7 (package.json hash only). Swift typechecks. An ad-hoc
+test build passed the window-visibility, Accessibility-recovery,
+field-preflight, task-command and task-intake checks.
+
+New tests:
+- **Browse task** (headless Chromium, portal fixture): fill, submit, follow
+  a result, user-confirmed finish; declined or stopped confirmation and
+  abstention dispatch nothing.
+- **Controller browse:** spoken request, kept-open result closed by Stop;
+  forged or stale confirmations refused; a missing provider or an unknown
+  request is refused before any browser starts.
+
+Live runs against the synthetic portal:
+- **Task with real Jev:** the first version repeated the fill until the
+  30-decision budget paused it. With verified-step history it completed in
+  three steps (fill 0.97, submit 1.00, finish 0.94).
+- **Spawned controller** (Keychain key, real Jev, auto-confirmed): the same
+  three steps reached `verified_browse` in 1.1 s, about 0.2 s per decision.
+
+Full-suite runs initially failed child-process startup deadlines under the
+load of the new Chromium tests (480/485 once, 485/485 next). Loading the
+browse module lazily restored three clean runs.
+
+Not run:
+- the rebuilt app with the certificate (codesign needs the owner's one-time
+  keychain approval; `errSecInternalComponent` from a non-interactive shell)
+- the owner using the bar, voice or browsing in the app
+- any public website
+- native apps through Jev
+
+Thresholds are uncalibrated. V1 is not ready.
+
 ## First Jev benchmark on the calibration corpus, 3 October 2026
 
 Owner decision, 3 October 2026: CLM is parked and Jev is tried first. The

@@ -6,7 +6,7 @@ import Foundation
 @MainActor
 final class DevTaskIntake {
     enum Surface: Equatable {
-        case managed, managedNavigation, portal, native, nativeNavigation
+        case managed, managedNavigation, portal, native, nativeNavigation, browse
         case nativeLocate, nativeOpen, chrome
 
         var usesNativeWorker: Bool {
@@ -31,9 +31,12 @@ final class DevTaskIntake {
         case fixtureFile(open: Bool)
         case chromeFill(connectionID: String, grantID: String, url: String,
                         field: String, value: String)
+        /// Free browse goal; Jev proposes each step and the user confirms it.
+        case browse(text: String)
 
         var surface: Surface {
             switch self {
+            case .browse: .browse
             case .managedFill: .managed
             case .managedNavigate: .managedNavigation
             case .portal: .portal
@@ -66,6 +69,7 @@ final class DevTaskIntake {
                      : "Locate synthetic fixture file Documents/Budget.xlsx"
             case .chromeFill(_, _, let url, let field, let value):
                 "Fill \(field) in existing Chrome tab \(url) with text: \(value)"
+            case .browse(let text): text
             }
         }
 
@@ -108,6 +112,9 @@ final class DevTaskIntake {
                         ? "SystemOne Fixture — Documents — Budget.xlsx opened"
                         : "SystemOne Fixture — Documents — Budget.xlsx selected",
                     "command": command]
+            case .browse:
+                return ["type": "start_browse", "requestId": taskID, "command": command,
+                        "decisionProvider": "jev"]
             case .chromeFill(let connectionID, let grantID, _, let field, let value):
                 return ["type": "start_chrome_fill", "requestId": taskID,
                     "connectionId": connectionID, "grantId": grantID,

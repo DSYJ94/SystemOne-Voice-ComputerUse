@@ -20,6 +20,8 @@ import type { NativeFixtureMode } from './native-fixture-authority.ts';
 import type { NativePressRequest, NativeLocateRequest } from './native-press-authority.ts';
 import { NativeFixtureAuthority } from './native-fixture-authority.ts';
 import type { NativeFixtureDecision } from './native-fixture-task.ts';
+import type { BrowseDecision, BrowseProposal } from '../../browser/src/managed-browse-task.ts';
+import { parseScopedBrowse } from './scoped-native-command.ts';
 import { NativeFieldPipeWorker } from './native-field-pipe-worker.ts';
 import { ChromeReadSession } from './chrome-read-session.ts';
 import { ChromeFillAuthority } from './chrome-fill-authority.ts';
@@ -101,6 +103,21 @@ interface StartNativeOpen {
   readonly decisionProvider?: 'jev';
 }
 
+interface StartBrowse {
+  readonly type: 'start_browse';
+  readonly requestId: string;
+  readonly command: Record<string, JSONValue>;
+  readonly decisionProvider: 'jev';
+}
+
+interface ConfirmStep {
+  readonly type: 'confirm_step';
+  readonly requestId: string;
+  readonly targetRequestId: string;
+  readonly proposalId: string;
+  readonly allow: boolean;
+}
+
 interface StartChromeFill {
   readonly type: 'start_chrome_fill';
   readonly requestId: string;
@@ -144,7 +161,7 @@ interface NativeRecoveryControl {
 
 type NativeRequest = ReplaceNativeField | ReplaceNativeFixture | NativeRecoveryControl | StartFill | StartNavigate | StartNativeFill | StartNativePress
   | StartNativeLocate | StartNativeOpen
-  | StartChromeFill | StartPortalWorkflow | Stop;
+  | StartChromeFill | StartPortalWorkflow | StartBrowse | ConfirmStep | Stop;
 type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
   | 'verified_dom_fill' | 'unsupported' | 'uncertain' | 'stopping'
   | 'stopped' | 'busy' | 'error' | 'blocked_recovery' | 'paused_budget'
@@ -154,11 +171,15 @@ type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
   | 'observing_native_open' | 'verified_native_open'
   | 'observing_chrome' | 'verified_chrome_dom_fill' | 'verified_navigation'
   | 'host_unavailable' | 'portal_located' | 'portal_opened' | 'portal_downloaded'
-  | 'verified_portal_download' | 'portal_paused' | 'native_paused' | 'checking_native_recovery' | 'replacing_native_task';
+  | 'verified_portal_download' | 'portal_paused' | 'native_paused' | 'checking_native_recovery' | 'replacing_native_task'
+  | 'browsing' | 'verified_browse' | 'browse_paused';
 
 function decisionProviderValid(value: Record<string, JSONValue>): boolean {
   return !Object.hasOwn(value, 'decisionProvider') || value.decisionProvider === 'jev';
 }
+
+/** Per-task browse selector, built only for an explicit browse request. */
+export type BrowseDecisionFactory = (requestId: string, goal: string) => Promise<BrowseDecision>;
 
 /** Builds a per-task model selector only after an explicit request opt-in. */
 export type FixtureDecisionFactory = (requestId: string, goal: string) => Promise<NativeFixtureDecision>;
@@ -229,6 +250,23 @@ function requestFromLine(line: Uint8Array): NativeRequest {
     }
     return { type: 'stop', requestId: value.requestId as string,
       targetRequestId: value.targetRequestId };
+  }
+  if (value.type === 'start_browse') {
+    if (Object.keys(value).sort().join(',') !== 'command,decisionProvider,requestId,type'
+      || value.decisionProvider !== 'jev' || value.command === undefined || !isRecord(value.command)) {
+      throw new ContractError('invalid browse request');
+    }
+    return { type: 'start_browse', requestId: value.requestId as string,
+      command: value.command, decisionProvider: 'jev' };
+  }
+  if (value.type === 'confirm_step') {
+    if (Object.keys(value).sort().join(',') !== 'allow,proposalId,requestId,targetRequestId,type'
+      || typeof value.allow !== 'boolean' || typeof value.targetRequestId !== 'string'
+      || typeof value.proposalId !== 'string' || !/^[A-Za-z0-9_.:-]{1,160}$/.test(value.proposalId)) {
+      throw new ContractError('invalid step confirmation');
+    }
+    return { type: 'confirm_step', requestId: value.requestId as string,
+      targetRequestId: value.targetRequestId, proposalId: value.proposalId, allow: value.allow };
   }
   if (value.type === 'start_portal_workflow') {
     if (Object.keys(value).sort().join(',') !== 'command,requestId,type,url'
@@ -409,6 +447,9 @@ export class NativeManagedController {
   readonly #send: (requestId: string, phase: Phase) => void;
   readonly #headless: boolean;
   readonly #fixtureDecisions: FixtureDecisionFactory | undefined;
+  readonly #browseDecisions: BrowseDecisionFactory | undefined;
+  #pendingStep: { readonly requestId: string; readonly proposalId: string;
+    readonly resolve: (allow: boolean) => void } | undefined;
   readonly #nativeWorker: NativeFieldPipeWorker | undefined;
   readonly #nativeAuthority: NativeFillAuthority | undefined;
   readonly #pressAuthority: NativeFixtureAuthority | undefined;
@@ -425,8 +466,9 @@ export class NativeManagedController {
     headless = false, nativeWorker?: NativeFieldPipeWorker,
     chromeOutput?: (value: Record<string, JSONValue>) => void,
     portalStore?: ScriptedPortalStore, requireHostSnapshot = false,
-    fixtureDecisions?: FixtureDecisionFactory) {
+    fixtureDecisions?: FixtureDecisionFactory, browseDecisions?: BrowseDecisionFactory) {
     this.#fixtureDecisions = fixtureDecisions;
+    this.#browseDecisions = browseDecisions;
     this.#hostLifecycle = new HostLifecycleGate(requireHostSnapshot);
     this.#journal = journal;
     this.#portalStore = portalStore;
@@ -542,6 +584,16 @@ export class NativeManagedController {
       void this.#stop(request);
       return;
     }
+    if (request.type === 'confirm_step') {
+      const pending = this.#pendingStep;
+      // A confirmation is intent for one exact displayed proposal, never a permit.
+      if (!pending || pending.requestId !== request.targetRequestId || pending.proposalId !== request.proposalId) {
+        this.#send(request.requestId, 'error'); return;
+      }
+      this.#pendingStep = undefined;
+      pending.resolve(request.allow);
+      return;
+    }
     if (this.#hostHeld && request.type !== 'cancel_native_recovery') {
       this.#send(request.requestId, 'host_unavailable'); return;
     }
@@ -655,7 +707,9 @@ export class NativeManagedController {
       surface: 'managed', task: active };
     this.#runs.claim(run);
     this.#send(request.requestId, 'starting');
-    active.done = (request.type === 'start_navigate'
+    active.done = (request.type === 'start_browse'
+      ? this.#runBrowse(request, active)
+      : request.type === 'start_navigate'
       ? this.#runNavigate(request, active)
       : request.type === 'start_portal_workflow'
         ? this.#runPortal(request, active) : this.#run(request, active)).finally(() => {
@@ -1014,6 +1068,93 @@ export class NativeManagedController {
     }
   }
 
+  /** Confirm-each-step browsing within one site the user named. */
+  async #runBrowse(request: StartBrowse, active: ActiveTask): Promise<void> {
+    try {
+      const command = request.command;
+      if (command.type !== 'command' || (command.source !== 'text' && command.source !== 'voice')
+        || command.mode !== 'command' || command.isFinal !== true || typeof command.text !== 'string'
+        || command.taskId !== request.requestId || command.taskEpoch !== 1 || command.goalRevision !== 1
+        || command.originSurface === undefined || !isRecord(command.originSurface)
+        || command.originSurface.appBundleId !== 'com.aurium.systemone.dev') {
+        throw new ContractError('browse command binding changed');
+      }
+      const parsed = parseScopedBrowse(command.text);
+      // Loaded on first use so controller startup stays as lean as before.
+      const { ManagedBrowseTask, BROWSE_POLICY, BROWSE_VERIFIER } = await import('../../browser/src/managed-browse-task.ts');
+      const factory = this.#browseDecisions;
+      if (!factory) throw new ContractError('no browse decision provider');
+      const revision = { taskId: request.requestId, taskEpoch: 1, goalRevision: 1 };
+      const endpoint = bindEndpoint(['command']);
+      const input = new CommittedInputSession(endpoint, revision);
+      const route = input.accept(endpoint, Buffer.from(JSON.stringify(command)));
+      if (route.kind !== 'interpret_command') throw new ContractError('not a command');
+      const parameters = parsed.searchText === null ? []
+        : [bindCommandValue(route.input, 'search-text', parsed.prefix!, parsed.searchText)];
+      const decision = await factory(request.requestId, route.input.text);
+      if (active.cancelled) return;
+      const session = await ManagedObservationSession.launch(parsed.startUrl, {
+        allowedOrigins: [new URL(parsed.startUrl).origin],
+        ...(parsed.site ? { allowedSites: [parsed.site] } : {}), headless: this.#headless });
+      active.session = session;
+      if (active.cancelled) return;
+      const registry = new TaskAdmissionRegistry(revision, input);
+      const admission = registry.admit(route.input, { admissionId: randomUUID(), goal: route.input.text,
+        outcomeKind: 'USER_CONFIRMATION', scopeRef: session.scopeRef, completionVerifierRef: BROWSE_VERIFIER,
+        policyRevision: BROWSE_POLICY,
+        // Page scripts may send network requests after a fill or submit.
+        approvedEffects: ['READ', 'NAVIGATE', 'EXTERNAL_READ', 'LOCAL_EDIT', 'EXTERNAL_WRITE'], parameters });
+      const task = ManagedBrowseTask.start(this.#journal, registry, admission, session,
+        { searchText: parsed.searchText, decision, confirmation: { confirm: (proposal, signal) =>
+          this.#awaitConfirmation(request.requestId, proposal, signal) } });
+      const actor = new PersistentTaskActor(this.#journal, task, 60_000);
+      active.actor = actor;
+      if (active.cancelled) { await actor.stop(); return; }
+      this.#send(request.requestId, 'browsing');
+      const result = await actor.run(record => {
+        if (!active.cancelled && record.state === 'active') this.#send(request.requestId, 'browsing');
+      });
+      if (active.cancelled) return;
+      if (result.state === 'completed') {
+        // Leave the result page visible until Stop or the next request.
+        active.keepOpen = true;
+        this.#send(request.requestId, 'verified_browse');
+      } else this.#send(request.requestId, 'browse_paused');
+    } catch (error) {
+      if (error instanceof ManagedLaunchFailure) {
+        active.launchFenceUnconfirmed = true;
+        this.#workerFenceFailed = true;
+      }
+      if (!active.cancelled) this.#send(request.requestId, 'error');
+    } finally {
+      this.#pendingStep?.resolve(false); this.#pendingStep = undefined;
+      if (!active.keepOpen || active.cancelled) {
+        try {
+          await active.session?.close();
+          active.browserFenced = !active.launchFenceUnconfirmed;
+        } catch { this.#workerFenceFailed = true; }
+        if (active.actor?.busy) this.#workerFenceFailed = true;
+      }
+    }
+  }
+
+  #awaitConfirmation(requestId: string, proposal: BrowseProposal, signal: AbortSignal): Promise<boolean> {
+    if (signal.aborted || this.#pendingStep) return Promise.resolve(false);
+    const proposalId = randomUUID();
+    return new Promise(resolve => {
+      const settle = (allow: boolean) => { signal.removeEventListener('abort', abort); resolve(allow); };
+      const abort = () => {
+        if (this.#pendingStep?.proposalId === proposalId) this.#pendingStep = undefined;
+        settle(false);
+      };
+      signal.addEventListener('abort', abort, { once: true });
+      this.#pendingStep = { requestId, proposalId, resolve: settle };
+      this.#chromeOutput?.({ type: 'browse_proposal', requestId, proposalId, step: proposal.step,
+        kind: proposal.kind, label: proposal.label, destinationUrl: proposal.destinationUrl,
+        pageUrl: proposal.pageUrl });
+    });
+  }
+
   async #runPortal(request: StartPortalWorkflow, active: ActiveTask): Promise<void> {
     const store = this.#portalStore;
     if (!store) { this.#send(request.requestId, 'unsupported'); return; }
@@ -1227,10 +1368,19 @@ async function main(): Promise<void> {
       process.stdout.write(`${JSON.stringify({ type: 'decision', requestId, ...event })}\n`);
     } });
   };
+  const browseDecisions: BrowseDecisionFactory = async (requestId, goal) => {
+    const { execFileSync } = await import('node:child_process');
+    const { createJevBrowseDecision } = await import('../../providers/src/jev-browse-decision.ts');
+    const apiKey = execFileSync('/usr/bin/security', ['find-generic-password', '-s', 'systemone-jev', '-w'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000 }).trim();
+    return createJevBrowseDecision({ apiKey, goal, report: event => {
+      process.stdout.write(`${JSON.stringify({ type: 'decision', requestId, ...event })}\n`);
+    } });
+  };
   const controller = new NativeManagedController(journal, write,
     process.env.SYSTEMONE_MANAGED_HEADLESS === '1', worker,
     value => { process.stdout.write(`${JSON.stringify(value)}\n`); }, portalStore,
-    process.env.SYSTEMONE_HOST_LIFECYCLE_REQUIRED === '1', fixtureDecisions);
+    process.env.SYSTEMONE_HOST_LIFECYCLE_REQUIRED === '1', fixtureDecisions, browseDecisions);
   write('startup', controller.startupPhase());
   let pending = Buffer.alloc(0);
   process.stdin.on('data', chunk => {

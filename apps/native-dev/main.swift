@@ -21,9 +21,13 @@ private final class HoldToTalkButton: NSButton {
 
 /// Borderless glass bar that still accepts typing; Esc hides it.
 private final class GlassCommandPanel: NSPanel {
+    /// Esc: stop the running task if there is one, otherwise hide the bar.
+    var onCancel: (() -> Void)?
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
-    override func cancelOperation(_ sender: Any?) { orderOut(nil) }
+    override func cancelOperation(_ sender: Any?) {
+        if let onCancel { onCancel() } else { orderOut(nil) }
+    }
 }
 
 private func systemOneHotkeyHandler(_ event: EventHandlerCallRef?,
@@ -106,6 +110,11 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var jevEnabled = ProcessInfo.processInfo.environment["SYSTEMONE_DECISION_PROVIDER"] == "jev"
     private var jevChip: NSTextField?
     private var settingsPopover: NSPopover?
+    /// The one step proposal on screen; Return/"yes" allows exactly this one.
+    private var pendingProposal: (requestID: String, proposalID: String)?
+    /// A finished browse leaves its result page open until the next request.
+    private var browseKeptOpen = false
+    private var queuedRequestText: String?
     private var recoveryRequestID: String?
     private let recoveryUISession = UUID().uuidString.lowercased()
     private var recoveryAlert: NSAlert?
@@ -265,6 +274,12 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.backgroundColor = .clear
         window.hasShadow = true
         window.isMovableByWindowBackground = true
+        window.onCancel = { [weak self, weak window] in
+            guard let self else { return }
+            if self.pendingProposal != nil || (self.activeRequestID != nil && self.activeSurface == .browse) {
+                self.stop()
+            } else { window?.orderOut(nil) }
+        }
         window.center()
         let content = NSView()
         let surface: NSView
@@ -386,8 +401,23 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             target.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),
         ])
         speech.onText = { [weak self] text, isFinal in
-            self?.taskField?.stringValue = text
-            self?.finalSpeechText = isFinal ? text : nil
+            guard let self else { return }
+            if isFinal, let pending = self.pendingProposal {
+                let reply = text.lowercased()
+                if reply.range(of: #"^(yes|yeah|yep|allow|go ahead|ok|okay|do it|sure)\b"#, options: .regularExpression) != nil {
+                    self.confirmProposal(pending, allow: true)
+                } else if reply.range(of: #"^(no|stop|cancel|don't|do not)\b"#, options: .regularExpression) != nil {
+                    self.stop()
+                }
+                return
+            }
+            self.taskField?.stringValue = text
+            self.finalSpeechText = isFinal ? text : nil
+            // A browse request is safe to start straight from speech: nothing
+            // acts before the user confirms the first proposed step.
+            if isFinal, self.jevEnabled, ScopedBrowse.parse(ScopedBrowse.normalizedSpeech(text)) != nil {
+                DispatchQueue.main.async { [weak self] in self?.runTaskRequest() }
+            }
         }
         speech.onStatus = { [weak self] message in
             self?.commandStatus?.stringValue = message
@@ -988,6 +1018,24 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 statusField?.stringValue = "Existing Chrome tab observed. No action was sent."
                 continue
             }
+            if object["type"] as? String == "browse_proposal" {
+                guard let requestID = object["requestId"] as? String, requestID == activeRequestID,
+                      let proposalID = object["proposalId"] as? String, let kind = object["kind"] as? String,
+                      let label = object["label"] as? String else { continue }
+                pendingProposal = (requestID, proposalID)
+                let step = object["step"] as? Int ?? 0
+                let host = (object["destinationUrl"] as? String).flatMap { URL(string: $0)?.host } ?? ""
+                let action: String
+                switch kind {
+                case "fill": action = "type your words into “\(label)”"
+                case "submit": action = "press “\(label)”"
+                case "navigate": action = "open “\(label)”" + (host.isEmpty ? "" : " (\(host))")
+                default: action = "finish here; the goal looks done on “\(label)”"
+                }
+                commandStatus?.stringValue = "Step \(step): Jev wants to \(action). Return or say “yes” to allow · Esc to stop."
+                commandPanel?.orderFrontRegardless()
+                continue
+            }
             if object["type"] as? String == "decision" {
                 guard let requestID = object["requestId"] as? String, requestID == activeRequestID,
                       let status = object["status"] as? String else { continue }
@@ -995,7 +1043,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 let label = object["label"] as? String ?? ""
                 let text: String
                 switch status {
-                case "selected": text = "Jev chose “\(label)” (\(probability)). Pressing, then verifying…"
+                case "selected": text = activeSurface == .browse ? "Jev picked “\(label)” (\(probability))."
+                    : "Jev chose “\(label)” (\(probability)). Pressing, then verifying…"
+                case "finish": text = "Jev thinks the goal is done (\(probability))."
                 case "wait": text = "Jev chose to wait (\(probability)). Nothing was pressed."
                 case "request_help": text = "Jev asked for help (\(probability)). Nothing was pressed."
                 default: text = "Jev was not confident or unavailable (\(probability)). Nothing was pressed."
@@ -1133,9 +1183,25 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "stopped": statusField?.stringValue = "Stopped. An already-sent action may have taken effect."
         case "busy": statusField?.stringValue = "A task is already active."
         case "error": statusField?.stringValue = "The request was rejected or failed. No success is claimed."
+        case "browsing":
+            statusField?.stringValue = "Jev is reading the page…"
+        case "verified_browse":
+            browseKeptOpen = true
+            pendingProposal = nil
+            statusField?.stringValue = "Done. The result stays open; say or type a new request, or ■ closes it."
+        case "browse_paused":
+            pendingProposal = nil
+            statusField?.stringValue = "Paused: Jev wasn't confident, or a step was declined. Nothing else will run."
         case "ready":
             if requestID == activeRequestID { stopRequestID = nil }
             taskIntake.releaseIfReady(requestID: requestID)
+            pendingProposal = nil
+            browseKeptOpen = false
+            if activeRequestID == nil, let queued = queuedRequestText {
+                queuedRequestText = nil
+                taskField?.stringValue = queued
+                DispatchQueue.main.async { [weak self] in self?.runTaskRequest() }
+            }
         default: statusField?.stringValue = "Unrecognized controller status."
         }
         if phase == "stopped" && requestID == stopRequestID {
@@ -1248,6 +1314,17 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func runTaskRequest() {
+        if let pending = pendingProposal {
+            confirmProposal(pending, allow: true)
+            return
+        }
+        if browseKeptOpen, activeRequestID != nil, stopRequestID == nil {
+            // Close the finished browser first, then run this request.
+            queuedRequestText = taskField?.stringValue
+            commandStatus?.stringValue = "Closing the previous browser window…"
+            stop()
+            return
+        }
         guard !speech.isCapturing else {
             commandStatus?.stringValue = "Wait for a final transcript before running a request."
             return
@@ -1259,6 +1336,24 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         let text = taskField?.stringValue ?? ""
+        let spoken = finalSpeechText != nil && finalSpeechText == text
+        let browseText = spoken ? ScopedBrowse.normalizedSpeech(text) : text
+        if let browse = ScopedBrowse.parse(browseText) {
+            guard jevEnabled else {
+                commandStatus?.stringValue = "Turn on “Let Jev choose each step” in Settings (⚙) to browse."
+                return
+            }
+            taskField?.stringValue = browseText
+            if spoken { finalSpeechText = browseText }
+            guard taskIntake.submit(.browse(text: browseText), originalText: browseText, voice: spoken,
+                send: { [weak self] in self?.send($0, through: input) == true }) else {
+                commandStatus?.stringValue = "Could not send the browse request to the controller."
+                return
+            }
+            browseKeptOpen = false
+            commandStatus?.stringValue = "Opening \(browse.site) in a private browser window. Jev will propose each step for you to allow."
+            return
+        }
         if let managed = ScopedManagedFill.parse(text) {
             let intent = DevTaskIntake.Intent.managedFill(url: managed.url,
                 field: managed.fieldLabel, value: managed.value)
@@ -1512,6 +1607,16 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         statusField?.stringValue = "Fixture navigation sent to the local controller…"
+    }
+
+    private func confirmProposal(_ pending: (requestID: String, proposalID: String), allow: Bool) {
+        guard let input = controllerInput, pending.requestID == activeRequestID else { pendingProposal = nil; return }
+        pendingProposal = nil
+        let sent = send(["type": "confirm_step", "requestId": UUID().uuidString.lowercased(),
+                         "targetRequestId": pending.requestID, "proposalId": pending.proposalID,
+                         "allow": allow], through: input)
+        commandStatus?.stringValue = sent && allow ? "Allowed. Acting, then checking the page…"
+            : "Step not allowed. Nothing was done."
     }
 
     private func withDecisionChoice(_ request: [String: Any]) -> [String: Any] {
