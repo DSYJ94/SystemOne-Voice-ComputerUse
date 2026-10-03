@@ -39,7 +39,10 @@ const BROWSER_KEYS: readonly [string, string][] = [
 const BROWSERS = new Set(['com.google.Chrome', 'com.apple.Safari', 'company.thebrowser.Browser', 'com.microsoft.edgemac',
   'com.brave.Browser', 'org.mozilla.firefox', 'com.google.Chrome.canary', 'com.operasoftware.Opera']);
 /** Agent tasks are longer and more exploratory than scripted fixtures. */
-const AGENT_LIMITS = Object.freeze({ maxObservations: 200, maxDecisions: 60, maxStateVisits: 8 });
+/** Long chores (inbox triage, forms) need many steps; runaway loops are
+ * caught by the same-screen limit, so the step cap can be generous. */
+const AGENT_LIMITS = Object.freeze({ maxObservations: 360, maxDecisions: 120, maxStateVisits: 8 });
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /** One step proposal, shown to the user with exact observed labels only. */
 export interface AgentProposal {
@@ -102,6 +105,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
   readonly #noEffect = new Set<string>();
   readonly #trace: ((event: Record<string, JSONValue>) => void) | undefined;
   #lastView: AgentSnapshot = EMPTY_SNAPSHOT;
+  /** The settled screen read after the last step, reused as the next observation. */
+  #nextView: AgentSnapshot | undefined;
 
   /** What happened, for a follow-up request's context. */
   get summary(): { readonly history: readonly string[]; readonly app: string; readonly url: string } {
@@ -142,7 +147,10 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
     let executionId: string | undefined;
     try {
       const ticket = this.#journal.reserveTaskObservation(this.taskId);
-      const view = await this.#observe();
+      const observeStarted = performance.now();
+      const view = this.#nextView ?? await this.#observe();
+      this.#nextView = undefined;
+      const observeMs = Math.round(performance.now() - observeStarted);
       this.#lastView = view;
       this.#active(generation);
       const observationId = randomUUID();
@@ -151,7 +159,9 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       this.#journal.consumeTaskDecision(this.taskId, observationId);
       const step = ++this.#step;
       const options = this.#options(view);
+      const decideStarted = performance.now();
       const { set, chosenId, byId } = await this.#choose(observationId, view, options, step, generation);
+      const decideMs = Math.round(performance.now() - decideStarted);
       const candidate = chosenId ? set.candidates.find(item => item.candidateId === chosenId) : undefined;
       if (!candidate) throw new ContractError('no confident agent step');
       if (candidate.operation === 'wait' && this.#waits < 3) {
@@ -170,7 +180,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         risky: !finish && RISKY.test(`${option!.label} ${option!.element?.context ?? ''}`) });
       this.#trace?.({ kind: 'step', step, app: view.app, window: view.windowTitle, url: view.url,
         elements: view.elements.length, options: options.length, chosen: proposal.kind, label: proposal.label,
-        risky: proposal.risky, history: [...this.#history] });
+        risky: proposal.risky, history: [...this.#history], observeMs, decideMs });
       const confirmed = await this.#confirmation.confirm(proposal, this.#abort.signal);
       this.#active(generation);
       if (!confirmed) throw new ContractError('user declined the agent step');
@@ -194,6 +204,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       }
       this.#journal.markDispatchBoundary(permit.executionId);
       let copied: string | null = null;
+      const actStarted = performance.now();
       try {
         const result = await this.#act(chosen);
         if (chosen.kind === 'copy' && typeof result === 'string' && result) { copied = result; this.#clipboard = result; }
@@ -207,8 +218,18 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         this.#active(generation);
         return;
       }
-      await new Promise(resolve => setTimeout(resolve, chosen.kind === 'open_url' || chosen.kind === 'open_app' ? 300 : 700));
-      const after = await this.#observe().catch(() => undefined);
+      const actMs = Math.round(performance.now() - actStarted);
+      // Adaptive settle: look soon, and wait longer only if nothing changed yet.
+      const verifyStarted = performance.now();
+      const opening = chosen.kind === 'open_url' || chosen.kind === 'open_app';
+      await sleep(opening ? 400 : 250);
+      let after: AgentSnapshot | undefined = await this.#observe().catch(() => undefined);
+      if (after && after.signature === view.signature && chosen.kind !== 'copy') {
+        await sleep(opening ? 900 : 450);
+        after = await this.#observe().catch(() => undefined);
+      }
+      const verifyMs = Math.round(performance.now() - verifyStarted);
+      this.#nextView = after;
       // Copying changes the clipboard, not the screen.
       const changed = copied !== null || (!!after && after.signature !== view.signature);
       const evidenceRef = `agent-${chosen.kind}-${permit.executionId}`;
@@ -222,8 +243,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       if (chosen.kind === 'open_app' && chosen.ref === 'goal-app') this.#openedApp = true;
       const relabelled = chosen.element && after?.elements.find(item => item.id === chosen.element!.id
         && item.role === chosen.element!.role && item.label !== chosen.element!.label);
-      this.#trace?.({ kind: 'result', step, changed, after: after ? { app: after.app, window: after.windowTitle,
-        url: after.url } : null });
+      this.#trace?.({ kind: 'result', step, changed, actMs, verifyMs, after: after ? { app: after.app,
+        window: after.windowTitle, url: after.url } : null });
       this.#history.push(`${capitalize(describeKind(chosen))} in ${view.app}${!changed ? '; nothing visibly changed'
         : relabelled ? `; it now reads “${relabelled.label}”` : ''}.`);
       if (changed) {
@@ -385,19 +406,16 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
     for (let i = 0; i < options.length; i += ROUND_SIZE) rounds.push(options.slice(i, i + ROUND_SIZE));
     let finalists = options;
     if (rounds.length > 1) {
-      const winners: Option[] = [];
-      for (const round of rounds) {
+      // Preliminary rounds are independent, so they run in parallel.
+      const picks = await Promise.all(rounds.map(async round => {
         const { set, byId } = this.#set(observationId, round, step);
         const ids = this.#decision.bestActions
           ? await this.#decision.bestActions(set, view, this.#abort.signal, [...this.#history])
           : [await this.#decision.select(set, view, this.#abort.signal, [...this.#history])];
-        this.#active(generation);
-        for (const id of ids.slice(0, 2)) {
-          const winner = id ? byId.get(id) : undefined;
-          if (winner && !winners.includes(winner)) winners.push(winner);
-        }
-      }
-      finalists = winners;
+        return ids.slice(0, 2).map(id => (id ? byId.get(id) : undefined)).filter((item): item is Option => !!item);
+      }));
+      this.#active(generation);
+      finalists = [...new Set(picks.flat())];
     }
     const { set, byId } = this.#set(observationId, finalists, step);
     const chosenId = await this.#decision.select(set, view, this.#abort.signal, [...this.#history]);

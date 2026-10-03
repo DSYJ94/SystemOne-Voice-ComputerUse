@@ -24,11 +24,11 @@ final class UniversalAX {
     private var windowElement: AXUIElement?
     private(set) var targetPID: pid_t?
 
-    static let interestingRoles: Set<String> = [
+    nonisolated static let interestingRoles: Set<String> = [
         "AXButton", "AXLink", "AXTextField", "AXTextArea", "AXSearchField", "AXComboBox",
         "AXCheckBox", "AXRadioButton", "AXPopUpButton", "AXMenuButton", "AXMenuItem",
         "AXMenuBarItem", "AXTab", "AXDisclosureTriangle", "AXCell", "AXSlider", "AXIncrementor"]
-    static let textRoles: Set<String> = ["AXTextField", "AXTextArea", "AXSearchField", "AXComboBox"]
+    nonisolated static let textRoles: Set<String> = ["AXTextField", "AXTextArea", "AXSearchField", "AXComboBox"]
 
     func setTarget(_ pid: pid_t) { targetPID = pid }
 
@@ -38,6 +38,8 @@ final class UniversalAX {
         guard let pid = targetPID, let app = NSRunningApplication(processIdentifier: pid),
               !app.isTerminated else { throw AXError.noTarget }
         let appElement = AXUIElementCreateApplication(pid)
+        // A busy app must not stall the agent: each AX call gives up after 0.5 s.
+        AXUIElementSetMessagingTimeout(appElement, 0.5)
         // Chromium/Electron expose web content to assistive apps on request.
         AXUIElementSetAttributeValue(appElement, "AXManualAccessibility" as CFString, kCFBooleanTrue)
         AXUIElementSetAttributeValue(appElement, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
@@ -51,18 +53,21 @@ final class UniversalAX {
         var visited = 0
         var texts = 0
         var queue: [(AXUIElement, String)] = [(window, "")]
+        var head = 0
         let windowFrame = frame(of: window)
         var url = ""
         let limit = 260
-        while !queue.isEmpty && visited < 4_000 && collected.count < limit {
-            let (element, context) = queue.removeFirst()
+        while head < queue.count && visited < 3_000 && collected.count < limit {
+            let (element, context) = queue[head]
+            head += 1
             visited += 1
-            let role: String = attribute(element, kAXRoleAttribute) ?? ""
+            // One batched IPC per node instead of a call per attribute.
+            let node = Node(element)
+            let role = node.role
             if role == "AXWebArea", url.isEmpty, let value: URL = attribute(element, "AXURL") {
                 url = value.absoluteString
             }
-            let label = Self.label(of: element, role: role)
-            if role == "AXStaticText", texts < 80, let text: String = attribute(element, kAXValueAttribute),
+            if role == "AXStaticText", texts < 80, let text = node.value as? String,
                case let clean = text.trimmingCharacters(in: .whitespacesAndNewlines), (2...160).contains(clean.count) {
                 // Plain text on screen, so the agent can read and copy it.
                 texts += 1
@@ -70,19 +75,18 @@ final class UniversalAX {
                 elements[id] = element
                 collected.append(["id": id, "role": "AXStaticText", "label": clean, "context": context,
                                   "editable": false, "pressable": false])
-            } else if let entry = describe(element, role: role, label: label, context: context, window: windowFrame) {
+            } else if let entry = describe(element, node: node, context: context, window: windowFrame) {
                 let id = "e\(collected.count)"
                 elements[id] = element
                 var described = entry
                 described["id"] = id
                 collected.append(described)
             }
-            let nextContext = ["AXGroup", "AXList", "AXToolbar", "AXTabGroup", "AXTable", "AXOutline",
-                               "AXSheet", "AXDialog", "AXWebArea"].contains(role) && !label.isEmpty
-                ? String(label.prefix(60)) : context
-            if let children: [AXUIElement] = attribute(element, kAXChildrenAttribute) {
-                for child in children.prefix(400) { queue.append((child, nextContext)) }
-            }
+            let grouping = ["AXGroup", "AXList", "AXToolbar", "AXTabGroup", "AXTable", "AXOutline",
+                            "AXSheet", "AXDialog", "AXWebArea"].contains(role)
+            let groupLabel = grouping ? (node.title.isEmpty ? node.desc : node.title) : ""
+            let nextContext = !groupLabel.isEmpty ? String(groupLabel.prefix(60)) : context
+            for child in node.children.prefix(400) { queue.append((child, nextContext)) }
         }
         // Menu bar titles, plus the items of a menu that is currently open.
         if let bar: AXUIElement = attribute(appElement, kAXMenuBarAttribute),
@@ -120,29 +124,78 @@ final class UniversalAX {
                         truncated: collected.count >= limit, signature: String(signature.hashValue))
     }
 
-    private func describe(_ element: AXUIElement, role: String, label: String, context: String,
-                          window: CGRect?) -> [String: Any]? {
-        guard Self.interestingRoles.contains(role) || actions(element).contains(kAXPressAction as String) else {
+    /// The attributes the walk needs, fetched in one call.
+    struct Node {
+        let role: String, subrole: String, title: String, desc: String, placeholder: String
+        let value: Any?, children: [AXUIElement], enabled: Bool, selected: Bool, frame: CGRect?
+
+        static let names: [String] = [kAXRoleAttribute, kAXSubroleAttribute, kAXTitleAttribute, kAXDescriptionAttribute,
+                                      "AXPlaceholderValue", kAXValueAttribute, kAXChildrenAttribute, kAXEnabledAttribute,
+                                      kAXSelectedAttribute, kAXPositionAttribute, kAXSizeAttribute]
+
+        init(_ element: AXUIElement) {
+            var raw: CFArray?
+            AXUIElementCopyMultipleAttributeValues(element, Node.names as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &raw)
+            let values = (raw as? [AnyObject]) ?? []
+            func item(_ index: Int) -> AnyObject? {
+                guard index < values.count else { return nil }
+                let value = values[index]
+                if CFGetTypeID(value) == AXValueGetTypeID(), AXValueGetType(value as! AXValue) == .axError { return nil }
+                return value
+            }
+            func text(_ index: Int) -> String {
+                ((item(index) as? String) ?? "").replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            role = (item(0) as? String) ?? ""
+            subrole = (item(1) as? String) ?? ""
+            title = text(2); desc = text(3); placeholder = text(4)
+            value = item(5)
+            children = (item(6) as? [AXUIElement]) ?? []
+            enabled = (item(7) as? Bool) ?? true
+            selected = (item(8) as? Bool) ?? false
+            var point = CGPoint.zero, extent = CGSize.zero
+            if let position = item(9), CFGetTypeID(position) == AXValueGetTypeID(),
+               let size = item(10), CFGetTypeID(size) == AXValueGetTypeID(),
+               AXValueGetValue(position as! AXValue, .cgPoint, &point), AXValueGetValue(size as! AXValue, .cgSize, &extent) {
+                frame = CGRect(origin: point, size: extent)
+            } else { frame = nil }
+        }
+
+        /// Label from already-fetched attributes; nil if a child lookup is needed.
+        var quickLabel: String? {
+            if !title.isEmpty { return title }
+            if !desc.isEmpty { return desc }
+            if !UniversalAX.textRoles.contains(role), let text = value as? String {
+                let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !clean.isEmpty, clean.count < 160 { return clean }
+            }
+            if !placeholder.isEmpty { return placeholder }
             return nil
         }
-        let enabled: Bool = attribute(element, kAXEnabledAttribute) ?? true
-        guard enabled, !label.isEmpty else { return nil }
-        let box = frame(of: element)
-        if let box, (box.width < 2 || box.height < 2) { return nil }
-        if let box, let window, !box.intersects(window.insetBy(dx: -4, dy: -4)) { return nil }
-        let subrole: String = attribute(element, kAXSubroleAttribute) ?? ""
-        let secure = subrole == "AXSecureTextField"
-        var settable: DarwinBoolean = false
-        AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable)
-        let editable = Self.textRoles.contains(role) && settable.boolValue && !secure
-        var entry: [String: Any] = ["role": role, "label": String(label.prefix(120)),
-                                    "context": context, "editable": editable, "secure": secure,
-                                    "pressable": actions(element).contains(kAXPressAction as String)
-                                        || role == "AXLink" || role == "AXButton"]
-        if Self.textRoles.contains(role), !secure, let value: String = attribute(element, kAXValueAttribute) {
-            entry["value"] = String(value.prefix(80))
+    }
+
+    private func describe(_ element: AXUIElement, node: Node, context: String, window: CGRect?) -> [String: Any]? {
+        let role = node.role
+        // Generic web/app containers count only when they are clickable.
+        let generic = role == "AXGroup" || role == "AXImage"
+        guard Self.interestingRoles.contains(role) || (generic && actions(element).contains(kAXPressAction as String)) else {
+            return nil
         }
-        if let selected: Bool = attribute(element, kAXSelectedAttribute), selected { entry["selected"] = true }
+        guard node.enabled else { return nil }
+        if let box = node.frame, (box.width < 2 || box.height < 2) { return nil }
+        if let box = node.frame, let window, !box.intersects(window.insetBy(dx: -4, dy: -4)) { return nil }
+        let label = node.quickLabel ?? Self.label(of: element, role: role)
+        guard !label.isEmpty else { return nil }
+        let secure = node.subrole == "AXSecureTextField"
+        var settable: DarwinBoolean = false
+        if Self.textRoles.contains(role) { AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable) }
+        let editable = Self.textRoles.contains(role) && settable.boolValue && !secure
+        var entry: [String: Any] = ["role": role, "label": String(label.prefix(120)), "context": context,
+                                    "editable": editable, "secure": secure,
+                                    "pressable": !Self.textRoles.contains(role) || role == "AXComboBox"]
+        if Self.textRoles.contains(role), !secure, let value = node.value as? String { entry["value"] = String(value.prefix(80)) }
+        if node.selected { entry["selected"] = true }
         if role == "AXLink", let url: URL = attribute(element, "AXURL") { entry["url"] = url.absoluteString }
         return entry
     }
