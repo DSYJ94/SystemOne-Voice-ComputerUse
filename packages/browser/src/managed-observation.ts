@@ -12,6 +12,10 @@ const MAX_SCAN_NODES = 5_000;
 export interface ManagedObservationOptions {
   /** Exact network origins approved by the trusted task controller. */
   readonly allowedOrigins: readonly string[];
+  /** Optional HTTPS sites (a host the user named, plus its subdomains) for
+   * multi-step browsing; redirects such as example.org → www.example.org stay
+   * in scope. Exact origins above still apply on their own. */
+  readonly allowedSites?: readonly string[];
   /** Defaults to a visible browser. Tests may request headless mode. */
   readonly headless?: boolean;
 }
@@ -27,6 +31,8 @@ export interface ManagedControl {
   readonly editable: boolean;
   /** Exact approved HTTP(S) destination of a plain link; otherwise null. */
   readonly destinationUrl: string | null;
+  /** Submit button of a GET form whose action stays in approved scope. */
+  readonly submittable: boolean;
 }
 
 export interface ManagedObservation {
@@ -50,6 +56,12 @@ export interface ManagedObservation {
 /** Driver preparation only. A trusted controller must own the journal and
  * one-use permit and call send immediately after its durable boundary. */
 export interface PreparedManagedFill {
+  readonly controlId: string;
+  send(): Promise<boolean>;
+  release(): void;
+}
+
+export interface PreparedManagedSubmit {
   readonly controlId: string;
   send(): Promise<boolean>;
   release(): void;
@@ -86,10 +98,29 @@ function approvedOrigins(origins: readonly string[]): Set<string> {
   return approved;
 }
 
-function allowedRequest(urlText: string, method: string, origins: ReadonlySet<string>): boolean {
+const SITE = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u;
+
+function approvedSites(sites: readonly string[] | undefined): readonly string[] {
+  if (!sites) return [];
+  if (sites.length > MAX_ORIGINS || sites.some(site => !SITE.test(site))) {
+    throw new Error('managed-browser sites must be lowercase DNS hosts');
+  }
+  return Object.freeze([...new Set(sites)]);
+}
+
+/** Exact origin, or an HTTPS host equal to / under a named site. */
+interface Scope { readonly origins: ReadonlySet<string>; readonly sites: readonly string[]; }
+
+function inScope(url: URL, scope: Scope): boolean {
+  return scope.origins.has(url.origin) || (url.protocol === 'https:' && !url.port
+    && scope.sites.some(site => url.hostname === site || url.hostname.endsWith('.' + site)));
+}
+
+function allowedRequest(urlText: string, method: string, scope: Scope | ReadonlySet<string>): boolean {
+  const resolved: Scope = scope instanceof Set ? { origins: scope, sites: [] } : scope as Scope;
   try {
     const url = new URL(urlText);
-    return origins.has(url.origin) && !url.username && !url.password
+    return inScope(url, resolved) && !url.username && !url.password
       && (method === 'GET' || method === 'HEAD');
   } catch { return false; }
 }
@@ -103,7 +134,7 @@ export class ManagedObservationSession {
   readonly #root: string;
   readonly #context: BrowserContext;
   readonly #page: Page;
-  readonly #allowedOrigins: ReadonlySet<string>;
+  readonly #allowedOrigins: Scope;
   readonly #sessionId = randomUUID();
   #navigationRevision = 0;
   #closed = false;
@@ -116,7 +147,7 @@ export class ManagedObservationSession {
   get scopeRef(): string { return `managed-browser:${this.#sessionId}`; }
 
   private constructor(root: string, context: BrowserContext, page: Page,
-    origins: ReadonlySet<string>) {
+    origins: Scope) {
     this.#root = root;
     this.#context = context;
     this.#page = page;
@@ -131,7 +162,8 @@ export class ManagedObservationSession {
 
   static async launch(startUrl: string,
     options: ManagedObservationOptions): Promise<ManagedObservationSession> {
-    const origins = approvedOrigins(options.allowedOrigins);
+    const origins: Scope = { origins: approvedOrigins(options.allowedOrigins),
+      sites: approvedSites(options.allowedSites) };
     if (!allowedRequest(startUrl, 'GET', origins)) {
       throw new Error('start URL is outside approved managed-browser scope');
     }
@@ -180,9 +212,13 @@ export class ManagedObservationSession {
         throw new Error('managed page left approved scope');
       }
       const collection = await this.#page.evaluateHandle(({ maxControls, maxScanNodes,
-        allowedOrigins }) => {
+        allowedOrigins, allowedSites }) => {
+        const scoped = (target: URL) => allowedOrigins.includes(target.origin)
+          || (target.protocol === 'https:' && !target.port && allowedSites.some(site =>
+            target.hostname === site || target.hostname.endsWith('.' + site)));
         const controls: { role: string; label: string; context: string;
-          enabled: boolean; editable: boolean; destinationUrl: string | null }[] = [];
+          enabled: boolean; editable: boolean; destinationUrl: string | null;
+          submittable: boolean }[] = [];
         const nodes: Element[] = [];
         const walker = document.createTreeWalker(document.documentElement, NodeFilter.SHOW_ELEMENT);
         let scanned = 0;
@@ -225,14 +261,23 @@ export class ManagedObservationSession {
             && (!element.target || element.target === '_self')) {
             try {
               const target = new URL(element.href);
-              if (allowedOrigins.includes(target.origin) && !target.username
+              if (scoped(target) && !target.username
                 && !target.password && target.href.length <= 2_048) {
                 destinationUrl = target.href;
               }
             } catch { /* Unsupported link destination. */ }
           }
+          let submittable = false;
+          if (enabled && (element instanceof HTMLButtonElement || element instanceof HTMLInputElement)
+            && element.type === 'submit' && element.form && element.form.method.toLowerCase() === 'get'
+            && !element.formAction.startsWith('javascript:')) {
+            try {
+              const action = new URL(element.formAction || element.form.action);
+              submittable = scoped(action) && !action.username && !action.password;
+            } catch { /* Unsupported form action. */ }
+          }
           controls.push({ role: (element.getAttribute('role') || tag).slice(0, 40),
-            label, context, enabled, editable, destinationUrl });
+            label, context, enabled, editable, destinationUrl, submittable });
           nodes.push(element);
         }
         return { title: document.title.slice(0, 160),
@@ -240,10 +285,12 @@ export class ManagedObservationSession {
           truncated: scanned >= maxScanNodes || controls.length >= maxControls,
           hasOpenShadowRoots };
       }, { maxControls: MAX_CONTROLS, maxScanNodes: MAX_SCAN_NODES,
-        allowedOrigins: [...this.#allowedOrigins] });
+        allowedOrigins: [...this.#allowedOrigins.origins],
+        allowedSites: [...this.#allowedOrigins.sites] });
       let description: { title: string; url: string;
         controls: { role: string; label: string; context: string;
-          enabled: boolean; editable: boolean; destinationUrl: string | null }[];
+          enabled: boolean; editable: boolean; destinationUrl: string | null;
+          submittable: boolean }[];
         truncated: boolean; hasOpenShadowRoots: boolean };
       const observationId = randomUUID();
       const nextHandles = new Map<string, ElementHandle<Element>>();
@@ -391,7 +438,8 @@ export class ManagedObservationSession {
    * send() navigates directly to the retained href; it never runs page script
    * by clicking the link. Dynamic/on-click-only links are unsupported. */
   async prepareNavigate(observationId: string, controlId: string,
-    destinationUrl: string, signal: AbortSignal): Promise<PreparedManagedNavigate> {
+    destinationUrl: string, signal: AbortSignal,
+    options: { readonly acceptInScopeRedirect?: boolean } = {}): Promise<PreparedManagedNavigate> {
     if (this.#closed || this.#observing || this.#actionPending) {
       throw new Error('managed browser is stopped or busy');
     }
@@ -450,7 +498,77 @@ export class ManagedObservationSession {
             const response = await this.#page.goto(destinationUrl,
               { waitUntil: 'domcontentloaded', timeout: 10_000 });
             return !this.#closed && !signal.aborted && response?.ok() === true
-              && this.#page.url() === destinationUrl;
+              && (this.#page.url() === destinationUrl || (options.acceptInScopeRedirect === true
+                && allowedRequest(this.#page.url(), 'GET', this.#allowedOrigins)));
+          } finally { this.#actionPending = false; }
+        },
+        release: () => {
+          if (!sent && !released) { released = true; this.#actionPending = false; }
+        },
+      });
+    } catch (error) {
+      this.#actionPending = false;
+      throw error;
+    }
+  }
+
+  /** Submits the GET form of one observed submit button via requestSubmit, as
+   * a user click would, so page validation runs. Success needs a new document
+   * revision that is still inside approved scope; POST stays blocked anyway. */
+  async prepareSubmit(observationId: string, controlId: string,
+    signal: AbortSignal): Promise<PreparedManagedSubmit> {
+    if (this.#closed || this.#observing || this.#actionPending) {
+      throw new Error('managed browser is stopped or busy');
+    }
+    const observed = this.#lastObservation;
+    const control = observed?.controls.find(item => item.id === controlId);
+    const handle = this.#handles.get(controlId);
+    if (!observed || observed.observationId !== observationId || !control || !handle
+      || !control.enabled || !control.submittable || signal.aborted) {
+      throw new Error('managed submit target is stale or unsupported');
+    }
+    this.#actionPending = true;
+    try {
+      const current = await handle.evaluate(element => {
+        const button = element instanceof HTMLButtonElement || element instanceof HTMLInputElement
+          ? element : null;
+        const style = getComputedStyle(element);
+        return { connected: element.isConnected && element.ownerDocument === document,
+          submit: button?.type === 'submit' && !!button.form
+            && button.form.method.toLowerCase() === 'get',
+          action: button?.formAction || button?.form?.action || '',
+          visible: style.display !== 'none' && style.visibility !== 'hidden'
+            && element.getClientRects().length > 0,
+          enabled: !element.matches(':disabled') && element.getAttribute('aria-disabled') !== 'true' };
+      });
+      if (this.#closed || signal.aborted || !current.connected || !current.submit
+        || !current.visible || !current.enabled
+        || !allowedRequest(current.action, 'GET', this.#allowedOrigins)
+        || this.#navigationRevision !== observed.navigationRevision
+        || this.#page.url() !== observed.url) {
+        throw new Error('managed submit target changed during preflight');
+      }
+      let sent = false;
+      let released = false;
+      return Object.freeze({ controlId,
+        send: async () => {
+          if (sent || released || this.#closed || signal.aborted
+            || this.#navigationRevision !== observed.navigationRevision) {
+            throw new Error('managed submit was revoked or replayed');
+          }
+          sent = true;
+          try {
+            const before = this.#navigationRevision;
+            const navigated = this.#page.waitForEvent('framenavigated',
+              { predicate: frame => frame === this.#page.mainFrame(), timeout: 10_000 });
+            await handle.evaluate(element => {
+              const button = element as HTMLButtonElement | HTMLInputElement;
+              button.form?.requestSubmit(button);
+            });
+            await navigated;
+            await this.#page.waitForLoadState('domcontentloaded', { timeout: 10_000 });
+            return !this.#closed && !signal.aborted && this.#navigationRevision > before
+              && allowedRequest(this.#page.url(), 'GET', this.#allowedOrigins);
           } finally { this.#actionPending = false; }
         },
         release: () => {

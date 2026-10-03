@@ -32,7 +32,7 @@ export interface CLMProposal {
   readonly providerRevision: string;
   readonly calibrationRevision: string;
   readonly candidateId: string | null;
-  readonly status: 'selected' | 'request_help' | 'wait' | 'abstained';
+  readonly status: 'selected' | 'request_help' | 'wait' | 'finish' | 'abstained';
   readonly reason: 'accepted' | 'low_confidence' | 'non_effect_choice' | 'unavailable' | 'invalid_output';
   readonly inputTokens: number | null;
   /** Probability of the model's top choice, for display only; never authority. */
@@ -98,7 +98,8 @@ export class CLMDecisionClient {
           reason: 'low_confidence', inputTokens: choice.inputTokens, topProbability: probabilities[0]! });
       }
       const candidate = set.candidates.find(c => c.candidateId === choice.choice)!;
-      if (candidate.operation === 'wait' || candidate.operation === 'request_help') {
+      if (candidate.operation === 'wait' || candidate.operation === 'request_help'
+        || candidate.operation === 'finish') {
         return Object.freeze({ ...base, candidateId: choice.choice, status: candidate.operation,
           reason: 'non_effect_choice', inputTokens: choice.inputTokens, topProbability: probabilities[0]! });
       }

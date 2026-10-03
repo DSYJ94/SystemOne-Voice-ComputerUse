@@ -54,6 +54,13 @@ export interface CandidateBuildInput {
   readonly text?: BoundText;
   readonly destinations?: readonly BoundDestination[];
   readonly invocations?: readonly BoundInvocation[];
+  /** Managed GET-form submit buttons the host admitted for this step. */
+  readonly submissions?: readonly string[];
+  /** Multi-step browsing only: real pages are rarely fully observed. Offered
+   * candidates are still exact observed controls; each step is user-confirmed. */
+  readonly allowPartialCoverage?: boolean;
+  /** Offers a non-effect "goal achieved" choice that the user must confirm. */
+  readonly finishEvidenceRef?: string;
   readonly policyRevision: string;
 }
 
@@ -216,6 +223,12 @@ export function buildActionCandidates(input: CandidateBuildInput): BuiltCandidat
     }
     invocations.set(binding.targetRef, binding);
   }
+  if ((input.submissions?.length ?? 0) > MAX_CONTROLS
+    || (input.submissions ?? []).some(ref => !ID.test(ref))
+    || (input.submissions?.length && source.surface !== 'managed')) {
+    throw new ContractError('invalid submit bindings');
+  }
+  const submissions = new Set(input.submissions ?? []);
   const candidates: Record<string, JSONValue>[] = [];
   const resolutions = new Map<string, ResolvedCandidate>();
   const labelCounts = new Map<string, number>();
@@ -296,16 +309,41 @@ export function buildActionCandidates(input: CandidateBuildInput): BuiltCandidat
           operation: 'navigate', targetRef: control.targetRef,
           parameterRef: urlRef }));
       }
+      if (source.surface === 'managed' && control.invokable === true && submissions.has(control.targetRef)) {
+        const candidateId = `c${candidates.length}`;
+        const candidate: Record<string, JSONValue> = frozenCandidate({ candidateId,
+          description: `Submit the form with the visible button “${label}”${context
+            ? ` in ${context}` : ''}, then verify the page changes within the approved site.`,
+          operation: 'invoke', targetRef: control.targetRef, parameters: {},
+          preconditions: ['target_exists', 'target_visible', 'target_enabled',
+            'origin_approved', 'fresh_observation'],
+          verifier: { kind: 'content_changed' },
+          effects: ['NAVIGATE', 'EXTERNAL_READ'], delivery: 'semantic',
+          riskPolicyRef: input.policyRevision, replayPolicy: 'only_if_not_applied' });
+        validateCandidate(candidate);
+        candidates.push(candidate);
+        resolutions.set(candidateId, Object.freeze({ candidateId,
+          operation: 'invoke', targetRef: control.targetRef, parameterRef: 'submit' }));
+      }
       if (candidates.length > MAX_ACTIONS) break;
     }
   }
-  const abstained = !source.complete || candidates.length > MAX_ACTIONS;
+  const covered = source.complete || input.allowPartialCoverage === true;
+  const abstained = !covered || candidates.length > MAX_ACTIONS;
   if (abstained) { candidates.length = 0; resolutions.clear(); }
-  const reason = !source.complete ? 'unsupported'
+  const reason = !covered ? 'unsupported'
     : ambiguous ? 'ambiguous_target'
       : !input.text && source.controls.some(control => control.editable)
         ? 'missing_value'
       : candidates.length === 0 ? 'missing_target' : 'uncertain_decision';
+  if (input.finishEvidenceRef !== undefined && !abstained) {
+    if (!ID.test(input.finishEvidenceRef)) throw new ContractError('invalid finish evidence');
+    candidates.push(frozenCandidate({ candidateId: 'finish',
+      description: 'Stop here because the goal is already achieved on the current page; the user confirms completion.',
+      operation: 'finish', parameters: { completionEvidenceRef: input.finishEvidenceRef },
+      preconditions: [], verifier: { kind: 'user_confirmation' }, effects: ['READ'],
+      delivery: 'controller', riskPolicyRef: input.policyRevision, replayPolicy: 'idempotent_verified' }));
+  }
   candidates.push(fallback('wait', reason, input.policyRevision));
   candidates.push(fallback('request_help', reason, input.policyRevision));
   for (const candidate of candidates) validateCandidate(candidate);
@@ -357,7 +395,7 @@ export function fromManagedObservation(value: ManagedObservation): ActionSource 
     controls: value.controls.map(control => ({ targetRef: control.id,
       role: control.role, label: control.label, context: control.context,
       enabled: control.enabled, visible: true, editable: control.editable,
-      destinationUrl: control.destinationUrl })) };
+      invokable: control.submittable, destinationUrl: control.destinationUrl })) };
 }
 
 export function fromChromeObservation(value: ChromeReadSnapshot): ActionSource {

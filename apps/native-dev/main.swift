@@ -436,7 +436,6 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         advanced.font = .boldSystemFont(ofSize: 12)
         advanced.textColor = .secondaryLabelColor
         let tools = NSStackView(views: [link("Show fields", #selector(showCapturedFields)),
-                                        link("Test fixture", #selector(openTestFixture)),
                                         link("Developer tools", #selector(openDeveloperPanel))])
         tools.orientation = .horizontal
         tools.spacing = 6
@@ -471,18 +470,6 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             : "Jev off. Requests stay on this Mac."
     }
 
-    /// The synthetic test target lives beside the controller in this checkout.
-    @objc private func openTestFixture() {
-        guard let script = Bundle.main.object(forInfoDictionaryKey: "SystemOneControllerScript") as? String else { return }
-        let root = URL(fileURLWithPath: script).deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent()
-        let fixture = root.appendingPathComponent(".build/native-mock/SystemOne Fixture.app")
-        guard FileManager.default.fileExists(atPath: fixture.path) else {
-            commandStatus?.stringValue = "Test fixture not built. Run npm start with test fixtures, or npm run build:native-mock."
-            return
-        }
-        NSWorkspace.shared.openApplication(at: fixture, configuration: .init())
-    }
 
     func windowWillClose(_ notification: Notification) {
         if let closing = notification.object as? NSWindow, closing === commandPanel {
@@ -498,6 +485,14 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard activeRequestID != nil, controller?.isRunning == true else { return .terminateNow }
         quitPending = true
         stop()
+        // Quit must never hang on a stuck or already-settled task. After the
+        // fence window, exit anyway; the controller sees its pipe close, and an
+        // effect without a verified outcome stays journaled as unresolved.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self, self.quitPending else { return }
+            self.quitPending = false
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
         return .terminateLater
     }
 
@@ -1264,27 +1259,6 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         let text = taskField?.stringValue ?? ""
-        if let fixture = Self.fixtureIntent(text) {
-            // Fixture admission binds typed provenance; voice stays a reviewable transcript.
-            guard finalSpeechText != text else {
-                commandStatus?.stringValue = "Fixture tasks take typed requests for now. Type it, then press Return."
-                return
-            }
-            guard hasAccessibilityAccess() else {
-                showAccessibilityDenied()
-                return
-            }
-            accessibilityRecoveryButton?.isHidden = true
-            guard taskIntake.submit(fixture,
-                send: { [weak self] in self?.send(self?.withDecisionChoice($0) ?? $0, through: input) == true }) else {
-                commandStatus?.stringValue = "Could not send the fixture request to the controller."
-                return
-            }
-            commandStatus?.stringValue = jevEnabled
-                ? "Jev is choosing each step in SystemOne Fixture…"
-                : "Running the scripted SystemOne Fixture steps…"
-            return
-        }
         if let managed = ScopedManagedFill.parse(text) {
             let intent = DevTaskIntake.Intent.managedFill(url: managed.url,
                 field: managed.fieldLabel, value: managed.value)
@@ -1333,21 +1307,6 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         commandStatus?.stringValue = "Observing the captured app and exact field…"
-    }
-
-    /// Plain phrases for the synthetic fixture only ("open Budget.xlsx", "go to Documents").
-    static func fixtureIntent(_ text: String) -> DevTaskIntake.Intent? {
-        let phrase = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        let starts = { (verbs: [String]) in verbs.contains { phrase.hasPrefix($0 + " ") } }
-        if phrase.contains("budget") {
-            if starts(["open"]) { return .fixtureFile(open: true) }
-            if starts(["locate", "find", "select", "show"]) { return .fixtureFile(open: false) }
-            return nil
-        }
-        if phrase.contains("documents"), starts(["go to", "open", "show", "navigate to"]) {
-            return .fixtureDocuments
-        }
-        return nil
     }
 
     func handleGlobalHotkey(_ id: UInt32) {
