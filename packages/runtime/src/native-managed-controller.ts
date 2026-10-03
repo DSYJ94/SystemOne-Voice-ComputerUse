@@ -461,6 +461,8 @@ interface ActiveTask {
   browseCompleted?: boolean;
   /** The named site of a browse session, kept for follow-ups. */
   browseSite?: string | null;
+  /** Universal agent run: nothing is open to fence before its actor exists. */
+  agentRun?: boolean;
   done: Promise<void>;
 }
 
@@ -1203,6 +1205,7 @@ export class NativeManagedController {
 
   /** Universal computer use on the user's own apps through Accessibility. */
   async #runAgent(request: StartAgent, active: ActiveTask): Promise<void> {
+    active.agentRun = true;
     try {
       const command = request.command;
       if (command.type !== 'command' || (command.source !== 'text' && command.source !== 'voice')
@@ -1459,7 +1462,7 @@ export class NativeManagedController {
           : result.browserFenced, () => false)
         : active.session
           ? active.session.close().then(() => true, () => false)
-          : Promise.resolve(false); // A browser launch is still in flight.
+          : Promise.resolve(active.agentRun === true); // A browser launch may still be in flight.
       active.browserFenced = await Promise.race([
         fence,
         new Promise<boolean>(resolve => {

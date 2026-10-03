@@ -106,6 +106,11 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var browseKeptOpen = false
     private var queuedRequestText: String?
     private var micButton: NSButton?
+    private var runWhenTranscribed = false
+    /// The text of the request currently running; Return on it is a no-op.
+    private var runningRequestText: String?
+    /// The last app the user was in (never SystemOne), used as the agent's target.
+    private var lastExternalApp: NSRunningApplication?
     /// The current transcript came from holding the hotkey; it runs on release.
     private var hotkeyDictation = false
     private var hotkeyPressedAt: Date?
@@ -449,10 +454,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.finalSpeechText = isFinal ? text : nil
             // A browse request is safe to start straight from speech: nothing
             // acts before the user confirms the first proposed step.
-            let fromHotkey = isFinal && self.hotkeyDictation
-            if isFinal { self.hotkeyDictation = false }
-            if isFinal, fromHotkey || (self.jevEnabled && (self.browseKeptOpen
-                || ScopedBrowse.parse(ScopedBrowse.normalizedSpeech(text)) != nil)) {
+            let fromHotkey = isFinal && (self.hotkeyDictation || self.runWhenTranscribed)
+            if isFinal { self.hotkeyDictation = false; self.runWhenTranscribed = false }
+            if isFinal, fromHotkey || self.jevEnabled {
                 DispatchQueue.main.async { [weak self] in self?.runTaskRequest() }
             }
         }
@@ -776,6 +780,13 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // app deactivation: switching to the target app must not cancel a task.
     // These notifications alone do not establish physical screen-lock coverage.
     private func observeHostLifecycle() {
+        let me = ProcessInfo.processInfo.processIdentifier
+        lifecycleObservers.append(NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.processIdentifier != me else { return }
+            Task { @MainActor [weak self] in self?.lastExternalApp = app }
+        })
         if let session = CGSessionCopyCurrentDictionary() as? [String: Any] {
             // SDK constants, not literals: the console key's value is
             // "kCGSSessionOnConsoleKey", so a typed name silently never matched.
@@ -1291,6 +1302,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "ready":
             if requestID == activeRequestID { stopRequestID = nil }
             taskIntake.releaseIfReady(requestID: requestID)
+            if activeRequestID == nil { runningRequestText = nil }
             pendingProposal = nil
             approvalRow?.isHidden = true
             if autoAllowTaskID == requestID { autoAllowTaskID = nil }
@@ -1438,6 +1450,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             confirmProposal(pending, allow: true)
             return
         }
+        if activeRequestID != nil, (taskField?.stringValue ?? "") == runningRequestText {
+            commandStatus?.stringValue = "Already working on that. Say or type something new to replace it, or press ■ to stop."
+            return
+        }
         if activeRequestID != nil, stopRequestID == nil, !browseKeptOpen {
             // A new request replaces whatever is running or waiting.
             queuedRequestText = taskField?.stringValue
@@ -1473,7 +1489,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         guard !speech.isCapturing else {
-            commandStatus?.stringValue = "Wait for a final transcript before running a request."
+            // Return while listening means "that's it": finish and run.
+            runWhenTranscribed = true
+            speech.stop()
             return
         }
         guard let input = controllerInput, controller?.isRunning == true,
@@ -1795,6 +1813,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let me = ProcessInfo.processInfo.processIdentifier
         let target = capturedApp.flatMap { app in
             NSRunningApplication(processIdentifier: app.pid).flatMap { $0.isTerminated ? nil : $0 } }
+            ?? lastExternalApp.flatMap { $0.isTerminated ? nil : $0 }
             ?? NSWorkspace.shared.runningApplications.first { $0.isActive && $0.processIdentifier != me }
         if let target { universalAX.setTarget(target.processIdentifier) }
         taskField?.stringValue = text
@@ -1805,6 +1824,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         browseKeptOpen = false
+        runningRequestText = text
         commandStatus?.stringValue = "Working on it\(target.map { " in \($0.localizedName ?? "the app")" } ?? "")…"
         // Give the target app the keyboard; the bar stays visible on top.
         target?.activate()
