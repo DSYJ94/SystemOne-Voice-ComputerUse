@@ -1,5 +1,31 @@
 # Initial foundation validation
 
+## Native fixture recovery controller and panel, 1 October 2026
+
+`codex/native-controller-recovery`, based on #68 at `d0482bc`.
+Implementation `582b959`, [draft PR #69](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/69),
+targeting `codex/native-controller-actor` (#68).
+Pinned Linux Node 26.5.0 and official Playwright 1.63.0 revision 1243.
+
+- `npm run check`: typecheck passed; **388 passed, zero failed, two Mac-only
+  skips (390 total)**, including actual headless managed-browser regressions.
+- **11 added tests** exercise continuation without repeated Documents dispatch,
+  admission/deadline/quota preservation, missing presentation, altered UI session,
+  checkpoint, observation, revision and digest, dismissal, superseding reads,
+  mismatched scope/title, concurrent recovery, Stop during reads and after
+  presentation, exhausted budgets, strict pipe controls and restart refusal.
+  Focused authority/controller suites pass **18/18** and **7/7** respectively.
+- `npm run test:release-inventory`: consistency and **6/6** focused checks pass.
+- `git diff --check`: passed. No dependencies or inventory entries changed.
+
+Native workers are synthetic. No Swift/AppKit compiler exists here: sheet
+visibility/acknowledgment timing, timeout/dismissal behavior and retained native
+process-scope binding require Mac build and live validation. The source changes
+are not Mac qualification. No owner app, microphone, TCC/Keychain, owner Chrome,
+model/GPU or paid provisioning ran. The previous owner goal was dropped from the
+working plan; no owner journal was modified. See [recovery](NATIVE_CONTROLLER_RECOVERY.md).
+
+
 ## Native fixture controller actor, 1 October 2026
 
 `codex/native-controller-actor`, based on #67 at `076c241`.

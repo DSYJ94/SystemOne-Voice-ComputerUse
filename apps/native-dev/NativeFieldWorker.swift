@@ -50,6 +50,7 @@ final class DevNativeFieldWorker: @unchecked Sendable {
     private var stoppedTaskIDs = Set<String>()
     private var activeFence: (taskID: String, fence: NativeValueFence)?
     private var state: State? // Accessed only on queue.
+    private var fixtureTargets: [String: AXTarget] = [:] // Stable task/process scope, on queue.
     private var permitLedger: NativeWorkerPermitLedger? // Accessed only on queue.
     private var hostPublicKey: Curve25519.Signing.PublicKey? // Accessed only on queue.
 
@@ -60,6 +61,7 @@ final class DevNativeFieldWorker: @unchecked Sendable {
     func invalidateHostPublicKey() {
         queue.async { [self] in
             hostPublicKey = nil
+            fixtureTargets.removeAll()
             state?.fence.stop()
             state = nil
         }
@@ -151,9 +153,18 @@ final class DevNativeFieldWorker: @unchecked Sendable {
         }
         state?.fence.stop()
         state = nil
-        let target = AXTarget(pid: app.processIdentifier, bundleID: bundleID,
-            bundleURL: bundleURL, launchDate: launchDate,
-            scopeRef: "native:\(UUID().uuidString)")
+        let target: AXTarget
+        if press, let retained = fixtureTargets[taskID] {
+            guard retained.pid == app.processIdentifier, retained.bundleID == bundleID,
+                  retained.bundleURL == bundleURL, retained.launchDate == launchDate else { return [:] }
+            target = retained
+        } else {
+            guard !press || fixtureTargets.count < 1_000 else { return [:] }
+            target = AXTarget(pid: app.processIdentifier, bundleID: bundleID,
+                bundleURL: bundleURL, launchDate: launchDate,
+                scopeRef: "native:\(UUID().uuidString)")
+            if press { fixtureTargets[taskID] = target }
+        }
         do {
             let backend = SystemAXBackend()
             let registry = try NativeAXObservationRegistry(backend: backend,

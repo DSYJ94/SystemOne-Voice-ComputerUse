@@ -52,11 +52,12 @@ panel, live Accessibility, voice or owner-profile Chrome.
 
 ## Remaining work
 
-Expose scoped fresh recovery reads and exact user Resume intent through the
-controller/panel, then connect replacement admission and correction. General
+The [controller/panel recovery path](NATIVE_CONTROLLER_RECOVERY.md) now exposes
+fresh scoped recovery reads and exact user Resume for a retained fixture actor.
+Connect replacement admission and correction next. General
 native/browser actions, native field task actors, browser reconstruction,
 unknown-effect reconciliation, sleep/lock, qualified primary CLM and authenticated
 release workers remain open. Older paused non-fixture records also block new
 controller intake; no generic UI recovery or automatic cancellation is invented
 for them. See [v1 readiness](V1_READINESS.md) and [validation](VALIDATION.md).
-The owner's stopped goal remains stopped.
+The owner dropped the previous goal from the working plan.

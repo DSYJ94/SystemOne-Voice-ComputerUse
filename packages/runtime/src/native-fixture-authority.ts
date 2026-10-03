@@ -1,4 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
+import { ContractError, digest } from '../../protocol/src/json.ts';
+import { UserPromptLedger } from './user-prompts.ts';
+import type { TaskRecoveryBinding } from './task-recovery.ts';
 import { bindEndpoint } from '../../protocol/src/session.ts';
 import { AttemptJournal } from './attempt-journal.ts';
 import { CommittedInputSession } from './committed-input.ts';
@@ -16,6 +20,13 @@ const TITLES = { navigate: 'SystemOne Fixture — Documents',
   locate: 'SystemOne Fixture — Documents — Budget.xlsx selected',
   open: 'SystemOne Fixture — Documents — Budget.xlsx opened' };
 type Mode = keyof typeof TITLES;
+export interface NativeRecoveryPrompt extends TaskRecoveryBinding {
+  readonly promptId: string;
+  readonly presentationDigest: string;
+  readonly uiSessionRef: string;
+  readonly actorRef: 'native-dev-ui';
+  readonly presentation: Readonly<{ title: string; text: string; resumeLabel: string; cancelLabel: string }>;
+}
 interface Pending {
   readonly requestId: string;
   readonly abort: AbortController;
@@ -34,6 +45,10 @@ export class NativeFixtureAuthority {
   readonly #seen = new Set<string>();
   #pending: Pending | undefined;
   #actor: PersistentTaskActor | undefined;
+  #recovering = false;
+  #mode: Mode | undefined;
+  #prompt: { descriptor: NativeRecoveryPrompt; endpoint: ReturnType<typeof bindEndpoint>;
+    ledger: UserPromptLedger; presented: boolean } | undefined;
   #fenceFailed = false;
   #stopping = false;
   #stopPromise: Promise<{ workerFenced: boolean; unresolvedExecutionIds: readonly string[] }> | undefined;
@@ -58,7 +73,7 @@ export class NativeFixtureAuthority {
       || request.bundleId !== BUNDLE || request.folderName !== 'Documents'
       || (mode !== 'navigate' && (!('fileName' in request) || request.fileName !== 'Budget.xlsx'))
       || request.expectedWindowTitle !== TITLES[mode]
-      || this.#seen.has(request.requestId) || this.#seen.size >= 1000 || this.#pending) return 'error';
+      || this.#seen.has(request.requestId) || this.#seen.size >= 1000 || this.#pending || this.#recovering) return 'error';
     this.#seen.add(request.requestId);
     if (this.needsRecovery || this.#journal.pendingTaskIds().length) return 'uncertain';
     const pending: Pending = { requestId: request.requestId, abort: new AbortController(), stopped: false, touched: false };
@@ -95,14 +110,9 @@ export class NativeFixtureAuthority {
       const workflow = NativeFixtureTask.start(this.#journal, this.#worker, registry, admission,
         this.#limits, undefined, observed);
       const actor = new PersistentTaskActor(this.#journal, workflow, 3_000);
-      pending.actor = actor; this.#actor = actor;
+      pending.actor = actor; this.#actor = actor; this.#mode = mode;
       const result = await actor.run();
-      if (pending.stopped || result.state === 'cancelled') return 'stopped';
-      if (this.#journal.unresolvedAttempts(request.requestId).length) return 'uncertain';
-      if (result.state === 'paused') return 'paused';
-      if (result.state !== 'completed' || !result.completion) return 'error';
-      return result.progress?.checkpoints.every(c => !c.executionId) ? 'already_matched'
-        : mode === 'navigate' ? 'verified_navigation' : mode === 'locate' ? 'verified_locate' : 'verified_open';
+      return this.#result(result, mode, pending.stopped);
     } catch {
       return pending.stopped ? 'stopped' : this.#journal.unresolvedAttempts(request.requestId).length ? 'uncertain' : 'error';
     } finally {
@@ -113,7 +123,75 @@ export class NativeFixtureAuthority {
     }
   }
 
+  /** A fresh read can only recover the exact actor retained in this process. */
+  async prepareRecovery(taskId: string, uiSessionRef: string): Promise<NativeRecoveryPrompt> {
+    const actor = this.#requireActor(taskId);
+    if (!/^[A-Za-z0-9_.:-]{1,160}$/.test(uiSessionRef)) throw new ContractError('invalid UI session');
+    this.#clearPrompt(); this.#recovering = true;
+    try {
+      const binding = await actor.prepareRecovery();
+      const presentation = Object.freeze({ title: 'Resume synthetic fixture task?',
+        text: `${actor.snapshot.admission!.goal}\nCheckpoint: ${binding.checkpointRef}\nRevision: ${binding.goalRevision}. Original limits still apply.`,
+        resumeLabel: 'Resume', cancelLabel: 'Keep Paused' });
+      const descriptor: NativeRecoveryPrompt = Object.freeze({ ...binding, promptId: randomUUID(),
+        actorRef: 'native-dev-ui', uiSessionRef, presentation, presentationDigest: digest(presentation) });
+      const endpoint = bindEndpoint(['clarification_reply', 'resume_request']);
+      const ledger = new UserPromptLedger(endpoint, binding, descriptor.actorRef, uiSessionRef, () => performance.now());
+      this.#prompt = { descriptor, endpoint, ledger, presented: false };
+      return descriptor;
+    } finally { this.#recovering = false; }
+  }
+
+  /** Register only after the trusted parent confirms the exact sheet is visible. */
+  presented(taskId: string, promptId: string, presentationDigest: string, uiSessionRef: string): void {
+    const actor = this.#requireActor(taskId);
+    const prompt = this.#prompt;
+    if (!prompt || prompt.presented || prompt.descriptor.promptId !== promptId
+      || prompt.descriptor.presentationDigest !== presentationDigest || prompt.descriptor.uiSessionRef !== uiSessionRef) {
+      throw new ContractError('recovery presentation mismatch');
+    }
+    prompt.ledger.presentResume(prompt.descriptor, 20_000);
+    actor.bindPrompt(prompt.ledger); prompt.presented = true;
+  }
+
+  dismiss(taskId: string, promptId: string, uiSessionRef: string): void {
+    if (taskId !== this.taskId || this.#prompt?.descriptor.promptId !== promptId
+      || this.#prompt.descriptor.uiSessionRef !== uiSessionRef) throw new ContractError('stale recovery dismissal');
+    this.#clearPrompt();
+  }
+
+  async resume(taskId: string, bytes: Uint8Array): Promise<NativePressResult | 'paused'> {
+    const actor = this.#requireActor(taskId);
+    const prompt = this.#prompt;
+    if (!prompt?.presented || !this.#mode) throw new ContractError('no displayed recovery prompt');
+    const intent = prompt.ledger.acceptResume(prompt.endpoint, bytes, prompt.descriptor.recoveryObservationId);
+    actor.resume(prompt.ledger, intent);
+    this.#prompt = undefined;
+    const pending: Pending = { requestId: taskId, abort: new AbortController(), stopped: false, touched: true, actor };
+    this.#pending = pending; this.#stopPromise = undefined;
+    try { return this.#result(await actor.run(), this.#mode, pending.stopped); }
+    finally { if (this.#pending === pending) this.#pending = undefined; }
+  }
+
+  #requireActor(taskId: string): PersistentTaskActor {
+    if (!this.#actor || this.#actor.taskId !== taskId || this.#pending || this.#recovering
+      || this.#stopping || this.#fenceFailed || this.#actor.busy || this.#actor.snapshot.state !== 'paused') {
+      throw new ContractError('no settled paused native actor');
+    }
+    return this.#actor;
+  }
+  #clearPrompt(): void { this.#prompt?.ledger.close(); this.#prompt = undefined; }
+  #result(result: PersistentTaskActor['snapshot'], mode: Mode, stopped: boolean): NativePressResult | 'paused' {
+    if (stopped || result.state === 'cancelled') return 'stopped';
+    if (this.#journal.unresolvedAttempts(result.taskId).length) return 'uncertain';
+    if (result.state === 'paused') return 'paused';
+    if (result.state !== 'completed' || !result.completion) return 'error';
+    return result.progress?.checkpoints.every(c => !c.executionId) ? 'already_matched'
+      : mode === 'navigate' ? 'verified_navigation' : mode === 'locate' ? 'verified_locate' : 'verified_open';
+  }
+
   stop(): Promise<{ workerFenced: boolean; unresolvedExecutionIds: readonly string[] }> {
+    this.#clearPrompt();
     if (this.#stopPromise) return this.#stopPromise;
     const pending = this.#pending;
     if (pending) { pending.stopped = true; pending.abort.abort(); }
@@ -129,7 +207,7 @@ export class NativeFixtureAuthority {
     return this.#stopPromise;
   }
 
-  async settleBeforeClose(): Promise<void> { await this.#actor?.settleOperation(); }
+  async settleBeforeClose(): Promise<void> { this.#clearPrompt(); await this.#actor?.settleOperation(); }
 
   async #fence(taskId: string): Promise<boolean> {
     let timer: ReturnType<typeof setTimeout> | undefined;

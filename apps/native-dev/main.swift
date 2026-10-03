@@ -91,6 +91,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var controllerInput: Pipe?
     private var controllerOutput: Pipe?
     private var outputBuffer = Data()
+    private var recoveryRequestID: String?
+    private let recoveryUISession = UUID().uuidString.lowercased()
+    private var recoveryAlert: NSAlert?
     private var stopRequestID: String?
     private var quitPending = false
     private var identityCheckSupport: URL?
@@ -403,8 +406,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let fixtureOpen = NSButton(title: "Open Budget.xlsx",
             target: self, action: #selector(startFixtureOpen))
         fixtureOpen.setAccessibilityLabel("Open synthetic Documents/Budget.xlsx")
+        let fixtureRecovery = NSButton(title: "Check recovery", target: self,
+            action: #selector(checkNativeRecovery))
         let fixtureActions = NSStackView(views: [fixtureDocuments, fixtureLocate,
-                                                 fixtureOpen])
+                                                 fixtureOpen, fixtureRecovery])
         fixtureActions.orientation = .horizontal
         fixtureActions.spacing = 8
         let nativeActions = NSStackView(views: [access, inspect, nativeFill])
@@ -711,6 +716,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 statusField?.stringValue = "Existing Chrome tab observed. No action was sent."
                 continue
             }
+            if object["type"] as? String == "native_recovery_prompt" {
+                presentNativeRecovery(object)
+                continue
+            }
             guard
                   object["type"] as? String == "status",
                   let requestID = object["requestId"] as? String,
@@ -762,8 +771,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             statusField?.stringValue = "Verified: INV-105 was found, opened, downloaded and saved in SystemOne-Dev/fixture-output."
         case "portal_paused":
             statusField?.stringValue = "Fixture workflow paused. Inspect the private task record before retrying."
+        case "checking_native_recovery":
+            statusField?.stringValue = "Checking the native fixture checkpoint…"
         case "native_paused":
-            statusField?.stringValue = "Native fixture task paused. Stop it explicitly before starting another task."
+            statusField?.stringValue = "Native fixture task paused. Check recovery or Stop before starting another task."
         case "paused_budget":
             statusField?.stringValue = "Task paused at its action or time limit. An earlier action may have taken effect. Inspect the result before starting again."
         case "verified_native_fill":
@@ -799,7 +810,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 stopRequestID = nil
                 if quitPending { quitPending = false; NSApp.reply(toApplicationShouldTerminate: false) }
             }
-        case "blocked_recovery": statusField?.stringValue = "An earlier task is paused or its effect is unresolved. Stop the task and inspect its state before starting again."
+        case "blocked_recovery": statusField?.stringValue = "Task paused or effect unresolved. For a native fixture, use Check recovery; otherwise inspect its state and Stop."
         case "stopping": statusField?.stringValue = nativeActionActive
             ? "Fencing the native worker; a dispatched edit may already have happened…"
             : "Stopping browser and fencing future actions…"
@@ -823,6 +834,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func controllerExited(_ code: Int32) {
+        dismissRecoverySheet()
         nativePermitKeyAccepted = false
         nativeWorker.invalidateHostPublicKey()
         chromeListener?.stop()
@@ -1236,7 +1248,93 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusField?.stringValue = "Existing Chrome request sent to the local controller…"
     }
 
+    @objc private func checkNativeRecovery() {
+        guard let surface = activeSurface,
+              [DevTaskIntake.Surface.nativeNavigation, .nativeLocate, .nativeOpen].contains(surface),
+              let target = activeRequestID, let input = controllerInput,
+              stopRequestID == nil, recoveryAlert == nil else { return }
+        let requestID = UUID().uuidString.lowercased()
+        recoveryRequestID = requestID
+        _ = send(["type": "prepare_native_recovery", "requestId": requestID,
+                  "targetRequestId": target, "uiSessionRef": recoveryUISession], through: input)
+    }
+
+    private func dismissRecoverySheet() {
+        recoveryRequestID = nil
+        if let alert = recoveryAlert { panel?.endSheet(alert.window, returnCode: .abort) }
+        recoveryAlert = nil
+    }
+
+    private func presentNativeRecovery(_ object: [String: Any]) {
+        guard object["requestId"] as? String == recoveryRequestID,
+              let target = activeRequestID, object["targetRequestId"] as? String == target,
+              object["taskId"] as? String == target,
+              object["uiSessionRef"] as? String == recoveryUISession,
+              object["actorRef"] as? String == "native-dev-ui",
+              object["state"] as? String == "paused",
+              let epoch = object["taskEpoch"] as? Int, epoch == 1,
+              let revision = object["goalRevision"] as? Int, revision == 1,
+              let promptID = object["promptId"] as? String,
+              let digest = object["presentationDigest"] as? String,
+              let checkpoint = object["checkpointRef"] as? String,
+              let checkpointDigest = object["checkpointDigest"] as? String,
+              let observation = object["recoveryObservationId"] as? String,
+              let presentation = object["presentation"] as? [String: Any],
+              Set(presentation.keys) == ["title", "text", "resumeLabel", "cancelLabel"],
+              let title = presentation["title"] as? String,
+              let text = presentation["text"] as? String,
+              presentation["resumeLabel"] as? String == "Resume",
+              presentation["cancelLabel"] as? String == "Keep Paused",
+              (try? CanonicalJSON.digest(presentation)) == digest,
+              let window = panel, let input = controllerInput,
+              stopRequestID == nil, recoveryAlert == nil else { return }
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = text
+        alert.addButton(withTitle: "Resume")
+        alert.addButton(withTitle: "Keep Paused")
+        recoveryAlert = alert
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self, self.recoveryAlert === alert else { return }
+            self.recoveryAlert = nil
+            self.recoveryRequestID = nil
+            guard self.activeRequestID == target, self.stopRequestID == nil else { return }
+            var control: [String: Any] = ["requestId": UUID().uuidString.lowercased(),
+                "targetRequestId": target, "uiSessionRef": self.recoveryUISession]
+            if response == .alertFirstButtonReturn {
+                control["type"] = "resume_native_task"
+                control["intent"] = ["type": "resume_request", "protocolVersion": "2.0",
+                    "messageId": UUID().uuidString.lowercased(), "taskId": target,
+                    "taskEpoch": epoch, "goalRevision": revision, "issuer": "native_ui",
+                    "actorRef": "native-dev-ui", "uiSessionRef": self.recoveryUISession,
+                    "promptId": promptID, "presentationDigest": digest,
+                    "checkpointRef": checkpoint, "checkpointDigest": checkpointDigest,
+                    "recoveryObservationId": observation,
+                    "createdAt": ISO8601DateFormatter().string(from: Date())]
+            } else {
+                control["type"] = "cancel_native_recovery"
+                control["promptId"] = promptID
+            }
+            _ = self.send(control, through: input)
+        }
+        // A queued acknowledgment records the actual visible sheet, not merely
+        // a descriptor received from the controller.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.recoveryAlert === alert, alert.window.isVisible,
+                  self.activeRequestID == target, self.stopRequestID == nil else { return }
+            _ = self.send(["type": "native_recovery_presented",
+                "requestId": UUID().uuidString.lowercased(), "targetRequestId": target,
+                "uiSessionRef": self.recoveryUISession, "promptId": promptID,
+                "presentationDigest": digest], through: input)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+            guard let self, self.recoveryAlert === alert else { return }
+            window.endSheet(alert.window, returnCode: .abort)
+        }
+    }
+
     @objc private func stop() {
+        dismissRecoverySheet()
         speech.cancel()
         if inspectionPending {
             inspectionEpoch += 1

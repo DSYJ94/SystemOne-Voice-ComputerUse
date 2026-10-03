@@ -35,6 +35,7 @@ function harness(t: TestContext, pausedAtStart = false) {
   const path = join(root, 'attempts.sqlite');
   const journal = new AttemptJournal(path);
   if (pausedAtStart) { journal.startTask('unfinished', 1, 1); journal.pauseTask('unfinished', 'test-interruption'); }
+  const output: Record<string, JSONValue>[] = [];
   const phases: { id: string; phase: string }[] = [];
   const state = { title: HOME, duplicate: true, stalled: false, prepares: 0, commits: 0, stops: 0, observations: 0 };
   let expected = '';
@@ -62,13 +63,13 @@ function harness(t: TestContext, pausedAtStart = false) {
     queueMicrotask(() => worker.receive({ type: 'native_worker_reply', requestId: message.requestId!,
       operation: message.operation!, result }));
   });
-  const controller = new NativeManagedController(journal, (id, phase) => { phases.push({ id, phase }); }, true, worker);
+  const controller = new NativeManagedController(journal, (id, phase) => { phases.push({ id, phase }); }, true, worker, message => { output.push(message); });
   let closed = false;
   async function close() { if (!closed) { closed = true; await controller.close(); } }
   t.after(async () => { await close(); rmSync(root, { recursive: true, force: true }); });
   const send = (message: unknown) => controller.receive(Buffer.from(JSON.stringify(message)));
   const has = (id: string, phase: string) => phases.some(p => p.id === id && p.phase === phase);
-  return { controller, journal, path, phases, state, send, has, close };
+  return { controller, journal, path, phases, state, send, has, close, output };
 }
 
 test('controller keeps a checkpoint pause, blocks every surface and explicitly stops the retained native actor', async t => {
@@ -113,4 +114,70 @@ test('shutdown closes a timed-out native transport before closing journal histor
     assert.deepEqual(reopened.attemptsForTask(input.requestId), []);
     assert.equal(reopened.getTaskRecord(input.requestId)?.completion, null);
   } finally { reopened.close(); }
+});
+
+function recoveryControl(type: string, targetRequestId: string, extra = {}) {
+  return { type, requestId: randomUUID(), targetRequestId, uiSessionRef: 'panel-session', ...extra };
+}
+function recoveryReply(prompt: Record<string, JSONValue>, extra = {}) {
+  return { protocolVersion: '2.0', type: 'resume_request', messageId: randomUUID(),
+    taskId: prompt.taskId, taskEpoch: prompt.taskEpoch, goalRevision: prompt.goalRevision,
+    issuer: 'native_ui', actorRef: prompt.actorRef, uiSessionRef: prompt.uiSessionRef,
+    promptId: prompt.promptId, presentationDigest: prompt.presentationDigest,
+    checkpointRef: prompt.checkpointRef, checkpointDigest: prompt.checkpointDigest,
+    recoveryObservationId: prompt.recoveryObservationId, createdAt: new Date().toISOString(), ...extra };
+}
+async function pausedController(t: TestContext) {
+  const h = harness(t); const input = start(); h.send(input);
+  await waitFor(() => h.has(input.requestId, 'blocked_recovery'));
+  h.state.duplicate = false;
+  return { ...h, input };
+}
+async function prepare(h: ReturnType<typeof harness>, target: string) {
+  const request = recoveryControl('prepare_native_recovery', target);
+  h.send(request);
+  await waitFor(() => h.output.some(p => p.requestId === request.requestId));
+  // The async operation must release its controller slot before UI acknowledgment.
+  await waitFor(() => h.phases.filter(p => p.id === target && p.phase === 'blocked_recovery').length >= 2);
+  return h.output.find(p => p.requestId === request.requestId)!;
+}
+test('controller recovers a retained fixture actor only after presentation and exact Resume', async t => {
+  const h = await pausedController(t);
+  const prompt = await prepare(h, h.input.requestId);
+  assert.equal(prompt.type, 'native_recovery_prompt'); assert.equal(h.state.commits, 1);
+  h.send(recoveryControl('native_recovery_presented', h.input.requestId,
+    { promptId: prompt.promptId, presentationDigest: prompt.presentationDigest }));
+  h.send(recoveryControl('resume_native_task', h.input.requestId, { intent: recoveryReply(prompt) }));
+  await waitFor(() => h.has(h.input.requestId, 'ready'));
+  assert.equal(h.has(h.input.requestId, 'verified_native_open'), true);
+  assert.equal(h.state.commits, 3); assert.equal(h.state.stops, 0);
+  assert.equal(h.journal.getTaskState(h.input.requestId), 'completed');
+});
+test('controller rejects Resume before presentation and changed reply sessions', async t => {
+  const h = await pausedController(t); const prompt = await prepare(h, h.input.requestId);
+  h.send(recoveryControl('resume_native_task', h.input.requestId, { intent: recoveryReply(prompt) }));
+  await waitFor(() => h.phases.filter(p => p.phase === 'blocked_recovery').length >= 3);
+  h.send(recoveryControl('native_recovery_presented', h.input.requestId,
+    { promptId: prompt.promptId, presentationDigest: prompt.presentationDigest }));
+  h.send(recoveryControl('resume_native_task', h.input.requestId,
+    { intent: recoveryReply(prompt, { uiSessionRef: 'different-session' }) }));
+  assert.equal(h.has('invalid', 'error'), true);
+  assert.equal(h.journal.getTaskState(h.input.requestId), 'paused'); assert.equal(h.state.commits, 1);
+});
+test('controller Stop revokes a presented recovery prompt and permits no late Resume', async t => {
+  const h = await pausedController(t); const prompt = await prepare(h, h.input.requestId);
+  h.send(recoveryControl('native_recovery_presented', h.input.requestId,
+    { promptId: prompt.promptId, presentationDigest: prompt.presentationDigest }));
+  const stop = randomUUID(); h.send({ type: 'stop', requestId: stop, targetRequestId: h.input.requestId });
+  await waitFor(() => h.has(stop, 'stopped'));
+  h.send(recoveryControl('resume_native_task', h.input.requestId, { intent: recoveryReply(prompt) }));
+  assert.equal(h.journal.getTaskState(h.input.requestId), 'cancelled'); assert.equal(h.state.commits, 1);
+});
+test('restart recovery and extra control fields cannot reconstruct a native admission', async t => {
+  const h = harness(t, true);
+  h.send(recoveryControl('prepare_native_recovery', 'unfinished'));
+  assert.equal(h.has('unfinished', 'blocked_recovery'), true);
+  h.send(recoveryControl('prepare_native_recovery', 'unfinished', { command: {} }));
+  assert.equal(h.has('invalid', 'error'), true);
+  assert.equal(h.state.observations, 0); assert.deepEqual(h.output, []);
 });
