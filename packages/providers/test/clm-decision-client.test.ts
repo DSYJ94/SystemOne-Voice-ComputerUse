@@ -33,7 +33,7 @@ test('CLM decision sends only approved semantic choices and returns an observati
   assert.equal(calls, 1);
   assert.deepEqual(result, { observationId: set.observationId, candidateSetDigest: set.candidateSetDigest,
     providerRevision: provider.revision, calibrationRevision: calibration.revision,
-    candidateId: 'c0', status: 'selected', reason: 'accepted', inputTokens: 100 });
+    candidateId: 'c0', status: 'selected', reason: 'accepted', inputTokens: 100, topProbability: 0.95 });
   assert.ok(Object.isFrozen(result));
   assert.equal(Object.hasOwn(result, 'permit'), false);
 });

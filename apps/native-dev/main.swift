@@ -92,6 +92,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var controllerOutput: Pipe?
     private var outputBuffer = Data()
     private var fixtureTaskPaused = false
+    /// Explicit per-task opt-in; off at every launch. Never applies to other surfaces.
+    private var jevChoiceCheckbox: NSButton?
     private var recoveryRequestID: String?
     private let recoveryUISession = UUID().uuidString.lowercased()
     private var recoveryAlert: NSAlert?
@@ -437,6 +439,12 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                                                  fixtureOpen])
         fixtureActions.orientation = .horizontal
         fixtureActions.spacing = 8
+        let jevChoice = NSButton(checkboxWithTitle:
+            "Let Jev choose each fixture step (sends this synthetic window's title and button labels to TypeSafe)",
+            target: nil, action: nil)
+        jevChoice.state = .off
+        jevChoice.setAccessibilityLabel("Let the Jev model choose fixture steps; sends fixture text to TypeSafe")
+        jevChoiceCheckbox = jevChoice
         let nativeActions = NSStackView(views: [access, inspect, nativeFill])
         nativeActions.orientation = .horizontal
         nativeActions.spacing = 8
@@ -471,7 +479,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let stack = NSStackView(views: [shortcuts, focus, heading, explanation,
                                         url, label, value, status, actions, portal, nativeHeading,
                                         nativeExplanation, bundle, nativeLabel,
-                                        nativeValue, nativeActions, fixtureActions, fixtureRecoveryActions,
+                                        nativeValue, nativeActions, fixtureActions, jevChoice, fixtureRecoveryActions,
                                         regionActions, scroll,
                                         chromeHeading, chromeExplanation,
                                         chromeLabel, chromeValue, chromeFill])
@@ -810,6 +818,22 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 nativeOutput?.string = "Existing Chrome tab: \(title)\n\(url)\n"
                     + labels.joined(separator: "\n")
                 statusField?.stringValue = "Existing Chrome tab observed. No action was sent."
+                continue
+            }
+            if object["type"] as? String == "decision" {
+                guard let requestID = object["requestId"] as? String, requestID == activeRequestID,
+                      let status = object["status"] as? String else { continue }
+                let probability = (object["probability"] as? Double).map { String(format: "%.0f%%", $0 * 100) } ?? "n/a"
+                let label = object["label"] as? String ?? ""
+                let text: String
+                switch status {
+                case "selected": text = "Jev chose “\(label)” (\(probability)). Pressing, then verifying…"
+                case "wait": text = "Jev chose to wait (\(probability)). Nothing was pressed."
+                case "request_help": text = "Jev asked for help (\(probability)). Nothing was pressed."
+                default: text = "Jev was not confident or unavailable (\(probability)). Nothing was pressed."
+                }
+                statusField?.stringValue = text
+                nativeOutput?.string = (nativeOutput?.string ?? "") + "\n" + text
                 continue
             }
             if object["type"] as? String == "native_replacement_task" {
@@ -1314,11 +1338,18 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         guard taskIntake.submit(.fixtureDocuments,
-            send: { [weak self] in self?.send($0, through: input) == true }) else {
+            send: { [weak self] in self?.send(self?.withDecisionChoice($0) ?? $0, through: input) == true }) else {
             statusField?.stringValue = "Could not send fixture navigation request."
             return
         }
         statusField?.stringValue = "Fixture navigation sent to the local controller…"
+    }
+
+    private func withDecisionChoice(_ request: [String: Any]) -> [String: Any] {
+        guard jevChoiceCheckbox?.state == .on else { return request }
+        var opted = request
+        opted["decisionProvider"] = "jev"
+        return opted
     }
 
     @objc private func startFixtureLocate() {
@@ -1341,7 +1372,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         guard taskIntake.submit(.fixtureFile(open: open),
-            send: { [weak self] in self?.send($0, through: input) == true }) else {
+            send: { [weak self] in self?.send(self?.withDecisionChoice($0) ?? $0, through: input) == true }) else {
             statusField?.stringValue = "Could not send fixture file request."
             return
         }

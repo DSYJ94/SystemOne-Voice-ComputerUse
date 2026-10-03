@@ -9,6 +9,7 @@ import type { CommittedInput } from './committed-input.ts';
 import { CommittedInputSession } from './committed-input.ts';
 import { bindCommandValue } from './command-value-span.ts';
 import { NativeFixtureTask } from './native-fixture-task.ts';
+import type { NativeFixtureDecision } from './native-fixture-task.ts';
 import { validNativePressObservation } from './native-press-authority.ts';
 import type { NativeLocateRequest, NativeOpenRequest, NativePressRequest,
   NativePressResult, NativePressWorker } from './native-press-authority.ts';
@@ -66,11 +67,19 @@ export class NativeFixtureAuthority {
       || this.#journal.unresolvedAttempts().length > 0;
   }
 
-  start(request: NativePressRequest): Promise<NativePressResult | 'paused'> { return this.#start(request, 'navigate'); }
-  startLocate(request: NativeLocateRequest): Promise<NativePressResult | 'paused'> { return this.#start(request, 'locate'); }
-  startOpen(request: NativeOpenRequest): Promise<NativePressResult | 'paused'> { return this.#start(request, 'open'); }
+  /** An optional decision selects each step; without one the fixed script does. */
+  start(request: NativePressRequest, decision?: NativeFixtureDecision): Promise<NativePressResult | 'paused'> {
+    return this.#start(request, 'navigate', decision);
+  }
+  startLocate(request: NativeLocateRequest, decision?: NativeFixtureDecision): Promise<NativePressResult | 'paused'> {
+    return this.#start(request, 'locate', decision);
+  }
+  startOpen(request: NativeOpenRequest, decision?: NativeFixtureDecision): Promise<NativePressResult | 'paused'> {
+    return this.#start(request, 'open', decision);
+  }
 
-  async #start(request: NativePressRequest | NativeLocateRequest, mode: Mode): Promise<NativePressResult | 'paused'> {
+  async #start(request: NativePressRequest | NativeLocateRequest, mode: Mode,
+    decision?: NativeFixtureDecision): Promise<NativePressResult | 'paused'> {
     if (!/^[A-Za-z0-9_.:-]{1,160}$/.test(request.requestId)
       || request.bundleId !== BUNDLE || request.folderName !== 'Documents'
       || (mode !== 'navigate' && (!('fileName' in request) || request.fileName !== 'Budget.xlsx'))
@@ -82,7 +91,7 @@ export class NativeFixtureAuthority {
     this.#pending = pending; this.#stopPromise = undefined; this.#actor = undefined;
     try {
       const { session, input } = this.#acceptCommand(request, mode, request.requestId, 1);
-      return await this.#execute(pending, mode, session, input);
+      return await this.#execute(pending, mode, session, input, decision);
     } catch {
       return pending.stopped ? 'stopped' : this.#journal.unresolvedAttempts(request.requestId).length ? 'uncertain' : 'error';
     } finally {
@@ -115,7 +124,7 @@ export class NativeFixtureAuthority {
   }
 
   async #execute(pending: Pending, mode: Mode, session: CommittedInputSession,
-    commandInput: CommittedInput): Promise<NativePressResult | 'paused'> {
+    commandInput: CommittedInput, decision?: NativeFixtureDecision): Promise<NativePressResult | 'paused'> {
     pending.touched = true;
     const observed = await this.#worker.observePress({ taskId: pending.requestId,
       bundleId: BUNDLE, signal: pending.abort.signal });
@@ -132,7 +141,7 @@ export class NativeFixtureAuthority {
         mode === 'navigate' ? 'Navigate synthetic fixture to ' : `${mode === 'open' ? 'Open' : 'Locate'} synthetic fixture file `,
         mode === 'navigate' ? 'Documents' : 'Documents/Budget.xlsx')] });
     const workflow = NativeFixtureTask.start(this.#journal, this.#worker, registry, admission,
-      this.#limits, undefined, observed);
+      this.#limits, decision, observed);
     const actor = new PersistentTaskActor(this.#journal, workflow, 3_000);
     pending.actor = actor; this.#actor = actor; this.#mode = mode;
     const result = await actor.run();

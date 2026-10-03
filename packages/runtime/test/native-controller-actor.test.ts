@@ -9,6 +9,7 @@ import type { JSONValue } from '../../protocol/src/json.ts';
 import { AttemptJournal } from '../src/attempt-journal.ts';
 import { NativeFieldPipeWorker } from '../src/native-field-pipe-worker.ts';
 import { NativeManagedController } from '../src/native-managed-controller.ts';
+import type { FixtureDecisionFactory } from '../src/native-managed-controller.ts';
 
 const HOME = 'SystemOne Fixture';
 const DOCS = HOME + ' — Documents';
@@ -30,7 +31,8 @@ async function waitFor(predicate: () => boolean) {
   }
   throw new Error('controller actor status did not arrive');
 }
-function harness(t: TestContext, pausedAtStart = false, requireHostSnapshot = false) {
+function harness(t: TestContext, pausedAtStart = false, requireHostSnapshot = false,
+  fixtureDecisions?: FixtureDecisionFactory) {
   const root = mkdtempSync(join(tmpdir(), 'systemone-controller-actor-'));
   const path = join(root, 'attempts.sqlite');
   const journal = new AttemptJournal(path);
@@ -69,7 +71,7 @@ function harness(t: TestContext, pausedAtStart = false, requireHostSnapshot = fa
       || (message.operation === 'observe_press' && state.holdObservations)) state.held.push(reply);
     else queueMicrotask(reply);
   });
-  const controller = new NativeManagedController(journal, (id, phase) => { phases.push({ id, phase }); }, true, worker, message => { output.push(message); }, undefined, requireHostSnapshot);
+  const controller = new NativeManagedController(journal, (id, phase) => { phases.push({ id, phase }); }, true, worker, message => { output.push(message); }, undefined, requireHostSnapshot, fixtureDecisions);
   let closed = false;
   async function close() { if (!closed) { closed = true; await controller.close(); } }
   t.after(async () => { await close(); rmSync(root, { recursive: true, force: true }); });
@@ -370,4 +372,37 @@ test('shutdown settles a pending interruption before closing its durable history
     assert.equal(reopened.getTaskState(h.input.requestId), 'cancelled');
     assert.deepEqual(reopened.getTaskProgress(h.input.requestId)?.checkpoints.map(c => c.stageRef), ['documents']);
   } finally { reopened.close(); }
+});
+
+test('an explicit Jev opt-in builds one selector per task and the model chooses each step', async t => {
+  const calls: { requestId: string; goal: string }[] = []; let selections = 0;
+  const h = harness(t, false, false, async (requestId, goal) => {
+    calls.push({ requestId, goal });
+    return { offerAllControls: true, async select(set) { selections++;
+      return set.candidates.find(c => c.operation === 'invoke')?.candidateId as string; } };
+  });
+  h.state.duplicate = false;
+  const input = { ...start(), decisionProvider: 'jev' }; h.send(input);
+  await waitFor(() => h.has(input.requestId, 'ready'));
+  assert.equal(h.has(input.requestId, 'verified_native_open'), true);
+  assert.deepEqual(calls, [{ requestId: input.requestId, goal: 'Open synthetic fixture file Documents/Budget.xlsx' }]);
+  assert.equal(selections, 3);
+  const scripted = start(); h.state.title = HOME; h.send(scripted);
+  await waitFor(() => h.has(scripted.requestId, 'ready'));
+  assert.equal(calls.length, 1);
+});
+
+test('a failed or unknown provider opt-in refuses the task before any native observation', async t => {
+  const failing = harness(t, false, false, async () => { throw new Error('no key'); });
+  const optedIn = { ...start(), decisionProvider: 'jev' }; failing.send(optedIn);
+  await waitFor(() => failing.has(optedIn.requestId, 'error'));
+  assert.equal(failing.state.observations, 0);
+  const missing = harness(t);
+  const noFactory = { ...start(), decisionProvider: 'jev' }; missing.send(noFactory);
+  await waitFor(() => missing.has(noFactory.requestId, 'error'));
+  assert.equal(missing.state.observations, 0);
+  // Any other provider value is a malformed request, rejected at parsing.
+  const other = { ...start(), decisionProvider: 'clm' }; missing.send(other);
+  await waitFor(() => missing.has('invalid', 'error'));
+  assert.equal(missing.state.observations, 0);
 });

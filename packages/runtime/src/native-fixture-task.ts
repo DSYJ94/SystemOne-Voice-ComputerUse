@@ -24,6 +24,9 @@ const PREDICATES = {
 } as const;
 
 export interface NativeFixtureDecision {
+  /** When true the model chooses among every pressable control, not only the
+   * scripted one. Each press is still verified against the admitted stage. */
+  readonly offerAllControls?: boolean;
   select(set: BuiltCandidateSet, observed: NativePressObservation, signal: AbortSignal): Promise<string | null>;
 }
 
@@ -156,24 +159,29 @@ export class NativeFixtureTask {
           : title === LOCATED && this.#terminalTitle === OPENED ? ['Open selected file', OPENED] : undefined;
       if (!step) throw new ContractError('native state is outside the admitted workflow');
       const [label, expectedTitle] = step as [string, string];
-      const matching = observed.controls.filter(c => c.label === label && c.enabled && !c.secure && c.canPress);
+      const pressable = observed.controls.filter(c => c.enabled && !c.secure && c.canPress);
+      const matching = pressable.filter(c => c.label === label);
+      const open = this.#decision?.offerAllControls === true;
+      const offeredControls = open ? pressable : matching;
       const offered = buildActionCandidates({ policyRevision: POLICY, source: { surface: 'native',
         observationId: observed.observationId, complete: observed.complete,
         controls: observed.controls.map(c => ({ targetRef: c.id, role: c.role, label: c.label,
           context: '', visible: true, enabled: c.enabled, editable: false,
           invokable: !c.secure && c.canPress, destinationUrl: null })) },
-        invocations: matching.map(c => ({ targetRef: c.id, expectedRef: 'native-stage',
-          expectedDescription: expectedTitle })) });
+        invocations: offeredControls.map(c => ({ targetRef: c.id, expectedRef: 'native-stage',
+          expectedDescription: open ? 'that the task reaches its next admitted stage' : expectedTitle })) });
       const chosenId = this.#decision
         ? await this.#decision.select(offered, observed, this.#abort.signal)
         : selectBoundCandidate(offered, 'invoke', matching.map(c => c.id))?.candidateId;
       this.#active(generation);
       const chosen = chosenId ? offered.resolve(chosenId, observed.observationId, offered.candidateSetDigest) : undefined;
-      if (!chosen || chosen.operation !== 'invoke' || matching.length !== 1
-        || chosen.targetRef !== matching[0]?.id) {
+      // Scripted mode accepts only the one expected control; model mode accepts
+      // any offered control and relies on the stage verifier after the press.
+      const control = open ? offeredControls.find(c => c.id === chosen?.targetRef)
+        : matching.length === 1 && chosen?.targetRef === matching[0]?.id ? matching[0] : undefined;
+      if (!chosen || chosen.operation !== 'invoke' || !control) {
         throw new ContractError('native control is missing or ambiguous');
       }
-      const control = matching[0]!;
       const permit: PreparedAttempt = Object.freeze({ taskId: this.taskId, taskEpoch: admission.taskEpoch,
         goalRevision: admission.goalRevision, executionId: randomUUID(), permitRef: randomUUID(),
         scopeRef: admission.scopeRef, observationId: observed.observationId, candidateId: control.id,

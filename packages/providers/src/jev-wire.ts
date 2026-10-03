@@ -2,6 +2,7 @@ import { validateProviderView } from '../../protocol/src/contract.ts';
 import { ContractError } from '../../protocol/src/json.ts';
 import type { JSONValue } from '../../protocol/src/json.ts';
 import type { CLMProviderView } from './clm-wire.ts';
+import type { DecisionCodec } from './clm-decision-client.ts';
 
 /** Versioned ID, not the moving `jev-latest` alias: thresholds and benchmark
  * results bind to the model that answered. Change deliberately, never silently. */
@@ -75,3 +76,7 @@ function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ContractError('expected object');
   return value as Record<string, unknown>;
 }
+
+/** Jev ignores the CLM temperature; host thresholds still apply after decoding. */
+export const JEV_CODEC: DecisionCodec = Object.freeze({ provider: 'jev',
+  encode: (view: CLMProviderView) => encodeJevProviderView(view), decode: (raw: unknown, view: CLMProviderView) => decodeJevChoice(raw, view) });

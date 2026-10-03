@@ -19,6 +19,7 @@ import type { NativeFillRequest } from './native-fill-authority.ts';
 import type { NativeFixtureMode } from './native-fixture-authority.ts';
 import type { NativePressRequest, NativeLocateRequest } from './native-press-authority.ts';
 import { NativeFixtureAuthority } from './native-fixture-authority.ts';
+import type { NativeFixtureDecision } from './native-fixture-task.ts';
 import { NativeFieldPipeWorker } from './native-field-pipe-worker.ts';
 import { ChromeReadSession } from './chrome-read-session.ts';
 import { ChromeFillAuthority } from './chrome-fill-authority.ts';
@@ -75,6 +76,7 @@ interface StartNativePress {
   readonly folderName: string;
   readonly expectedWindowTitle: string;
   readonly command: Record<string, JSONValue>;
+  readonly decisionProvider?: 'jev';
 }
 
 interface StartNativeLocate {
@@ -85,6 +87,7 @@ interface StartNativeLocate {
   readonly fileName: string;
   readonly expectedWindowTitle: string;
   readonly command: Record<string, JSONValue>;
+  readonly decisionProvider?: 'jev';
 }
 
 interface StartNativeOpen {
@@ -95,6 +98,7 @@ interface StartNativeOpen {
   readonly fileName: string;
   readonly expectedWindowTitle: string;
   readonly command: Record<string, JSONValue>;
+  readonly decisionProvider?: 'jev';
 }
 
 interface StartChromeFill {
@@ -151,6 +155,13 @@ type Phase = 'ready' | 'starting' | 'observing' | 'dispatching'
   | 'observing_chrome' | 'verified_chrome_dom_fill' | 'verified_navigation'
   | 'host_unavailable' | 'portal_located' | 'portal_opened' | 'portal_downloaded'
   | 'verified_portal_download' | 'portal_paused' | 'native_paused' | 'checking_native_recovery' | 'replacing_native_task';
+
+function decisionProviderValid(value: Record<string, JSONValue>): boolean {
+  return !Object.hasOwn(value, 'decisionProvider') || value.decisionProvider === 'jev';
+}
+
+/** Builds a per-task model selector only after an explicit request opt-in. */
+export type FixtureDecisionFactory = (requestId: string, goal: string) => Promise<NativeFixtureDecision>;
 
 function isRecord(value: JSONValue): value is Record<string, JSONValue> {
   return value !== null && !Array.isArray(value) && typeof value === 'object';
@@ -254,8 +265,9 @@ function requestFromLine(line: Uint8Array): NativeRequest {
         targetLaunchMillis: value.targetLaunchMillis as number } : {}) };
   }
   if (value.type === 'start_native_press') {
-    if (Object.keys(value).sort().join(',')
+    if (Object.keys(value).filter(k => k !== 'decisionProvider').sort().join(',')
         !== 'bundleId,command,expectedWindowTitle,folderName,requestId,type'
+      || !decisionProviderValid(value)
       || value.bundleId !== 'com.aurium.systemone.fixture'
       || value.folderName !== 'Documents'
       || value.expectedWindowTitle !== 'SystemOne Fixture — Documents'
@@ -264,11 +276,13 @@ function requestFromLine(line: Uint8Array): NativeRequest {
     }
     return { type: 'start_native_press', requestId: value.requestId as string,
       bundleId: value.bundleId, folderName: value.folderName,
-      expectedWindowTitle: value.expectedWindowTitle, command: value.command };
+      expectedWindowTitle: value.expectedWindowTitle, command: value.command,
+      ...(value.decisionProvider === 'jev' ? { decisionProvider: 'jev' as const } : {}) };
   }
   if (value.type === 'start_native_locate') {
-    if (Object.keys(value).sort().join(',')
+    if (Object.keys(value).filter(k => k !== 'decisionProvider').sort().join(',')
         !== 'bundleId,command,expectedWindowTitle,fileName,folderName,requestId,type'
+      || !decisionProviderValid(value)
       || value.bundleId !== 'com.aurium.systemone.fixture'
       || value.folderName !== 'Documents' || value.fileName !== 'Budget.xlsx'
       || value.expectedWindowTitle
@@ -279,11 +293,12 @@ function requestFromLine(line: Uint8Array): NativeRequest {
     return { type: 'start_native_locate', requestId: value.requestId as string,
       bundleId: value.bundleId, folderName: value.folderName,
       fileName: value.fileName, expectedWindowTitle: value.expectedWindowTitle,
-      command: value.command };
+      command: value.command, ...(value.decisionProvider === 'jev' ? { decisionProvider: 'jev' as const } : {}) };
   }
   if (value.type === 'start_native_open') {
-    if (Object.keys(value).sort().join(',')
+    if (Object.keys(value).filter(k => k !== 'decisionProvider').sort().join(',')
         !== 'bundleId,command,expectedWindowTitle,fileName,folderName,requestId,type'
+      || !decisionProviderValid(value)
       || value.bundleId !== 'com.aurium.systemone.fixture'
       || value.folderName !== 'Documents' || value.fileName !== 'Budget.xlsx'
       || value.expectedWindowTitle
@@ -294,7 +309,7 @@ function requestFromLine(line: Uint8Array): NativeRequest {
     return { type: 'start_native_open', requestId: value.requestId as string,
       bundleId: value.bundleId, folderName: value.folderName,
       fileName: value.fileName, expectedWindowTitle: value.expectedWindowTitle,
-      command: value.command };
+      command: value.command, ...(value.decisionProvider === 'jev' ? { decisionProvider: 'jev' as const } : {}) };
   }
   if (value.type === 'start_chrome_fill') {
     if (Object.keys(value).sort().join(',')
@@ -393,6 +408,7 @@ export class NativeManagedController {
   readonly #portalStore: ScriptedPortalStore | undefined;
   readonly #send: (requestId: string, phase: Phase) => void;
   readonly #headless: boolean;
+  readonly #fixtureDecisions: FixtureDecisionFactory | undefined;
   readonly #nativeWorker: NativeFieldPipeWorker | undefined;
   readonly #nativeAuthority: NativeFillAuthority | undefined;
   readonly #pressAuthority: NativeFixtureAuthority | undefined;
@@ -408,7 +424,9 @@ export class NativeManagedController {
   constructor(journal: AttemptJournal, send: (requestId: string, phase: Phase) => void,
     headless = false, nativeWorker?: NativeFieldPipeWorker,
     chromeOutput?: (value: Record<string, JSONValue>) => void,
-    portalStore?: ScriptedPortalStore, requireHostSnapshot = false) {
+    portalStore?: ScriptedPortalStore, requireHostSnapshot = false,
+    fixtureDecisions?: FixtureDecisionFactory) {
+    this.#fixtureDecisions = fixtureDecisions;
     this.#hostLifecycle = new HostLifecycleGate(requireHostSnapshot);
     this.#journal = journal;
     this.#portalStore = portalStore;
@@ -581,9 +599,17 @@ export class NativeManagedController {
       const run: ControllerRun = { requestId: request.requestId,
         surface: 'native', task: active };
       this.#runs.claim(run);
-      active.done = (request.type === 'start_native_open'
-        ? authority.startOpen(request) : request.type === 'start_native_locate'
-          ? authority.startLocate(request) : authority.start(request)).then(result => {
+      const opted = request.decisionProvider === 'jev';
+      const factory = this.#fixtureDecisions;
+      const goal = typeof request.command.text === 'string' ? request.command.text : '';
+      // A failed opt-in (no factory, no key) refuses the task; it never falls
+      // back silently to the script or to another provider.
+      const decision = opted ? (factory ? factory(request.requestId, goal) : Promise.reject(new Error('jev unavailable')))
+        : Promise.resolve(undefined);
+      active.done = decision.then(selected => request.type === 'start_native_open'
+        ? authority.startOpen(request, selected) : request.type === 'start_native_locate'
+          ? authority.startLocate(request, selected) : authority.start(request, selected), () => 'error' as const)
+        .then(result => {
         const phase: Phase = result === 'verified_navigation'
           ? 'verified_native_navigation'
           : result === 'paused' ? 'native_paused'
@@ -1190,10 +1216,21 @@ async function main(): Promise<void> {
   const worker = new NativeFieldPipeWorker(value => {
     process.stdout.write(`${JSON.stringify(value)}\n`);
   });
+  // Jev runs only for a request that explicitly opts in. The key is read from
+  // the login Keychain at that moment and is never logged or written out.
+  const fixtureDecisions: FixtureDecisionFactory = async (requestId, goal) => {
+    const { execFileSync } = await import('node:child_process');
+    const { createJevFixtureDecision } = await import('../../providers/src/jev-fixture-decision.ts');
+    const apiKey = execFileSync('/usr/bin/security', ['find-generic-password', '-s', 'systemone-jev', '-w'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000 }).trim();
+    return createJevFixtureDecision({ apiKey, goal, report: event => {
+      process.stdout.write(`${JSON.stringify({ type: 'decision', requestId, ...event })}\n`);
+    } });
+  };
   const controller = new NativeManagedController(journal, write,
     process.env.SYSTEMONE_MANAGED_HEADLESS === '1', worker,
     value => { process.stdout.write(`${JSON.stringify(value)}\n`); }, portalStore,
-    process.env.SYSTEMONE_HOST_LIFECYCLE_REQUIRED === '1');
+    process.env.SYSTEMONE_HOST_LIFECYCLE_REQUIRED === '1', fixtureDecisions);
   write('startup', controller.startupPhase());
   let pending = Buffer.alloc(0);
   process.stdin.on('data', chunk => {

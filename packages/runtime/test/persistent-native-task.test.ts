@@ -13,6 +13,8 @@ import { CommittedInputSession } from '../src/committed-input.ts';
 import { NativeFixtureTask } from '../src/native-fixture-task.ts';
 import type { NativeFixtureDecision } from '../src/native-fixture-task.ts';
 import { CLMDecisionClient } from '../../providers/src/clm-decision-client.ts';
+import { createJevFixtureDecision } from '../../providers/src/jev-fixture-decision.ts';
+import type { FixtureDecisionEvent } from '../../providers/src/jev-fixture-decision.ts';
 import { approveCandidateProjection } from '../src/action-candidates.ts';
 import { PersistentTaskActor } from '../src/persistent-task-actor.ts';
 import type { NativePressObservation, NativePressWorker } from '../src/native-press-authority.ts';
@@ -30,6 +32,8 @@ class Worker implements NativePressWorker {
   stopCalls = 0;
   failVerify = false;
   duplicate = false;
+  distractor = false;
+  pressedId = '';
   onPrepare: (() => void) | undefined;
   onCommit: (() => Promise<void>) | undefined;
   async observePress(): Promise<NativePressObservation> {
@@ -39,18 +43,24 @@ class Worker implements NativePressWorker {
       enabled: true, secure: false, canPress: true };
     this.observed = { observationId: randomUUID(), scopeRef: this.scope,
       bundleId: 'com.aurium.systemone.fixture', complete: true, windowTitles: [this.title],
-      controls: this.duplicate ? [control, { ...control, id: randomUUID() }] : [control] };
+      controls: this.duplicate ? [control, { ...control, id: randomUUID() }]
+        : this.distractor ? [control, { ...control, id: randomUUID(), label: 'Downloads' }] : [control] };
     return this.observed;
   }
   async preparePress(input: Parameters<NativePressWorker['preparePress']>[0]) {
     assert.equal(input.observationId, this.observed?.observationId);
-    assert.equal(input.candidateId, this.observed?.controls[0]?.id);
+    if (this.distractor) assert.ok(this.observed?.controls.some(c => c.id === input.candidateId));
+    else assert.equal(input.candidateId, this.observed?.controls[0]?.id);
+    this.pressedId = input.candidateId;
     this.expected = input.expectedWindowTitle; this.onPrepare?.();
     return { kind: 'ready' as const, preparationRef: randomUUID() };
   }
   async commitPress(): Promise<'returned_unverified'> {
-    this.labels.push(this.observed!.controls[0]!.label);
-    await this.onCommit?.(); this.title = this.expected;
+    const pressed = this.distractor ? this.observed!.controls.find(c => c.id === this.pressedId)!
+      : this.observed!.controls[0]!;
+    this.labels.push(pressed.label);
+    await this.onCommit?.();
+    this.title = pressed === this.observed!.controls[0] ? this.expected : 'SystemOne Fixture — Downloads';
     return 'returned_unverified';
   }
   async verifyPress(input: { expectedWindowTitle: string }): Promise<boolean> {
@@ -229,4 +239,62 @@ test('Stop during an asynchronous decision rejects late selection before native 
   const run = h.actor.run(); await ready; await h.actor.stop(); release();
   assert.equal((await run).state, 'cancelled'); assert.equal(prepared, 0);
   assert.deepEqual(h.worker.labels, []); assert.equal(h.actor.snapshot.attempts.length, 0);
+});
+
+function jevReply(pick: (criteria: Record<string, string>) => string) {
+  return (body: Uint8Array) => {
+    const wire = JSON.parse(Buffer.from(body).toString());
+    const criteria = wire.questions.next_action.criteria as Record<string, string>;
+    const choice = pick(criteria);
+    const probabilities = Object.fromEntries(Object.keys(criteria).map(k => [k, k === choice ? 0.97 : 0.03 / (Object.keys(criteria).length - 1)]));
+    return { model: 'jev-1.13.0', answers: { next_action: { type: 'choice', choice, confidence: 0.9, probabilities } },
+      usage: { input_tokens: 150, output_tokens: 3 } };
+  };
+}
+
+test('opted-in Jev chooses among every fixture control and completes only through verified stages', async t => {
+  const events: FixtureDecisionEvent[] = []; const bodies: string[] = [];
+  const reply = jevReply(criteria => Object.entries(criteria).find(([, d]) => !d.includes('“Downloads”')
+    && d.startsWith('Invoke'))![0]);
+  const decision = createJevFixtureDecision({ goal: 'Open synthetic fixture file Documents/Budget.xlsx',
+    report: event => events.push(event), transport: { async send(body) { bodies.push(Buffer.from(body).toString()); return reply(body); } } });
+  const h = harness(t, 'OPEN', decision); h.worker.distractor = true;
+  assert.equal((await h.actor.run()).state, 'completed');
+  assert.deepEqual(h.worker.labels, ['Documents', 'Budget.xlsx', 'Open selected file']);
+  assert.deepEqual(events.map(e => [e.status, e.label, e.probability]), [['selected', 'Documents', 0.97],
+    ['selected', 'Budget.xlsx', 0.97], ['selected', 'Open selected file', 0.97]]);
+  for (const body of bodies) {
+    const wire = JSON.parse(body);
+    assert.equal(wire.model, 'jev-1.13.0');
+    assert.ok(Object.values(wire.questions.next_action.criteria).some(d => String(d).includes('“Downloads”')));
+    // Only semantic text leaves the host: no control handles or observation IDs.
+    for (const control of h.worker.observed!.controls) assert.ok(!body.includes(control.id));
+  }
+});
+
+test('a wrong Jev choice is pressed once, fails stage verification and never completes', async t => {
+  const reply = jevReply(criteria => Object.entries(criteria).find(([, d]) => d.includes('“Downloads”'))![0]);
+  const decision = createJevFixtureDecision({ goal: 'Navigate synthetic fixture to Documents', report: () => {},
+    transport: { async send(body) { return reply(body); } } });
+  const h = harness(t, 'NAVIGATE', decision); h.worker.distractor = true;
+  assert.notEqual((await h.actor.run()).state, 'completed');
+  assert.deepEqual(h.worker.labels, ['Downloads']);
+  assert.notEqual(h.journal.getTaskState(h.revision.taskId), 'completed');
+});
+
+test('Jev low confidence and unavailable service press nothing', async t => {
+  for (const transport of [{ async send(body: Uint8Array) {
+    const wire = JSON.parse(Buffer.from(body).toString()); const keys = Object.keys(wire.questions.next_action.criteria);
+    return { model: 'jev-1.13.0', answers: { next_action: { type: 'choice', choice: keys[0], confidence: 0.1,
+      probabilities: Object.fromEntries(keys.map((k, i) => [k, i === 0 ? 0.4 : 0.6 / (keys.length - 1)])) } },
+      usage: { input_tokens: 1 } };
+  } }, { async send(): Promise<unknown> { throw Object.assign(new Error('down'), { status: 529 }); } }]) {
+    const events: FixtureDecisionEvent[] = [];
+    const h = harness(t, 'OPEN', createJevFixtureDecision({ goal: 'Open synthetic fixture file Documents/Budget.xlsx',
+      report: event => events.push(event), transport }));
+    h.worker.distractor = true;
+    let prepared = 0; h.worker.onPrepare = () => { prepared++; };
+    assert.equal((await h.actor.run()).state, 'paused');
+    assert.equal(prepared, 0); assert.equal(events[0]?.status, 'abstained');
+  }
 });
