@@ -243,6 +243,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Development fallback: a hidden menu-bar item remains reachable from
         // the Dock. Release packaging will use the agent-app lifecycle.
         NSApp.setActivationPolicy(.regular)
+        installMainMenu()
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "S1 Dev"
         let menu = NSMenu()
@@ -261,6 +262,40 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         startController()
         startChromeListener()
         openPanel()
+    }
+
+    /// Standard app and Edit menus: Quit/Hide work like any Mac app, and
+    /// Copy/Paste/Select All work in the bar's text field.
+    private func installMainMenu() {
+        let main = NSMenu()
+        let appItem = NSMenuItem()
+        let appMenu = NSMenu(title: "SystemOne Dev")
+        appMenu.addItem(withTitle: "About SystemOne Dev", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        let settings = NSMenuItem(title: "Open Command Panel", action: #selector(openPanel), keyEquivalent: ",")
+        settings.target = self
+        appMenu.addItem(settings)
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Hide SystemOne Dev", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        let others = appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+        others.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Quit SystemOne Dev", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appItem.submenu = appMenu
+        main.addItem(appItem)
+        let editItem = NSMenuItem()
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editItem.submenu = edit
+        main.addItem(editItem)
+        NSApp.mainMenu = main
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication,
@@ -1269,7 +1304,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 : "Outcome or browser fence uncertain. Inspect the page before retrying."
             if requestID == stopRequestID {
                 stopRequestID = nil
-                if quitPending { quitPending = false; NSApp.reply(toApplicationShouldTerminate: false) }
+                if quitPending { quitPending = false; NSApp.reply(toApplicationShouldTerminate: true) } // the user asked to quit; any uncertainty stays journaled
             }
         case "blocked_recovery": statusField?.stringValue = "Task paused or effect unresolved. For a native task, use Check recovery; otherwise inspect its state and Stop."
         case "stopping": statusField?.stringValue = nativeActionActive
@@ -1345,7 +1380,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         } else {
             statusField?.stringValue = "Controller exited (\(code)); relaunch the development app."
         }
-        if quitPending { quitPending = false; NSApp.reply(toApplicationShouldTerminate: false) }
+        if quitPending { quitPending = false; NSApp.reply(toApplicationShouldTerminate: true) } // the user asked to quit; any uncertainty stays journaled
     }
 
     @objc private func openPanel() {
@@ -2141,7 +2176,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         } else {
             stopRequestID = nil
             statusField?.stringValue = "Stop delivery failed. Task outcome is uncertain."
-            if quitPending { quitPending = false; NSApp.reply(toApplicationShouldTerminate: false) }
+            if quitPending { quitPending = false; NSApp.reply(toApplicationShouldTerminate: true) } // the user asked to quit; any uncertainty stays journaled
         }
     }
 
