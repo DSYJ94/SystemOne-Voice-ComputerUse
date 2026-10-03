@@ -1,0 +1,936 @@
+{
+  "schemaVersion": "systemone-release-dependency-inventory-v1",
+  "status": "pending-release-review",
+  "qualification": "Source declarations and lockfile inventory; not a distributable SBOM, artifact attestation or legal clearance.",
+  "sources": {
+    "package.json": {
+      "sha256": "c7bb788a46eda5f097b33b35d877ca294934da32ade3117b10c1e39f08aa08a0"
+    },
+    "package-lock.json": {
+      "sha256": "8adb81e6001e92629de2b5a4447f0f9e573d39bc6952217eae194042254f1912"
+    },
+    "requirements-test.txt": {
+      "sha256": "fc5d8fc32aa32d6103e6836074463ba4ef92a89427852cf6c9c2c6644854e70d"
+    },
+    ".node-version": {
+      "sha256": "904636927bbfe077d1a82001e3c09a336737410831611fa294eeeb27babf2c81"
+    },
+    "scripts/build-bundled-dev.sh": {
+      "sha256": "1db55e9b253b46c8abea35d7f6bc3dd8de711064da7d17efbe6f3efcba08c428"
+    },
+    "packages/providers/fixtures/clm-artifact-manifest.pending.json": {
+      "sha256": "292f9e761b54e76527183e17ecdef68ca133808624c734d9b358794e94cda9d1"
+    },
+    "docs/release/dependencies.pending.json": {
+      "sha256": "ac9d4184afea00b1577a12f0f539c80ab53e18e4820889598ad7bb4a575d685e"
+    },
+    "docs/DEPENDENCIES.md": {
+      "sha256": "d3c9e95200f7cbfd032355abff2d551dfca7a246d6984abd3d9530b3e568c21e"
+    },
+    "node_modules/playwright-core/browsers.json": {
+      "sha256": "545d52f8382c391e605562c330e9c1c534a16045898203037a49bb8bd769a946"
+    },
+    "node_modules/playwright-core/package.json": {
+      "sha256": "f061c58427e47e843e26d201f0a57076c734e57c734ecbbd87d4a23b7a20db9b"
+    }
+  },
+  "npm": [
+    {
+      "path": "node_modules/@types/node",
+      "name": "@types/node",
+      "version": "26.6.3",
+      "scope": "development",
+      "optional": false,
+      "os": [],
+      "cpu": [],
+      "resolved": "https://registry.npmjs.org/@types/node/-/node-26.6.3.tgz",
+      "integrity": "sha512-dsqMQQoeTLqu9wynDD00q573mNzso3IdQOAfHRJqLCcmCFPoGo9A1bDpUcv/9tnKpErQWv9uKeGfl37EIS02Yg==",
+      "declaredLicense": "MIT",
+      "dependencies": {
+        "undici-types": "~8.9.0"
+      },
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/@typescript/typescript-aix-ppc64",
+      "name": "@typescript/typescript-aix-ppc64",
+      "version": "7.0.2",
+      "scope": "development",
+      "optional": true,
+      "os": [
+        "aix"
+      ],
+      "cpu": [
+        "ppc64"
+      ],
+      "resolved": "https://registry.npmjs.org/@typescript/typescript-aix-ppc64/-/typescript-aix-ppc64-7.0.2.tgz",
+      "integrity": "sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/@typescript/typescript-darwin-arm64",
+      "name": "@typescript/typescript-darwin-arm64",
+      "version": "7.0.2",
+      "scope": "development",
+      "optional": true,
+      "os": [
+        "darwin"
+      ],
+      "cpu": [
+        "arm64"
+      ],
+      "resolved": "https://registry.npmjs.org/@typescript/typescript-darwin-arm64/-/typescript-darwin-arm64-7.0.2.tgz",
+      "integrity": "sha512-gowzar9MwS/aRWp6f3a4KUqzRjAZjOsmGNCM6LcTgXum+dBfgsBVMN+AgvOCCbguXyick6LJhpBszxMebJ8syA==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/@typescript/typescript-darwin-x64",
+      "name": "@typescript/typescript-darwin-x64",
+      "version": "7.0.2",
+      "scope": "development",
+      "optional": true,
+      "os": [
+        "darwin"
+      ],
+      "cpu": [
+        "x64"
+      ],
+      "resolved": "https://registry.npmjs.org/@typescript/typescript-darwin-x64/-/typescript-darwin-x64-7.0.2.tgz",
+      "integrity": "sha512-SZ9xZInqApNlNGc9s0W1VSsktYSOe9cFqNOIqmN1Gs8SmkjKZYFt017G4VwPxASInODuAdbTW7sXiFUf893RgA==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/@typescript/typescript-freebsd-arm64",
+      "name": "@typescript/typescript-freebsd-arm64",
+      "version": "7.0.2",
+      "scope": "development",
+      "optional": true,
+      "os": [
+        "freebsd"
+      ],
+      "cpu": [
+        "arm64"
+      ],
+      "resolved": "https://registry.npmjs.org/@typescript/typescript-freebsd-arm64/-/typescript-freebsd-arm64-7.0.2.tgz",
+      "integrity": "sha512-W5NH4y/J0plIIS5b2xvTEkU7JFxyqdMAOgf+Ilhl0vHQXKO5dZoxd+C/jEtq56c4F3wk71RB4BMRQ2XdI+bwYQ==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/@typescript/typescript-freebsd-x64",
+      "name": "@typescript/typescript-freebsd-x64",
+      "version": "7.0.2",
+      "scope": "development",
+      "optional": true,
+      "os": [
+        "freebsd"
+      ],
+      "cpu": [
+        "x64"
+      ],
+      "resolved": "https://registry.npmjs.org/@typescript/typescript-freebsd-x64/-/typescript-freebsd-x64-7.0.2.tgz",
+      "integrity": "sha512-UMGDx5sTpzNw3WiPebH7l90IWfJggEd+egHt/q6p7/Cm3zqoV7VxkGXt+3DxPIw8CcmvAB0j3sVVfbhX+M4Tpw==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/@typescript/typescript-linux-arm",
+      "name": "@typescript/typescript-linux-arm",
+      "version": "7.0.2",
+      "scope": "development",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "cpu": [
+        "arm"
+      ],
+      "resolved": "https://registry.npmjs.org/@typescript/typescript-linux-arm/-/typescript-linux-arm-7.0.2.tgz",
+      "integrity": "sha512-gffT3xPz9sR7j/YJExkyPntrI0P2EP9XbOyWzth2/Gs0RstK+90RBcO0ncXoXy/beYll1SXw846Nf2zdnEz0QQ==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/@typescript/typescript-linux-arm64",
+      "name": "@typescript/typescript-linux-arm64",
+      "version": "7.0.2",
+      "scope": "development",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "cpu": [
+        "arm64"
+      ],
+      "resolved": "https://registry.npmjs.org/@typescript/typescript-linux-arm64/-/typescript-linux-arm64-7.0.2.tgz",
+      "integrity": "sha512-Qh4eU4/y3yDjnfjjyPYihMj5/ODIlmt+Bzu17OI+fiSRDW57QmU5SiN63exPRNJPKUzcc1INa1NXdrJ+MqHjUQ==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/@typescript/typescript-linux-loong64",
+      "name": "@typescript/typescript-linux-loong64",
+      "version": "7.0.2",
+      "scope": "development",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "cpu": [
+        "loong64"
+      ],
+      "resolved": "https://registry.npmjs.org/@typescript/typescript-linux-loong64/-/typescript-linux-loong64-7.0.2.tgz",
+      "integrity": "sha512-uEHck9i8hoAzXPiYRib1O7miOnz23SxIeVl6F4LXox+qov1K35jHcEW6VHKvZI+pyvl7fZEP4MCU5LYvIq1GuQ==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/@typescript/typescript-linux-mips64el",
+      "name": "@typescript/typescript-linux-mips64el",
+      "version": "7.0.2",
+      "scope": "development",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "cpu": [
+        "mips64el"
+      ],
+      "resolved": "https://registry.npmjs.org/@typescript/typescript-linux-mips64el/-/typescript-linux-mips64el-7.0.2.tgz",
+      "integrity": "sha512-R4KvAMnE43W5Qeqb0Ly56O3mWMWIAgsMyz36DCaycd5nbg/9kzm0liw3JocfRqyJY0KPmzFjbswozXyW0DnIYA==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/@typescript/typescript-linux-ppc64",
+      "name": "@typescript/typescript-linux-ppc64",
+      "version": "7.0.2",
+      "scope": "development",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "cpu": [
+        "ppc64"
+      ],
+      "resolved": "https://registry.npmjs.org/@typescript/typescript-linux-ppc64/-/typescript-linux-ppc64-7.0.2.tgz",
+      "integrity": "sha512-DORx5b3sd/4S7eayxm4FQv+A7CrkUIGRaHiwI8oiHTAI1fAPWhF4J0vAlkC8biAlHSVVwxMQ3tjZ2/DVbnQiiA==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/@typescript/typescript-linux-riscv64",
+      "name": "@typescript/typescript-linux-riscv64",
+      "version": "7.0.2",
+      "scope": "development",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "cpu": [
+        "riscv64"
+      ],
+      "resolved": "https://registry.npmjs.org/@typescript/typescript-linux-riscv64/-/typescript-linux-riscv64-7.0.2.tgz",
+      "integrity": "sha512-wf0jqEDOjrPRnKwYRyyJDRo11KMbvMFrU+q4zqKyChODBzvlkbhNQfKvLxQCcwTpdDaXSHZTVuh0JoCrKCUMHQ==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/@typescript/typescript-linux-s390x",
+      "name": "@typescript/typescript-linux-s390x",
+      "version": "7.0.2",
+      "scope": "development",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "cpu": [
+        "s390x"
+      ],
+      "resolved": "https://registry.npmjs.org/@typescript/typescript-linux-s390x/-/typescript-linux-s390x-7.0.2.tgz",
+      "integrity": "sha512-IkwJc3L7yhytWd/ewjyxNDfOmswCm9GWMJT/ue/dU4aZNbwZeYAetq42VyLmsmSjvoX7z74X6ZaYCtzAr0EuGw==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/@typescript/typescript-linux-x64",
+      "name": "@typescript/typescript-linux-x64",
+      "version": "7.0.2",
+      "scope": "development",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "cpu": [
+        "x64"
+      ],
+      "resolved": "https://registry.npmjs.org/@typescript/typescript-linux-x64/-/typescript-linux-x64-7.0.2.tgz",
+      "integrity": "sha512-EYdf2cNg7rgCWJnxCdJ+F3V39O8ihb37eHAu1LK8oAFizgTQbPOK7zHHXbPt8rX24COqODXeI3sIf0fCXG7H/A==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/@typescript/typescript-netbsd-arm64",
+      "name": "@typescript/typescript-netbsd-arm64",
+      "version": "7.0.2",
+      "scope": "development",
+      "optional": true,
+      "os": [
+        "netbsd"
+      ],
+      "cpu": [
+        "arm64"
+      ],
+      "resolved": "https://registry.npmjs.org/@typescript/typescript-netbsd-arm64/-/typescript-netbsd-arm64-7.0.2.tgz",
+      "integrity": "sha512-+polYF4MF04aPpO5FTkHran9yUQDSXqy5GiSDKpsll5jy3l3+g9QLhpf39T+ePtefhXLOGrLl0QIjkQP6VnelA==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/@typescript/typescript-netbsd-x64",
+      "name": "@typescript/typescript-netbsd-x64",
+      "version": "7.0.2",
+      "scope": "development",
+      "optional": true,
+      "os": [
+        "netbsd"
+      ],
+      "cpu": [
+        "x64"
+      ],
+      "resolved": "https://registry.npmjs.org/@typescript/typescript-netbsd-x64/-/typescript-netbsd-x64-7.0.2.tgz",
+      "integrity": "sha512-8YIT0EHM/3dq10ZOVF/A7pc/YSMtbcecct4rWtexrnSCHOPcpC2KTLXfTCR6vDpnSiY12heNb1GiN/wu+T/FyA==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/@typescript/typescript-openbsd-arm64",
+      "name": "@typescript/typescript-openbsd-arm64",
+      "version": "7.0.2",
+      "scope": "development",
+      "optional": true,
+      "os": [
+        "openbsd"
+      ],
+      "cpu": [
+        "arm64"
+      ],
+      "resolved": "https://registry.npmjs.org/@typescript/typescript-openbsd-arm64/-/typescript-openbsd-arm64-7.0.2.tgz",
+      "integrity": "sha512-APT8+ClYnuYm1u9+kgGXoMj2VzWzcymwh2gNSQVySHfkRDGOTVkoWLjCmOQSaO+PoqQ57B0flRp9SA+7GnnkzQ==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/@typescript/typescript-openbsd-x64",
+      "name": "@typescript/typescript-openbsd-x64",
+      "version": "7.0.2",
+      "scope": "development",
+      "optional": true,
+      "os": [
+        "openbsd"
+      ],
+      "cpu": [
+        "x64"
+      ],
+      "resolved": "https://registry.npmjs.org/@typescript/typescript-openbsd-x64/-/typescript-openbsd-x64-7.0.2.tgz",
+      "integrity": "sha512-yX7s+Q0Dln0Dt9tEzZsAjXXR/+ytBM7AlglaqyeMPxQszJ1JhlJdZ6jLA+IzldHtflX81em7lDao1xXu+aRRkg==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/@typescript/typescript-sunos-x64",
+      "name": "@typescript/typescript-sunos-x64",
+      "version": "7.0.2",
+      "scope": "development",
+      "optional": true,
+      "os": [
+        "sunos"
+      ],
+      "cpu": [
+        "x64"
+      ],
+      "resolved": "https://registry.npmjs.org/@typescript/typescript-sunos-x64/-/typescript-sunos-x64-7.0.2.tgz",
+      "integrity": "sha512-dLJDGaLZ1D4HPQn62u1n8mBDkJREwMsAkCdkwd4Ieqw+x3TUyTsqY0YiBCtE6H6OzzgGk3iuZ3vFWRS+E8/d1g==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/@typescript/typescript-win32-arm64",
+      "name": "@typescript/typescript-win32-arm64",
+      "version": "7.0.2",
+      "scope": "development",
+      "optional": true,
+      "os": [
+        "win32"
+      ],
+      "cpu": [
+        "arm64"
+      ],
+      "resolved": "https://registry.npmjs.org/@typescript/typescript-win32-arm64/-/typescript-win32-arm64-7.0.2.tgz",
+      "integrity": "sha512-Gyl1Vy6OsWesLzmq+EP0Fb7b4Nid5232AvcA2SFcdYreldpNtYFFofPjnt62y9hQy7VTaZp65ICJjuAQRaVcIQ==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/@typescript/typescript-win32-x64",
+      "name": "@typescript/typescript-win32-x64",
+      "version": "7.0.2",
+      "scope": "development",
+      "optional": true,
+      "os": [
+        "win32"
+      ],
+      "cpu": [
+        "x64"
+      ],
+      "resolved": "https://registry.npmjs.org/@typescript/typescript-win32-x64/-/typescript-win32-x64-7.0.2.tgz",
+      "integrity": "sha512-0BQ3HkAHHlKLSp1qRvf3SUhGpGsDuhB/jgFw75guyqbxJqEaS0Cw/VFO8i2nHglJUzQCRtMMR/IBAKE3ETMC4g==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/ajv",
+      "name": "ajv",
+      "version": "8.20.0",
+      "scope": "bundled-runtime",
+      "optional": false,
+      "os": [],
+      "cpu": [],
+      "resolved": "https://registry.npmjs.org/ajv/-/ajv-8.20.0.tgz",
+      "integrity": "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==",
+      "declaredLicense": "MIT",
+      "dependencies": {
+        "fast-deep-equal": "^3.1.3",
+        "fast-uri": "^3.0.1",
+        "json-schema-traverse": "^1.0.0",
+        "require-from-string": "^2.0.2"
+      },
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/ajv-formats",
+      "name": "ajv-formats",
+      "version": "3.0.1",
+      "scope": "bundled-runtime",
+      "optional": false,
+      "os": [],
+      "cpu": [],
+      "resolved": "https://registry.npmjs.org/ajv-formats/-/ajv-formats-3.0.1.tgz",
+      "integrity": "sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ==",
+      "declaredLicense": "MIT",
+      "dependencies": {
+        "ajv": "^8.0.0"
+      },
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/fast-deep-equal",
+      "name": "fast-deep-equal",
+      "version": "3.1.3",
+      "scope": "bundled-runtime",
+      "optional": false,
+      "os": [],
+      "cpu": [],
+      "resolved": "https://registry.npmjs.org/fast-deep-equal/-/fast-deep-equal-3.1.3.tgz",
+      "integrity": "sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==",
+      "declaredLicense": "MIT",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/fast-uri",
+      "name": "fast-uri",
+      "version": "3.1.8",
+      "scope": "bundled-runtime",
+      "optional": false,
+      "os": [],
+      "cpu": [],
+      "resolved": "https://registry.npmjs.org/fast-uri/-/fast-uri-3.1.8.tgz",
+      "integrity": "sha512-GZMtZUTNRpOVIECoXwLNZS5xUGE+mVNbTB8h/7Rwh2TFWcBQiPzTgyZi05BF9UMZKkLJv8XBRJTlU7zg8+ZfMg==",
+      "declaredLicense": "BSD-3-Clause",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/json-schema-traverse",
+      "name": "json-schema-traverse",
+      "version": "1.0.0",
+      "scope": "bundled-runtime",
+      "optional": false,
+      "os": [],
+      "cpu": [],
+      "resolved": "https://registry.npmjs.org/json-schema-traverse/-/json-schema-traverse-1.0.0.tgz",
+      "integrity": "sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug==",
+      "declaredLicense": "MIT",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/jsonc-parser",
+      "name": "jsonc-parser",
+      "version": "3.3.1",
+      "scope": "bundled-runtime",
+      "optional": false,
+      "os": [],
+      "cpu": [],
+      "resolved": "https://registry.npmjs.org/jsonc-parser/-/jsonc-parser-3.3.1.tgz",
+      "integrity": "sha512-HUgH65KyejrUFPvHFPbqOY0rsFip3Bo5wb4ngvdi1EpCYWUQDC5V+Y7mZws+DLkr4M//zQJoanu1SP+87Dv1oQ==",
+      "declaredLicense": "MIT",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/playwright",
+      "name": "playwright",
+      "version": "1.63.0",
+      "scope": "bundled-runtime",
+      "optional": false,
+      "os": [],
+      "cpu": [],
+      "resolved": "https://registry.npmjs.org/playwright/-/playwright-1.63.0.tgz",
+      "integrity": "sha512-+7ziBLidS4NaNCdt57SUDT+wYmmd5fmiQejUic/kb+YsYSCPyOOE9sebzMjNmQrsnNpDJqd4WHvV/8lfKfUDUg==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {
+        "playwright-core": "1.63.0"
+      },
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/playwright-core",
+      "name": "playwright-core",
+      "version": "1.63.0",
+      "scope": "bundled-runtime",
+      "optional": false,
+      "os": [],
+      "cpu": [],
+      "resolved": "https://registry.npmjs.org/playwright-core/-/playwright-core-1.63.0.tgz",
+      "integrity": "sha512-rYCsBF/M5HjUch52bbtVONEFjv6Xu8sm8h72dNlR5bzIE1fvC/bxgspzkjSfU+MweEMmPM8KJebG6nnyxo5mCg==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/require-from-string",
+      "name": "require-from-string",
+      "version": "2.0.2",
+      "scope": "bundled-runtime",
+      "optional": false,
+      "os": [],
+      "cpu": [],
+      "resolved": "https://registry.npmjs.org/require-from-string/-/require-from-string-2.0.2.tgz",
+      "integrity": "sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==",
+      "declaredLicense": "MIT",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/typescript",
+      "name": "typescript",
+      "version": "7.0.2",
+      "scope": "development",
+      "optional": false,
+      "os": [],
+      "cpu": [],
+      "resolved": "https://registry.npmjs.org/typescript/-/typescript-7.0.2.tgz",
+      "integrity": "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA==",
+      "declaredLicense": "Apache-2.0",
+      "dependencies": {},
+      "optionalDependencies": {
+        "@typescript/typescript-aix-ppc64": "7.0.2",
+        "@typescript/typescript-darwin-arm64": "7.0.2",
+        "@typescript/typescript-darwin-x64": "7.0.2",
+        "@typescript/typescript-freebsd-arm64": "7.0.2",
+        "@typescript/typescript-freebsd-x64": "7.0.2",
+        "@typescript/typescript-linux-arm": "7.0.2",
+        "@typescript/typescript-linux-arm64": "7.0.2",
+        "@typescript/typescript-linux-loong64": "7.0.2",
+        "@typescript/typescript-linux-mips64el": "7.0.2",
+        "@typescript/typescript-linux-ppc64": "7.0.2",
+        "@typescript/typescript-linux-riscv64": "7.0.2",
+        "@typescript/typescript-linux-s390x": "7.0.2",
+        "@typescript/typescript-linux-x64": "7.0.2",
+        "@typescript/typescript-netbsd-arm64": "7.0.2",
+        "@typescript/typescript-netbsd-x64": "7.0.2",
+        "@typescript/typescript-openbsd-arm64": "7.0.2",
+        "@typescript/typescript-openbsd-x64": "7.0.2",
+        "@typescript/typescript-sunos-x64": "7.0.2",
+        "@typescript/typescript-win32-arm64": "7.0.2",
+        "@typescript/typescript-win32-x64": "7.0.2"
+      },
+      "noticeStatus": "pending-full-distribution-notices"
+    },
+    {
+      "path": "node_modules/undici-types",
+      "name": "undici-types",
+      "version": "8.9.0",
+      "scope": "development",
+      "optional": false,
+      "os": [],
+      "cpu": [],
+      "resolved": "https://registry.npmjs.org/undici-types/-/undici-types-8.9.0.tgz",
+      "integrity": "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==",
+      "declaredLicense": "MIT",
+      "dependencies": {},
+      "optionalDependencies": {},
+      "noticeStatus": "pending-full-distribution-notices"
+    }
+  ],
+  "pythonTests": [
+    {
+      "name": "arrow",
+      "extras": [],
+      "version": "1.4.0",
+      "scope": "test-only-not-shipped",
+      "artifactHashes": null,
+      "declaredLicense": null,
+      "reviewStatus": "pending-artifact-hashes-and-per-package-license-review"
+    },
+    {
+      "name": "attrs",
+      "extras": [],
+      "version": "26.1.0",
+      "scope": "test-only-not-shipped",
+      "artifactHashes": null,
+      "declaredLicense": null,
+      "reviewStatus": "pending-artifact-hashes-and-per-package-license-review"
+    },
+    {
+      "name": "fqdn",
+      "extras": [],
+      "version": "1.5.1",
+      "scope": "test-only-not-shipped",
+      "artifactHashes": null,
+      "declaredLicense": null,
+      "reviewStatus": "pending-artifact-hashes-and-per-package-license-review"
+    },
+    {
+      "name": "idna",
+      "extras": [],
+      "version": "3.20",
+      "scope": "test-only-not-shipped",
+      "artifactHashes": null,
+      "declaredLicense": null,
+      "reviewStatus": "pending-artifact-hashes-and-per-package-license-review"
+    },
+    {
+      "name": "isoduration",
+      "extras": [],
+      "version": "20.11.0",
+      "scope": "test-only-not-shipped",
+      "artifactHashes": null,
+      "declaredLicense": null,
+      "reviewStatus": "pending-artifact-hashes-and-per-package-license-review"
+    },
+    {
+      "name": "jsonpointer",
+      "extras": [],
+      "version": "3.1.1",
+      "scope": "test-only-not-shipped",
+      "artifactHashes": null,
+      "declaredLicense": null,
+      "reviewStatus": "pending-artifact-hashes-and-per-package-license-review"
+    },
+    {
+      "name": "jsonschema",
+      "extras": [
+        "format-nongpl"
+      ],
+      "version": "4.26.0",
+      "scope": "test-only-not-shipped",
+      "artifactHashes": null,
+      "declaredLicense": null,
+      "reviewStatus": "pending-artifact-hashes-and-per-package-license-review"
+    },
+    {
+      "name": "jsonschema-specifications",
+      "extras": [],
+      "version": "2025.9.1",
+      "scope": "test-only-not-shipped",
+      "artifactHashes": null,
+      "declaredLicense": null,
+      "reviewStatus": "pending-artifact-hashes-and-per-package-license-review"
+    },
+    {
+      "name": "lark",
+      "extras": [],
+      "version": "1.3.1",
+      "scope": "test-only-not-shipped",
+      "artifactHashes": null,
+      "declaredLicense": null,
+      "reviewStatus": "pending-artifact-hashes-and-per-package-license-review"
+    },
+    {
+      "name": "python-dateutil",
+      "extras": [],
+      "version": "2.9.0.post0",
+      "scope": "test-only-not-shipped",
+      "artifactHashes": null,
+      "declaredLicense": null,
+      "reviewStatus": "pending-artifact-hashes-and-per-package-license-review"
+    },
+    {
+      "name": "referencing",
+      "extras": [],
+      "version": "0.37.0",
+      "scope": "test-only-not-shipped",
+      "artifactHashes": null,
+      "declaredLicense": null,
+      "reviewStatus": "pending-artifact-hashes-and-per-package-license-review"
+    },
+    {
+      "name": "rfc3339-validator",
+      "extras": [],
+      "version": "0.1.4",
+      "scope": "test-only-not-shipped",
+      "artifactHashes": null,
+      "declaredLicense": null,
+      "reviewStatus": "pending-artifact-hashes-and-per-package-license-review"
+    },
+    {
+      "name": "rfc3986-validator",
+      "extras": [],
+      "version": "0.1.1",
+      "scope": "test-only-not-shipped",
+      "artifactHashes": null,
+      "declaredLicense": null,
+      "reviewStatus": "pending-artifact-hashes-and-per-package-license-review"
+    },
+    {
+      "name": "rfc3987-syntax",
+      "extras": [],
+      "version": "1.1.0",
+      "scope": "test-only-not-shipped",
+      "artifactHashes": null,
+      "declaredLicense": null,
+      "reviewStatus": "pending-artifact-hashes-and-per-package-license-review"
+    },
+    {
+      "name": "rpds-py",
+      "extras": [],
+      "version": "2026.6.3",
+      "scope": "test-only-not-shipped",
+      "artifactHashes": null,
+      "declaredLicense": null,
+      "reviewStatus": "pending-artifact-hashes-and-per-package-license-review"
+    },
+    {
+      "name": "six",
+      "extras": [],
+      "version": "1.17.0",
+      "scope": "test-only-not-shipped",
+      "artifactHashes": null,
+      "declaredLicense": null,
+      "reviewStatus": "pending-artifact-hashes-and-per-package-license-review"
+    },
+    {
+      "name": "tzdata",
+      "extras": [],
+      "version": "2026.4",
+      "scope": "test-only-not-shipped",
+      "artifactHashes": null,
+      "declaredLicense": null,
+      "reviewStatus": "pending-artifact-hashes-and-per-package-license-review"
+    },
+    {
+      "name": "uri-template",
+      "extras": [],
+      "version": "1.3.0",
+      "scope": "test-only-not-shipped",
+      "artifactHashes": null,
+      "declaredLicense": null,
+      "reviewStatus": "pending-artifact-hashes-and-per-package-license-review"
+    },
+    {
+      "name": "webcolors",
+      "extras": [],
+      "version": "25.10.0",
+      "scope": "test-only-not-shipped",
+      "artifactHashes": null,
+      "declaredLicense": null,
+      "reviewStatus": "pending-artifact-hashes-and-per-package-license-review"
+    }
+  ],
+  "nonNpm": {
+    "node": {
+      "version": "26.5.0",
+      "platform": "darwin-arm64",
+      "source": "https://nodejs.org/dist/v26.5.0/node-v26.5.0-darwin-arm64.tar.xz",
+      "sha256": "48231d6204eca6be13e6c5184dfdffa1d64ad88880364cc2cfb198f872cb2b13",
+      "evidence": "docs/BUNDLED_DEV_RUNTIME.md",
+      "license": "Node LICENSE includes bundled third-party notices; inventory not yet expanded to those components",
+      "scope": "bundled-runtime",
+      "reviewStatus": "pending-authenticated-checksum-provenance-native-component-sbom-and-release-signing",
+      "sqlite": "node:sqlite bundled with Node; native worker also uses macOS SQLite3"
+    },
+    "browsers": {
+      "playwrightVersion": "1.63.0",
+      "names": [
+        "chromium",
+        "chromium-headless-shell"
+      ],
+      "revision": "1243",
+      "browserVersion": "153.0.8010.12",
+      "platform": "darwin-arm64",
+      "source": "node_modules/playwright-core/browsers.json from locked npm package",
+      "artifactSha256": null,
+      "scope": "bundled-runtime",
+      "reviewStatus": "pending-browser-byte-hashes-redistribution-notices-and-security-update-policy",
+      "exclusions": "Firefox, WebKit, ffmpeg, winldd and Android are not copied by the current bundle script"
+    },
+    "macos": {
+      "toolchainEvidence": "Swift 6.4 reported in docs/DEPENDENCIES.md; exact release Xcode/SDK and OS matrix pending",
+      "components": [
+        "AppKit",
+        "ApplicationServices",
+        "AVFoundation",
+        "Carbon",
+        "CoreFoundation",
+        "CryptoKit",
+        "Darwin",
+        "Foundation",
+        "Security",
+        "Speech",
+        "SQLite3",
+        "libbsm"
+      ],
+      "scope": "system-platform-not-redistributed",
+      "speechAssets": "OS-managed on-device Speech assets; offline availability and hardware/language coverage unqualified",
+      "reviewStatus": "pending-sdk-build-pins-minimum-os-and-clean-mac-qualification"
+    },
+    "chromeBridge": {
+      "source": "extensions/chrome and packages/chrome-native-host plus AppKit listener",
+      "license": "repository MIT source",
+      "scope": "mandatory-release-component-not-yet-bundled",
+      "browser": "User-installed Google Chrome, existing current profile; not redistributed by this project",
+      "reviewStatus": "pending-host-bundling-authenticated-peer-policy-extension-delivery-and-owner-profile-qualification"
+    },
+    "optionalModes": {
+      "status": "not-enabled-or-shipped",
+      "components": [
+        "local CLM",
+        "Laya",
+        "Jev",
+        "OCR/VLM",
+        "training datasets and projection-head training"
+      ],
+      "reviewStatus": "separate-pins-licenses-privacy-and-qualification-required-if-enabled"
+    }
+  },
+  "clm": {
+    "location": "owned-private-server-planned",
+    "declarations": {
+      "schemaVersion": "systemone-clm-artifacts-v1",
+      "referenceRevision": "bb42c6c5bf914fd449bed2f6ca65be80602cb1f7",
+      "encoder": {
+        "repository": "Qwen/Qwen3-8B",
+        "revision": null,
+        "files": []
+      },
+      "heads": {
+        "repository": "Contrastive-LM/CLM-v0.1-8B",
+        "revision": "e939398d4556fcd9400c76fa8c5a513202f42b0a",
+        "files": []
+      },
+      "runtime": {
+        "image": null,
+        "serverRevision": null
+      },
+      "recipe": {
+        "pooling": "last_token",
+        "inputDimension": 4096,
+        "normalizeEncoder": true,
+        "normalizeHeads": true,
+        "maxLogitScale": 100,
+        "maxTokensPerText": 2048,
+        "overflow": "reject",
+        "precision": "bfloat16"
+      },
+      "security": {
+        "transport": "tls",
+        "authentication": "bearer",
+        "encoderAccess": "private",
+        "requestLogging": "disabled",
+        "downloads": "disabled",
+        "hotReload": "disabled",
+        "checkpointLoading": "weights_only",
+        "trustRemoteCode": false
+      },
+      "licenseReviewRef": null
+    },
+    "artifactBytesVerified": false,
+    "inferenceQualified": false,
+    "publishedHeadSha256": "b2b4a8c9c2d39263eff78a351eb909a342ce9b3bf21a3f07c1d1bf15f1c4eda5",
+    "publishedHeadHashStatus": "upstream-reported-not-local-byte-verification",
+    "openGates": [
+      "encoder-tokenizer-revisions",
+      "artifact-file-hashes",
+      "container-digest",
+      "owned-server-revision",
+      "exact-artifact-license-review",
+      "runtime-attestation-and-calibration"
+    ]
+  },
+  "releaseGates": [
+    "full-license-and-notice-collection",
+    "artifact-sbom-and-transitive-native-components",
+    "authenticated-download-provenance",
+    "security-update-and-advisory-review",
+    "release-signing-notarization",
+    "clean-mac-install-update-rollback",
+    "existing-profile-chrome-qualification",
+    "enabled-mode-privacy-review"
+  ]
+}

@@ -1,5 +1,54 @@
 # Initial foundation validation
 
+## Pending release dependency inventory, 1 October 2026
+
+`codex/release-dependency-inventory`, based on #66 at `3b6c6a8`.
+Implementation `1673db7` is pushed and its remote hash verified.
+[Draft PR #67](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/67) targets #66.
+The initial draft attempt returned GitHub API 403; publication succeeded after
+the owner applied the saved network settings.
+Reconstructed from committed manifests, lockfiles and bundle declarations;
+no pending worktree/stash/unreachable implementation or remote branch was found.
+
+- Official Linux Node 26.5.0 was downloaded and checked against its official
+  SHA-256 list. Frozen `npm ci --ignore-scripts --cache
+  /tmp/systemone-npm-cache --no-audit --no-fund` installed 13 packages without
+  changing dependency pins or the lockfile. The initial installation failed
+  because the default cache path was unavailable; using `/tmp` fixed it with
+  integrity and TLS verification preserved.
+- `npm run inventory:write` and `npm run test:release-inventory`: inventory
+  consistency passed; **6/6 focused tests passed**. Repeat generation is byte
+  stable. Changed output, manifest/lock disagreement, missing integrity/license,
+  unpinned Python, changed Node checksum and changed browser revision fail.
+- `npm run typecheck` and `git diff --check`: passed.
+- Initial broader `npm run check`: typecheck passed; **338 passed, 25 failed, two
+  Mac-only skips (365 total)**. Browser cases lacked pinned Chromium/headless
+  executables; dependent controller cases then timed out waiting for browser
+  status. That failed attempt is retained as historical environment evidence.
+- Initially, installing official Playwright revision 1243 was blocked by HTTP 403
+  `Domain forbidden` at `cdn.playwright.dev`. GitHub API reads also returned 403,
+  blocking draft PR creation. A saved environment network draft adds
+  `api.github.com`, `cdn.playwright.dev`, `storage.googleapis.com` and
+  `playwright.download.prss.microsoft.com`, preserving the package-manager
+  preset. The owner applied these settings; the restarted environment reports
+  them and actual GitHub API reads and official browser downloads succeed.
+- With official Chromium/headless-shell revision 1243 (153.0.8010.12) installed
+  under ignored `.build/playwright`, `npm run check` passed: typecheck and
+  **363 passed, zero failed, two Mac-only skips (365 total)**. Run with pinned
+  Node 26.5.0 and `PLAYWRIGHT_BROWSERS_PATH` pointing to that cache. Playwright
+  also downloaded its ffmpeg helper; this is test setup, not a change to what
+  the Mac bundle script copies. TLS verification stayed enabled.
+- `npm run test:release-inventory` again passed inventory consistency and all
+  **six focused tests** after the environment restart. No dependency pins,
+  source inventory or lockfiles changed.
+
+The [source inventory](RELEASE_DEPENDENCY_INVENTORY.md) is pending release review,
+not a distributable SBOM or new artifact/license clearance. No Mac app, model,
+GPU, microphone, TCC/Keychain, owner Chrome profile or owner-goal resume ran.
+The publication body and exact draft command are retained in
+[draft PR material](release/DRAFT_PR.md); publication is complete as a stacked
+draft, with release review and Mac qualification still pending.
+
 ## Offline CLM artifact preflight, 1 October 2026
 
 `codex/clm-artifact-preflight`, based on #65 at `3da29cb`, implementation

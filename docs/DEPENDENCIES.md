@@ -24,6 +24,10 @@ used for tests, so this slice did not download a browser. A lockfile records reg
 postinstall scripts are required. The initial npm audit reported zero advisories;
 this is time-specific dependency evidence, not an application-security certificate.
 Python dependency hashes and a complete distributable SBOM remain release work.
+The [pending release inventory](RELEASE_DEPENDENCY_INVENTORY.md) now enumerates
+all locked npm transitives/platform tools and Python test pins, plus non-npm
+declarations. Its source fingerprints and drift checks do not establish release
+artifact identity or legal clearance.
 
 ## CLM is still the primary model
 

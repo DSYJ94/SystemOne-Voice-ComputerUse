@@ -9,6 +9,23 @@ each implementation slice lands.
 
 ## New-chat resume checkpoint — 1 October 2026
 
+**Release inventory continuation:** branch `codex/release-dependency-inventory`,
+stacked on `codex/clm-artifact-preflight` (#66) at `3b6c6a8`.
+Implementation commit `1673db7` is pushed and verified on the remote.
+[Draft PR #67](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/67) targets
+`codex/clm-artifact-preflight` (#66). The pending
+[release dependency inventory](RELEASE_DEPENDENCY_INVENTORY.md) was reconstructed
+from committed source; no recoverable pending files or inventory branch existed
+in this cloud snapshot. It contains 32 locked npm records (nine runtime), 19
+Python test pins and explicit Node/browser/platform/Chrome/model review gaps.
+Inventory consistency, six focused checks, typecheck and diff checks pass.
+After the owner applied the saved network settings, GitHub API access and
+pinned Playwright Chromium/headless-shell revision 1243 downloads succeeded.
+The full suite now has **363 passed, zero failed, two Mac-only skips (365 total)**.
+The earlier 403 and missing-browser failures are resolved. See
+[draft PR material](release/DRAFT_PR.md) and [validation](VALIDATION.md).
+Keep the owner goal stopped. B01/B27 and G1–G6 remain open.
+
 **Cloud source continuation:** use `/workspace/SystemOne-Voice-ComputerUse`,
 branch `codex/clm-artifact-preflight`, based on #65 at `3da29cb`.
 Implementation commit: `c984914`.
