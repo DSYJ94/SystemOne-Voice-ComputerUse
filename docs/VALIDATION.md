@@ -1,5 +1,33 @@
 # Initial foundation validation
 
+## Persistent actors and scripted continuation, 1 October 2026
+
+`codex/persistent-scripted-actor`, based on #63 at `d18e6b3`, implementation
+`cdc641c`, [draft #64](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/64).
+Same Linux/pinned Node/Playwright toolchain as preceding cloud records.
+
+- `npm run check`: typecheck passed; **341 passed, zero failed, two Mac-only
+  skips, 343 total**. Existing headless/controller-child and Chrome regressions ran.
+- **16 new tests** cover native NAVIGATE/LOCATE/OPEN and checkpoint continuation,
+  changed scopes/account/predicates, duplicate controls, Stop before/after dispatch,
+  correction, exact portal attachment, projection activation failure, timed-out
+  read ownership, no-decision progress and an unconfirmed idle fence.
+- A real isolated headless browser pauses after OPEN, rechecks detail and resumes
+  DOWNLOAD, preserving exactly four attempts and verified scoped output bytes.
+  It retains the live page/session; it does not reconstruct a browser after restart.
+- Focused native/portal/controller checks passed **50/50** before the final idle
+  fence test, which passes in the final full suite. `git diff --check` passed.
+- Initial typechecks caught tuple narrowing and a wrong fixture URL property.
+  A changed-account negative test exposed that a permissive verifier stub could
+  bypass host semantic contract checks; recovery now checks query/invoice/account
+  and unchanged observations itself. Final checks passed after correction.
+
+New native actor tests use a synthetic worker; physical AX and its controller/UI
+integration remain unqualified. No normal AppKit launch, TCC/Keychain change,
+audio, owner-profile action, live model, paid resource or owner-goal resume ran.
+Python/native suites were not rerun for this TypeScript/documentation slice.
+See [actor scope](PERSISTENT_TASK_ACTOR.md) and [v1 gates](V1_READINESS.md).
+
 ## Explicit recovery intent and correction fences, 1 October 2026
 
 Branch `codex/explicit-task-recovery`, based on #62 at `76e28dc`, implementation

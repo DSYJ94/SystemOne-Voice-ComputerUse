@@ -29,10 +29,15 @@ setup, live permission recovery and physical multi-monitor use remain pending.
 
 ## Current implementation
 
+- A [persistent scripted actor](docs/PERSISTENT_TASK_ACTOR.md) now coordinates
+  repeated steps, pause/recovery, correction and Stop. Synthetic native tasks
+  and a real headless portal resume from verified progress without repeating
+  earlier effects. [V1 readiness](docs/V1_READINESS.md) tracks the remaining
+  general execution, model, Mac and release gates.
 - [Explicit host recovery](docs/TASK_RECOVERY.md) now consumes a one-use Resume
   intent against a fresh, scope-matched checkpoint recheck, preserving deadlines
   and quotas. Committed corrections cancel old execution authority and retain
-  uncertain effects. Native/browser actor and panel integration remain next;
+  uncertain effects. General/native-controller and panel integration remain next;
   the user's goal remains stopped.
 - [Durable progress](docs/TASK_PROGRESS.md) now expires action facts on fresh
   reads, dispatch, Stop and restart in synthetic native navigation/LOCATE/OPEN

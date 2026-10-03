@@ -11,6 +11,8 @@ import { PortalActionAuthority } from './portal-action-authority.ts';
 import { portalPredicate, reconcilePortalHistory } from './portal-recovery.ts';
 import { DEFAULT_PROGRESS_LIMITS, TaskProgressExceeded } from '../../runtime/src/task-progress.ts';
 import type { TaskProgressLimits } from '../../runtime/src/task-progress.ts';
+import type { ResumeRequest, UserPromptLedger } from '../../runtime/src/user-prompts.ts';
+import type { TaskRecoveryBinding } from '../../runtime/src/task-recovery.ts';
 import type { JSONValue } from '../../protocol/src/json.ts';
 import type { PortalDownload, PortalGoal, PortalGoalResult, PortalObservation } from './managed-portal.ts';
 
@@ -45,7 +47,7 @@ export interface ScriptedPortalRecord extends ScriptedPortalContract {
   readonly reason: string | null;
 }
 
-interface PortalSession {
+export interface PortalSession {
   readonly origin: string;
   stop(): Promise<{ workerFenced: boolean }>;
   observe(): Promise<PortalObservation>;
@@ -146,6 +148,42 @@ export class ScriptedPortalStore {
       throw new Error('scripted task start was not issued here or was claimed');
     }
     this.#claimed.add(record);
+  }
+
+  /** Issue execution ownership only after the journal consumes exact recovery
+   * intent. A persisted admission alone can never attach a new task object. */
+  resume(ledger: UserPromptLedger, intent: ResumeRequest): {
+    readonly record: ScriptedPortalRecord; readonly admission: TaskAdmission;
+  } {
+    const task = this.get(intent.taskId);
+    const journal = this.#journal.getTaskRecord(intent.taskId);
+    if (!task || task.state !== 'paused' || task.inFlight !== null
+      || !['located', 'opened'].includes(task.stage) || !journal?.admission) {
+      throw new Error('portal recovery requires a settled results/detail checkpoint');
+    }
+    assertAdmission(journal.admission, task);
+    const history = reconcilePortalHistory(task, journal);
+    if (history.state !== 'paused' || history.stage !== task.stage || history.inFlight !== null) {
+      throw new Error('portal projection requires reconciliation before resume');
+    }
+    if (this.#db.prepare(`SELECT 1 FROM scripted_portal_tasks WHERE task_id != ?
+      AND (state IN ('active', 'paused') OR in_flight IS NOT NULL)`).get(task.taskId)) {
+      throw new Error('another portal task requires recovery');
+    }
+    this.#journal.resumeTask(ledger, intent);
+    try {
+      const update = this.#db.prepare(`UPDATE scripted_portal_tasks SET state = 'active', reason = NULL
+        WHERE task_id = ? AND state = 'paused' AND in_flight IS NULL AND stage = ?`)
+        .run(task.taskId, task.stage);
+      if (update.changes !== 1) throw new Error('portal resume projection changed');
+      const record = this.get(task.taskId)!;
+      this.#issued.add(record);
+      this.#admissions.set(record, journal.admission);
+      return Object.freeze({ record, admission: journal.admission });
+    } catch (error) {
+      this.#journal.pauseTask(task.taskId, 'portal_resume_projection_failed');
+      throw error;
+    }
   }
 
   get(taskId: string): ScriptedPortalRecord | undefined {
@@ -275,10 +313,13 @@ export class ScriptedPortalTask {
   readonly #journal: AttemptJournal;
   readonly #session: PortalSession;
   readonly #taskId: string;
-  readonly #authority: PortalActionAuthority;
+  #authority: PortalActionAuthority;
   #receipt: PortalDownload | undefined;
   #localSaveActive = false;
   #advancing = false;
+  #recovering = false;
+
+  get taskId(): string { return this.#taskId; }
 
   constructor(store: ScriptedPortalStore, journal: AttemptJournal,
     session: PortalSession, admission: TaskAdmission, started: ScriptedPortalRecord,
@@ -301,13 +342,80 @@ export class ScriptedPortalTask {
           !== digest(admission as unknown as JSONValue)) {
         throw new Error('portal journal admission mismatch');
       }
-      journal.enableTaskProgress(admission.taskId, admission.scopeRef,
+      if (!persisted.progress) journal.enableTaskProgress(admission.taskId, admission.scopeRef,
         admission.completionVerifierRef, progressLimits);
+      else if (persisted.progress.scopeRef !== admission.scopeRef
+        || persisted.progress.completionVerifierRef !== admission.completionVerifierRef) {
+        throw new Error('portal progress policy mismatch');
+      }
     }
     catch (error) {
       store.pause(admission.taskId, 'journal admission failed');
       throw error;
     }
+  }
+
+  /** Revoke all old permits before recovery. Existing calls still need to
+   * settle; a pause cannot undo an action already dispatched. */
+  pause(reasonRef = 'manual_interruption'): { readonly workerFenced: boolean } {
+    this.#authority.stop();
+    this.#store.pause(this.#taskId, reasonRef);
+    return Object.freeze({ workerFenced: !this.#advancing && !this.#localSaveActive });
+  }
+
+  async prepareRecovery(): Promise<TaskRecoveryBinding> {
+    if (this.#advancing || this.#recovering || this.#localSaveActive) {
+      throw new Error('portal operation has not settled');
+    }
+    const task = this.#store.get(this.#taskId)!;
+    if (task.state !== 'paused' || task.inFlight !== null
+      || !['located', 'opened'].includes(task.stage)) {
+      throw new Error('portal recovery requires current results/detail evidence');
+    }
+    const before = this.#journal.getTaskRecord(this.#taskId)!;
+    if (!before.admission || before.state !== 'paused') throw new Error('portal journal is not paused');
+    assertAdmission(before.admission, task);
+    const history = reconcilePortalHistory(task, before);
+    if (history.stage !== task.stage || history.inFlight !== null) {
+      throw new Error('portal recovery projection is not reconciled');
+    }
+    this.#authority.stop();
+    this.#recovering = true;
+    try {
+      const ticket = this.#journal.reserveTaskRecoveryObservation(this.#taskId);
+      const observed = await this.#session.observe();
+      const semantic = portalSemanticState(observed, task.origin);
+      const exact = task.stage === 'located'
+        ? observed.kind === 'results' && new URL(observed.url).searchParams.get('q') === task.query
+          && observed.rows.filter(row => row.id === task.invoiceId
+            && row.title === task.title && row.account === task.account).length === 1
+        : observed.kind === 'detail' && observed.invoiceId === task.invoiceId
+          && observed.title === task.title && observed.account === task.account;
+      if (!exact) throw new Error('portal checkpoint is not currently verified');
+      const kind = task.stage === 'located' ? 'LOCATE' : 'OPEN';
+      const result = await this.#session.verifyGoal(goalFor(task, kind), observed.revision);
+      const after = await this.#session.observe();
+      const current = this.#store.get(this.#taskId)!;
+      if (current.state !== 'paused' || current.stage !== task.stage || current.inFlight !== null
+        || result.status !== 'matched' || result.revision !== observed.revision
+        || !PortalActionAuthority.sameObservation(observed, after)) {
+        throw new Error('portal checkpoint is not currently verified');
+      }
+      const checkpoint = before.progress!.checkpoints.at(-1)!;
+      return this.#journal.recordTaskRecoveryObservation(this.#taskId, ticket, {
+        observationId: randomUUID(), scopeRef: before.admission.scopeRef, stateDigest: digest(semantic),
+      }, { checkpointRef: checkpoint.checkpointId, predicateRef: portalPredicate(task.stage),
+        evidenceRef: randomUUID() });
+    } finally { this.#recovering = false; }
+  }
+
+  resume(ledger: UserPromptLedger, intent: ResumeRequest): void {
+    if (intent.taskId !== this.#taskId || this.#advancing || this.#recovering || this.#localSaveActive) {
+      throw new Error('portal resume is stale or an operation has not settled');
+    }
+    const activated = this.#store.resume(ledger, intent);
+    this.#store.claimStarted(activated.record, activated.admission);
+    this.#authority = new PortalActionAuthority(activated.admission);
   }
 
   async stop(): Promise<{ record: ScriptedPortalRecord; journalFenced: boolean;

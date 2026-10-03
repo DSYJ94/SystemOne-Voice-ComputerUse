@@ -1,5 +1,28 @@
 # Implementation status
 
+## Persistent scripted actors and continuation, 1 October 2026
+
+`codex/persistent-scripted-actor`, based on #63 at `d18e6b3`, implementation
+`cdc641c`, [draft #64](https://github.com/DSYJ94/SystemOne-Voice-ComputerUse/pull/64)
+stacked on `codex/explicit-task-recovery`. The actor derives status from durable
+history, bounds operations and decisions, preserves pending ownership after
+timeout and coordinates pause/recovery, correction and Stop. Unconfirmed idle
+fences block recovery. The controller's fixed portal workflow now uses the actor.
+
+The synthetic native workflow rechecks scope/title/control state and resumes
+LOCATE/OPEN from Documents without repeating navigation. A real headless portal
+DOWNLOAD resumes from verified detail and records exactly search/open/download/save.
+Portal activation issues one-use attachment authority only after journal Resume
+and projection activation; a projection failure pauses again. Temporary receipts
+remain session-owned. These are scripted fixtures, not general computer use.
+
+Linux typecheck and **341 passed, zero failed, two Mac-only skips (343 total)**;
+16 added tests cover continuation, replay/fencing, changed state, timeouts,
+projection failure and correction. No owner goal resumed, model/GPU ran or Mac
+checkout changed. [Actor scope](PERSISTENT_TASK_ACTOR.md) and [v1 readiness](V1_READINESS.md)
+track controller/UI recovery, replacement admission, general actions, live CLM,
+Mac/existing-profile Chrome qualification and packaging. B15–B17 remain open.
+
 ## Explicit host recovery and correction fences, 1 October 2026
 
 Cloud continuation: `codex/explicit-task-recovery`, based on #62 at `76e28dc`,

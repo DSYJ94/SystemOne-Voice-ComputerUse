@@ -20,6 +20,7 @@ import { NativeFieldPipeWorker } from './native-field-pipe-worker.ts';
 import { ChromeReadSession } from './chrome-read-session.ts';
 import { ChromeFillAuthority } from './chrome-fill-authority.ts';
 import { ExclusiveTaskSlot } from './exclusive-task-slot.ts';
+import { PersistentTaskActor } from './persistent-task-actor.ts';
 import { buildActionCandidates, fromManagedObservation,
   selectBoundCandidate } from './action-candidates.ts';
 import type { JSONValue } from '../../protocol/src/json.ts';
@@ -283,6 +284,7 @@ interface ActiveTask {
   launchFenceUnconfirmed: boolean;
   session?: ManagedObservationSession | ManagedPortalSession;
   task?: ManagedFillTask | ManagedNavigateTask | ScriptedPortalTask;
+  actor?: PersistentTaskActor;
   browserFenced: boolean;
   done: Promise<void>;
 }
@@ -830,20 +832,16 @@ export class NativeManagedController {
       const task = new ScriptedPortalTask(store, this.#journal, session,
         admission, started);
       active.task = task;
-      while (!active.cancelled) {
-        const record = await task.advance();
-        if (active.cancelled) return;
-        if (record.state === 'completed') {
-          this.#send(request.requestId, 'verified_portal_download');
-          return;
-        }
-        if (record.state !== 'active') {
-          this.#send(request.requestId, 'portal_paused');
-          return;
-        }
-        this.#send(request.requestId, record.stage === 'located' ? 'portal_located'
-          : record.stage === 'opened' ? 'portal_opened' : 'portal_downloaded');
-      }
+      const actor = new PersistentTaskActor(this.#journal, task);
+      active.actor = actor;
+      const result = await actor.run(record => {
+        if (active.cancelled || record.state !== 'active') return;
+        const stage = store.get(request.requestId)!.stage;
+        this.#send(request.requestId, stage === 'located' ? 'portal_located'
+          : stage === 'opened' ? 'portal_opened' : 'portal_downloaded');
+      });
+      if (!active.cancelled) this.#send(request.requestId,
+        result.state === 'completed' ? 'verified_portal_download' : 'portal_paused');
     } catch (error) {
       if (error instanceof ManagedPortalLaunchFailure && !error.workerFenced) {
         active.launchFenceUnconfirmed = true;
@@ -860,6 +858,7 @@ export class NativeManagedController {
         await active.session?.close();
         active.browserFenced = !active.launchFenceUnconfirmed;
       } catch { this.#workerFenceFailed = true; }
+      if (active.actor?.busy) this.#workerFenceFailed = true;
     }
   }
 
@@ -912,7 +911,8 @@ export class NativeManagedController {
     this.#send(request.requestId, 'stopping');
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const fence = active.task
+      const fence = active.actor ? active.actor.stop().then(result => result.workerFenced, () => false)
+        : active.task
         ? active.task.stop().then(result => active.task instanceof ScriptedPortalTask
           ? ('workerFenced' in result && result.workerFenced)
           : result.browserFenced, () => false)
