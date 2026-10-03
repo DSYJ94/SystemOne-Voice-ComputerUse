@@ -25,9 +25,21 @@ const KEYS: readonly [string, string][] = [
   ['return', 'Press Return (confirms or opens the focused item)'],
   ['escape', 'Press Escape (closes a menu, dialog or full screen)'],
   ['tab', 'Press Tab (moves focus to the next control)'],
-  ['back', 'Go back (Command-[)'],
-  ['find', 'Open Find on this page (Command-F)'],
+  ['find', 'Open Find (Command-F)'],
 ];
+const BROWSER_KEYS: readonly [string, string][] = [
+  ['closetab', 'Close the current tab (Command-W)'],
+  ['newtab', 'Open a new tab (Command-T)'],
+  ['nexttab', 'Switch to the next tab (Control-Tab)'],
+  ['prevtab', 'Switch to the previous tab (Control-Shift-Tab)'],
+  ['back', 'Go back to the previous page (Command-[)'],
+  ['forward', 'Go forward (Command-])'],
+  ['reload', 'Reload the page (Command-R)'],
+];
+const BROWSERS = new Set(['com.google.Chrome', 'com.apple.Safari', 'company.thebrowser.Browser', 'com.microsoft.edgemac',
+  'com.brave.Browser', 'org.mozilla.firefox', 'com.google.Chrome.canary', 'com.operasoftware.Opera']);
+/** Agent tasks are longer and more exploratory than scripted fixtures. */
+const AGENT_LIMITS = Object.freeze({ maxObservations: 200, maxDecisions: 60, maxStateVisits: 8 });
 
 /** One step proposal, shown to the user with exact observed labels only. */
 export interface AgentProposal {
@@ -84,6 +96,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
   #openedApp = false;
   #typedAt = new Set<string>();
   #waits = 0;
+  /** Steps that changed nothing on a given screen are not offered there again. */
+  readonly #noEffect = new Set<string>();
 
   static start(journal: AttemptJournal, registry: TaskAdmissionRegistry, admission: TaskAdmission,
     ax: AgentAXClient, options: { readonly goal: AgentGoal; readonly decision: AgentDecision;
@@ -96,7 +110,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       throw new ContractError('agent admission differs from the request');
     }
     journal.startAdmittedTask(registry, admission);
-    try { journal.enableTaskProgress(admission.taskId, admission.scopeRef, admission.completionVerifierRef); }
+    try { journal.enableTaskProgress(admission.taskId, admission.scopeRef, admission.completionVerifierRef, AGENT_LIMITS); }
     catch (error) { journal.pauseTask(admission.taskId, 'agent_progress_failed'); throw error; }
     return new UniversalAgentTask(journal, admission, ax, options);
   }
@@ -183,6 +197,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         : { deliveryStatus: 'dispatched', effectStatus: 'not_applied', verification: 'not_matched' });
       executionId = undefined;
       if (chosen.kind === 'type' && changed) this.#typedAt.add(`${view.signature}|${chosen.ref}`);
+      if (!changed) this.#noEffect.add(`${view.signature}|${chosen.kind}:${chosen.ref}`);
       if (chosen.kind === 'open_url') this.#openedUrl = true;
       if (chosen.kind === 'open_app') this.#openedApp = true;
       const relabelled = chosen.element && after?.elements.find(item => item.id === chosen.element!.id
@@ -253,11 +268,16 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         description: `Open the app ${this.#goal.app}.`, score: 10 });
     }
     if (view.pid) {
-      for (const [name, text] of KEYS) options.push({ kind: 'key', ref: name, label: text, description: `In ${view.app}: ${text}.`, score: 0 });
+      const keys = BROWSERS.has(view.bundleId) ? [...BROWSER_KEYS, ...KEYS] : KEYS;
+      for (const [name, text] of keys) {
+        options.push({ kind: 'key', ref: name, label: text, description: `In ${view.app}: ${text}.`,
+          score: score(text) });
+      }
       options.push({ kind: 'scroll', ref: 'scroll-down', label: 'Scroll down', description: `In ${view.app}: scroll down to see more.`, score: 0 });
       options.push({ kind: 'scroll', ref: 'scroll-up', label: 'Scroll up', description: `In ${view.app}: scroll up.`, score: 0 });
     }
-    return options.map((option, index) => ({ option, index }))
+    return options.filter(option => !this.#noEffect.has(`${view.signature}|${option.kind}:${option.ref}`))
+      .map((option, index) => ({ option, index }))
       .sort((a, b) => b.option.score - a.option.score || a.index - b.index)
       .slice(0, MAX_OPTIONS).map(item => item.option);
   }

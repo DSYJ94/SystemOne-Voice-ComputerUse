@@ -225,7 +225,8 @@ final class UniversalAX {
         "down": (125, []), "up": (126, []), "left": (123, []), "right": (124, []),
         "pagedown": (121, []), "pageup": (116, []), "back": (33, .maskCommand),
         "forward": (30, .maskCommand), "find": (3, .maskCommand), "newtab": (17, .maskCommand),
-        "address": (37, .maskCommand), "reload": (15, .maskCommand)]
+        "address": (37, .maskCommand), "reload": (15, .maskCommand), "closetab": (13, .maskCommand),
+        "nexttab": (48, .maskControl), "prevtab": (48, [.maskControl, .maskShift])]
 
     func press(key name: String) throws {
         guard let (code, flags) = Self.keys[name] else { throw AXError.actionFailed }

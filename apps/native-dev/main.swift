@@ -1272,7 +1272,11 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "native_paused":
             statusField?.stringValue = "Native task paused. Check recovery or Stop before starting another task."
         case "paused_budget":
-            statusField?.stringValue = "Task paused at its action or time limit. An earlier action may have taken effect. Inspect the result before starting again."
+            pendingProposal = nil
+            approvalRow?.isHidden = true
+            statusField?.stringValue = activeSurface == .agent || activeSurface == .browse
+                ? "Paused: Jev was going in circles. Say it again, or break it into smaller steps."
+                : "Task paused at its action or time limit. An earlier action may have taken effect. Inspect the result before starting again."
         case "verified_native_fill":
             statusField?.stringValue = "Verified: the native field holds the supplied text."
         case "verified_native_navigation":
