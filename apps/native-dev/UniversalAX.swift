@@ -464,7 +464,7 @@ final class UniversalAX {
     func open(url: URL, newTab: Bool) async throws {
         if !newTab, let pid = targetPID, let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated,
            let bundle = app.bundleIdentifier, BrowserDOM.supports(bundle), (try? dom.navigate(bundle, url)) != nil {
-            app.activate()
+            Self.bringToFront(app)
             try await Task.sleep(for: .milliseconds(1_200))
             return
         }
@@ -474,6 +474,7 @@ final class UniversalAX {
         let app = try await NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: config)
         targetPID = app.processIdentifier
         try await Task.sleep(for: .milliseconds(1_500))
+        Self.bringToFront(app)
     }
 
     /// Regular apps the user has open, excluding SystemOne itself.
@@ -490,9 +491,9 @@ final class UniversalAX {
         if let running = NSWorkspace.shared.runningApplications.first(where: {
             $0.activationPolicy == .regular && $0.processIdentifier != me
                 && $0.localizedName?.lowercased() == name.lowercased() }) {
-            running.activate()
             targetPID = running.processIdentifier
-            try await Task.sleep(for: .milliseconds(500))
+            guard Self.bringToFront(running) else { throw AXError.notFront }
+            try await Task.sleep(for: .milliseconds(300))
             return
         }
         let roots = ["/Applications", "/System/Applications", "/System/Applications/Utilities",
@@ -511,6 +512,7 @@ final class UniversalAX {
         let app = try await NSWorkspace.shared.openApplication(at: found, configuration: config)
         targetPID = app.processIdentifier
         try await Task.sleep(for: .milliseconds(1_200))
+        Self.bringToFront(app)
     }
 
     /// Quits a running app by name, as Command-Q does (the app may still ask to save).
@@ -536,9 +538,182 @@ final class UniversalAX {
 
     // MARK: helpers
 
+    /// Keys, clicks and typing go to whatever app is in front, so the target must really be
+    /// there first; otherwise they would land in another app.
     private func activateTarget() throws {
         guard let pid = targetPID, let app = NSRunningApplication(processIdentifier: pid) else { throw AXError.noTarget }
-        if !app.isActive { app.activate(); usleep(180_000) }
+        guard Self.bringToFront(app) else { throw AXError.notFront }
+    }
+
+    /// Whether `pid` is the app in front, asked of the app itself (no run-loop needed).
+    static func isFront(_ pid: pid_t) -> Bool {
+        let element = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(element, 0.3)
+        var value: CFTypeRef?
+        return AXUIElementCopyAttributeValue(element, kAXFrontmostAttribute as CFString, &value) == .success
+            && (value as? Bool) == true
+    }
+
+    /// Brings `app` to the front and confirms it. A plain activate() is ignored by macOS
+    /// when SystemOne is not the active app, so this also asks through Accessibility and,
+    /// failing that, Launch Services (what clicking the app in the Dock does).
+    @discardableResult
+    static func bringToFront(_ app: NSRunningApplication) -> Bool {
+        let pid = app.processIdentifier
+        if isFront(pid) { return true }
+        if app.isHidden { app.unhide() }
+        if #available(macOS 14, *) { NSApp.yieldActivation(to: app) }
+        app.activate()
+        let element = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(element, 0.3)
+        AXUIElementSetAttributeValue(element, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+        for attempt in 0..<16 {
+            if isFront(pid) { return true }
+            if attempt == 4, let url = app.bundleURL {
+                let config = NSWorkspace.OpenConfiguration()
+                config.activates = true
+                NSWorkspace.shared.openApplication(at: url, configuration: config) { _, _ in }
+            }
+            usleep(50_000)
+        }
+        return isFront(pid)
+    }
+
+    // MARK: whole-Mac view and actions
+
+    private var windowRefs: [String: (pid: pid_t, window: AXUIElement)] = [:]
+
+    /// Every standard window of every regular app (front app first), so the agent can
+    /// bring any of them forward directly. A slow app is skipped after 0.15 s.
+    func windows() -> [[String: Any]] {
+        let me = ProcessInfo.processInfo.processIdentifier
+        let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let apps = NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular && $0.processIdentifier != me && !$0.isTerminated }
+            .sorted { ($0.processIdentifier == front ? 0 : 1) < ($1.processIdentifier == front ? 0 : 1) }
+            .prefix(30)
+        windowRefs = [:]
+        var out: [[String: Any]] = []
+        for app in apps {
+            let element = AXUIElementCreateApplication(app.processIdentifier)
+            AXUIElementSetMessagingTimeout(element, 0.15)
+            guard let list: [AXUIElement] = attribute(element, kAXWindowsAttribute) else { continue }
+            for (index, window) in list.prefix(8).enumerated() {
+                let subrole: String = attribute(window, kAXSubroleAttribute) ?? ""
+                guard subrole == "AXStandardWindow" || subrole.isEmpty else { continue }
+                let id = "w\(app.processIdentifier).\(index)"
+                windowRefs[id] = (app.processIdentifier, window)
+                let minimized: Bool = attribute(window, kAXMinimizedAttribute) ?? false
+                out.append(["id": id, "app": app.localizedName ?? "app", "title": (attribute(window, kAXTitleAttribute) as String?) ?? "",
+                            "minimized": minimized, "hidden": app.isHidden,
+                            "front": app.processIdentifier == front && index == 0])
+                if out.count >= 60 { return out }
+            }
+        }
+        return out
+    }
+
+    /// Brings one listed window (and its app) to the front, restoring it if minimised.
+    func focus(window id: String) throws {
+        guard let (pid, window) = windowRefs[id], let app = NSRunningApplication(processIdentifier: pid) else {
+            throw AXError.stale
+        }
+        if app.isHidden { app.unhide() }
+        AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+        AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+        AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+        guard Self.bringToFront(app) else { throw AXError.notFront }
+        targetPID = pid
+    }
+
+    /// Acts on the front window of the target app: minimise, full screen, zoom or close.
+    func window(action: String) throws {
+        guard let pid = targetPID, let app = NSRunningApplication(processIdentifier: pid) else { throw AXError.noTarget }
+        let element = AXUIElementCreateApplication(pid)
+        guard let window: AXUIElement = attribute(element, kAXFocusedWindowAttribute)
+                ?? (attribute(element, kAXWindowsAttribute) as [AXUIElement]?)?.first else { throw AXError.noWindow }
+        switch action {
+        case "minimize":
+            guard AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, kCFBooleanTrue) == .success
+            else { throw AXError.actionFailed }
+        case "fullscreen":
+            let current: Bool = attribute(window, "AXFullScreen") ?? false
+            guard AXUIElementSetAttributeValue(window, "AXFullScreen" as CFString,
+                                               (!current ? kCFBooleanTrue : kCFBooleanFalse)) == .success
+            else { throw AXError.actionFailed }
+        case "zoom", "close":
+            let attr = action == "zoom" ? kAXZoomButtonAttribute : kAXCloseButtonAttribute
+            guard let button: AXUIElement = attribute(window, attr),
+                  AXUIElementPerformAction(button, kAXPressAction as CFString) == .success else { throw AXError.actionFailed }
+        case "hide_app":
+            guard app.hide() else { throw AXError.actionFailed }
+        default: throw AXError.actionFailed
+        }
+    }
+
+    /// System media and volume keys: they go to whatever is playing, wherever it is.
+    static func media(_ name: String) throws {
+        let codes: [String: Int32] = ["playpause": 16, "next": 17, "previous": 18,
+                                      "volumeup": 0, "volumedown": 1, "mute": 7]
+        guard let code = codes[name] else { throw AXError.actionFailed }
+        for down in [true, false] {
+            let flags = NSEvent.ModifierFlags(rawValue: down ? 0xa00 : 0xb00)
+            let data1 = Int((code << 16) | ((down ? 0xa : 0xb) << 8))
+            NSEvent.otherEvent(with: .systemDefined, location: .zero, modifierFlags: flags, timestamp: 0,
+                               windowNumber: 0, context: nil, subtype: 8, data1: data1, data2: -1)?
+                .cgEvent?.post(tap: .cghidEventTap)
+        }
+    }
+
+    /// Finds files or folders by name in the user's home (Spotlight index) and opens the
+    /// best match: exact name first, then the shortest path.
+    func openFile(named query: String) async throws {
+        // Words such as "spreadsheet" or "pdf" describe the kind of file, not its name:
+        // they are dropped from the search and used to prefer matching file types.
+        let kinds: [String: [String]] = [
+            "spreadsheet": ["xlsx", "xls", "numbers", "csv"], "sheet": ["xlsx", "xls", "numbers", "csv"],
+            "pdf": ["pdf"], "presentation": ["key", "pptx", "ppt"], "deck": ["key", "pptx", "ppt"],
+            "slides": ["key", "pptx", "ppt"], "document": ["docx", "doc", "pages", "txt", "md", "rtf"],
+            "doc": ["docx", "doc", "pages"], "photo": ["jpg", "jpeg", "png", "heic"], "image": ["jpg", "jpeg", "png", "heic"],
+            "picture": ["jpg", "jpeg", "png", "heic"], "screenshot": ["png"]]
+        let filler: Set<String> = ["file", "files", "folder", "the", "my", "a", "an", "called", "named"]
+        let words = query.lowercased().split(whereSeparator: { $0.isWhitespace }).map {
+            String($0).trimmingCharacters(in: .punctuationCharacters) }
+        let wantFolder = words.contains("folder")
+        let extensions = Set(words.flatMap { kinds[$0] ?? kinds[String($0.dropLast())] ?? [] })
+        let wanted = words.filter { kinds[$0] == nil && kinds[String($0.dropLast())] == nil && !filler.contains($0) }
+            .joined(separator: " ")
+        guard (2...120).contains(wanted.count) else { throw AXError.actionFailed }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/mdfind")
+        process.arguments = ["-onlyin", NSHomeDirectory(), "-name", wanted]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        let paths = (String(data: data, encoding: .utf8) ?? "").split(separator: "\n").map(String.init)
+            .filter { !$0.contains("/Library/") && !$0.split(separator: "/").contains { $0.hasPrefix(".") } }
+        func rank(_ path: String) -> (Int, Int) {
+            let url = URL(fileURLWithPath: path)
+            var isDirectory: ObjCBool = false
+            FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+            var score = 0
+            if url.deletingPathExtension().lastPathComponent.lowercased() == wanted { score -= 4 }
+            if extensions.contains(url.pathExtension.lowercased()) { score -= 2 }
+            if wantFolder == isDirectory.boolValue { score -= 1 }
+            return (score, path.count)
+        }
+        guard let best = paths.min(by: { rank($0) < rank($1) }) else { throw AXError.actionFailed }
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        if let app = try? await NSWorkspace.shared.open(URL(fileURLWithPath: best), configuration: config) {
+            targetPID = app.processIdentifier
+        } else {
+            guard NSWorkspace.shared.open(URL(fileURLWithPath: best)) else { throw AXError.actionFailed }
+        }
+        try await Task.sleep(for: .milliseconds(1_000))
     }
 
     private func targetIsBrowser() -> Bool {
@@ -589,7 +764,18 @@ final class UniversalAX {
         return value as? T
     }
 
-    enum AXError: Error { case noTarget, noWindow, stale, actionFailed }
+    enum AXError: Error, CustomStringConvertible {
+        case noTarget, noWindow, stale, actionFailed, notFront
+        var description: String {
+            switch self {
+            case .noTarget: "no app to act on"
+            case .noWindow: "the app has no window"
+            case .stale: "that control is gone"
+            case .actionFailed: "the action could not be performed"
+            case .notFront: "macOS did not bring the app to the front"
+            }
+        }
+    }
 }
 
 private extension Array {

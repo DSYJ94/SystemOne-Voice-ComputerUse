@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { parseAgentGoal } from '../src/agent-goal.ts';
+import { parseAgentGoal, refineGoal, spanCandidates } from '../src/agent-goal.ts';
 
 const APPS = ['WhatsApp', 'Google Chrome', 'Notes'];
 
@@ -30,4 +30,16 @@ test('sites, tabs and apps are recognised wherever the request names them', () =
   assert.equal(parseAgentGoal('reply to Sam on WhatsApp saying hi', APPS).app, 'WhatsApp');
   assert.equal(parseAgentGoal('take notes about this page', APPS).app, null);
   assert.equal(parseAgentGoal('open Notes and type "milk"', APPS).app, 'Notes');
+});
+
+test('word runs are exact byte spans of what was said, and the chosen one becomes the typed text', async () => {
+  const text = 'tell Zoë on slack café at 6, see you';
+  const spans = spanCandidates(text);
+  for (const span of spans) assert.equal(Buffer.from(text).subarray(span.start, span.end).toString(), span.text);
+  assert.ok(spans.some(span => span.text === 'café at 6'));
+  const goal = await refineGoal(text, parseAgentGoal(text, APPS), async (_request, role, list) =>
+    role === 'typed' ? list.indexOf('café at 6') : null);
+  assert.equal(goal.typedText?.text, 'café at 6');
+  const none = await refineGoal('open chrome', parseAgentGoal('open chrome', APPS), async () => null);
+  assert.equal(none.typedText, null);
 });

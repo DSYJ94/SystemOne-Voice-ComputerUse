@@ -42,8 +42,18 @@ const INVERSE: Readonly<Record<string, readonly string[]>> = {
   'scroll:scroll-up': ['scroll:scroll-down', 'key:space'], 'scroll:scroll-down': ['scroll:scroll-up'],
   'key:space': ['key:space', 'scroll:scroll-up'], 'key:back': ['key:forward'], 'key:forward': ['key:back'],
   'key:nexttab': ['key:prevtab'], 'key:prevtab': ['key:nexttab'], 'key:newtab': ['key:closetab'],
-  'key:undo': ['key:undo'],
+  'key:undo': ['key:undo'], 'media:playpause': ['media:playpause'], 'media:mute': ['media:mute'],
+  'media:volumeup': ['media:volumedown'], 'media:volumedown': ['media:volumeup'],
+  'media:next': ['media:previous'], 'media:previous': ['media:next'],
+  'window_action:fullscreen': ['window_action:fullscreen'], 'window_action:zoom': ['window_action:zoom'],
 };
+const MEDIA: readonly [string, string][] = [
+  ['playpause', 'play or pause whatever is playing sound, in whichever app is playing it'],
+  ['next', 'skip to the next track in whatever is playing'],
+  ['previous', 'go back to the previous track in whatever is playing'],
+  ['volumeup', 'turn the Mac\'s volume up'], ['volumedown', 'turn the Mac\'s volume down'],
+  ['mute', 'mute or unmute the Mac\'s sound'],
+];
 /** Steps that end an app or the user's session; offered only when the request asks to quit or close. */
 const ENDS_APP = /^(?:quit|force quit|close window|close all|hide|log ?out|sign ?out|shut down|restart)\b/iu;
 const BROWSERS = new Set(['com.google.Chrome', 'com.apple.Safari', 'company.thebrowser.Browser', 'com.microsoft.edgemac',
@@ -59,7 +69,8 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 /** One step proposal, shown to the user with exact observed labels only. */
 export interface AgentProposal {
   readonly step: number;
-  readonly kind: 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste' | 'close' | 'quit_app' | 'finish';
+  readonly kind: 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste' | 'close' | 'quit_app'
+    | 'focus_window' | 'window_action' | 'media' | 'open_file' | 'finish';
   readonly label: string;
   readonly destinationUrl: string | null;
   readonly pageUrl: string;
@@ -75,6 +86,8 @@ export interface AgentDecision {
     origin?: string): Promise<string | null>;
   bestActions?(set: BuiltCandidateSet, view: AgentSnapshot, signal: AbortSignal,
     history: readonly string[], origin?: string): Promise<readonly string[]>;
+  /** Picks which candidate piece of the request answers `question` (index), or null for none. */
+  pickSpan?(request: string, role: 'typed' | 'file', spans: readonly string[], signal?: AbortSignal): Promise<number | null>;
   /** Probability (0–1) that the whole goal is already achieved. */
   done?(view: AgentSnapshot, signal: AbortSignal, history: readonly string[], origin?: string): Promise<number>;
 }
@@ -114,6 +127,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
   #step = 0;
   #openedUrl = false;
   #openedApp = false;
+  #openedFile = false;
   #typedAt = new Set<string>();
   #waits = 0;
   #origin: string | undefined;
@@ -253,14 +267,18 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         this.#journal.recordOutcome(permit.executionId, { deliveryStatus: 'not_dispatched', effectStatus: 'not_applied',
           verification: 'unavailable' });
         executionId = undefined;
-        this.#history.push(`Tried to ${describeKind(chosen)} but it could not be performed.`);
+        const reason = error instanceof Error ? error.message.replace(/^agent step failed: /u, '') : '';
+        // A step that failed is not retried on the same screen, like one that changed nothing.
+        this.#noEffect.add(`${content(view)}|${actionKey}`);
+        this.#history.push(`Tried to ${describeKind(chosen)} but it could not be performed${
+          reason && !/unsupported|timed out|cancelled/u.test(reason) ? ` (${reason.slice(0, 80)})` : ''}.`);
         this.#active(generation);
         return;
       }
       const actMs = Math.round(performance.now() - actStarted);
       // Adaptive settle: look soon, and wait longer only if nothing changed yet.
       const verifyStarted = performance.now();
-      const opening = chosen.kind === 'open_url' || chosen.kind === 'open_app';
+      const opening = ['open_url', 'open_app', 'focus_window', 'open_file'].includes(chosen.kind);
       await sleep(opening ? 400 : 250);
       let after: AgentSnapshot | undefined = await this.#observe().catch(() => undefined);
       if (after && content(after) === content(view) && chosen.kind !== 'copy') {
@@ -269,8 +287,10 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       }
       const verifyMs = Math.round(performance.now() - verifyStarted);
       this.#nextView = after;
-      // Copying changes the clipboard, not the screen.
-      const changed = copied !== null || (!!after && content(after) !== content(view));
+      // Copying changes the clipboard and media keys act on whichever app plays sound, so
+      // neither shows on this screen; they count as done rather than "nothing changed".
+      const offScreen = chosen.kind === 'media';
+      const changed = copied !== null || offScreen || (!!after && content(after) !== content(view));
       const evidenceRef = `agent-${chosen.kind}-${permit.executionId}`;
       this.#journal.recordOutcome(permit.executionId, changed
         ? { deliveryStatus: 'dispatched', effectStatus: 'applied', verification: 'matched', evidenceRef }
@@ -296,8 +316,10 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         && item.role === chosen.element!.role && item.label !== chosen.element!.label);
       this.#trace?.({ kind: 'result', step, changed, actMs, verifyMs, after: after ? { app: after.app,
         window: after.windowTitle, url: after.url } : null });
-      this.#history.push(`${capitalize(describeKind(chosen))} in ${view.app}${!changed ? '; nothing visibly changed'
-        : relabelled ? `; it now reads “${relabelled.label}”` : ''}.`);
+      this.#history.push(`${capitalize(describeKind(chosen))}${offScreen ? ' (its effect is in whichever app is playing, so it may not show on screen)' : ` in ${view.app}`}${!changed ? '; nothing visibly changed'
+        : relabelled ? `; it now reads “${relabelled.label}”` : ''}${
+        after?.frontmost === false ? `; ${after.app} is open but behind other windows` : ''}.`);
+      if (chosen.kind === 'open_file') this.#openedFile = true;
       if (changed) {
         const verifyTicket = this.#journal.reserveTaskObservation(this.taskId, false);
         const verificationId = randomUUID();
@@ -332,9 +354,13 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
           : option.kind === 'scroll' ? { down: option.ref === 'scroll-down' }
             : option.kind === 'open_url' ? { url: this.#goal.url!, newTab: this.#newTab(this.#lastView) }
               : option.kind === 'quit_app' ? { name: option.label.replace(/[\u200e\u200f]/gu, '').trim() }
+                : option.kind === 'focus_window' ? { id: option.ref }
+                  : option.kind === 'window_action' ? { action: option.ref }
+                    : option.kind === 'media' ? { name: option.ref }
+                      : option.kind === 'open_file' ? { name: this.#goal.fileName!.text }
                 : { name: option.label };
     return await this.#ax.call(this.taskId, option.kind as Exclude<Option['kind'], 'finish'>, params,
-      option.kind === 'open_url' || option.kind === 'open_app' ? 20_000 : 10_000);
+      ['open_url', 'open_app', 'open_file'].includes(option.kind) ? 20_000 : 10_000);
   }
 
   #options(view: AgentSnapshot): Option[] {
@@ -346,7 +372,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       if (element.secure) continue;
       if (element.editable && this.#goal.typedText && !this.#typedAt.has(`${view.signature}|${element.id}`)) {
         options.push({ kind: 'type', ref: element.id, element, label: element.label,
-          description: `In ${view.app}: type “${this.#goal.typedText.text}” into the ${role(element.role)} “${element.label}”${where(element)}${
+          description: `In ${view.app}${view.windowTitle ? ` (showing “${view.windowTitle.slice(0, 60)}”)` : ''}: type “${this.#goal.typedText.text}” into the ${role(element.role)} “${element.label}”${where(element)}${
             element.role === 'AXTextArea' && element.value ? ` (adds after its existing text “${element.value.slice(0, 40)}”)`
               : element.value ? ` (replaces “${element.value.slice(0, 40)}”)` : ''}.`,
           score: score(element.label) + 3 });
@@ -366,7 +392,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         options.push({ kind: 'press', ref: element.id, element, label: element.label,
           description: `Switch to the browser tab “${element.label}”${where}${element.selected ? ' (already the current tab)' : ''}.`,
           score: score(`${element.label} ${element.url ?? ''}`) * 2 });
-        if (this.#goal.quit) options.push({ kind: 'close', ref: element.id, element, label: element.label,
+        // Closing a tab is always offered: it is easily undone (Command-Shift-T), unlike quitting an app.
+        options.push({ kind: 'close', ref: element.id, element, label: element.label,
           description: `Close the browser tab “${element.label}”${where}${element.selected ? ' (the current tab)' : ''}.`,
           score: score(`${element.label} ${element.url ?? ''}`) });
         continue;
@@ -380,7 +407,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
           score: score(`${element.label} ${element.context}`) });
       }
     }
-    if (this.#goal.quit) {
+    {
       // Identical tabs ("New Tab" ×3) are closed together; one at a time, they look alike and some get missed.
       const groups = new Map<string, AgentElement[]>();
       for (const tab of view.elements.filter(element => element.role === 'AXTab' && element.closable)) {
@@ -413,9 +440,37 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
           score: 10 + score(name) * 3 });
       }
     }
+    // The whole Mac, not just the app in front: any open window can be brought forward.
+    const withWindows = new Set<string>();
+    for (const window of (view.windows ?? []).slice(0, 60)) {
+      withWindows.add(plain(window.app));
+      if (window.front && view.frontmost !== false && plain(window.app) === plain(view.app)) continue;
+      options.push({ kind: 'focus_window', ref: window.id, label: `${window.app}: ${window.title || 'untitled window'}`,
+        description: `Bring ${window.app}'s window “${(window.title || 'untitled').slice(0, 100)}” to the front${
+          window.minimized ? ' (it is minimised)' : ''}${window.hidden ? ' (the app is hidden)' : ''}.`,
+        score: score(`${window.app} ${window.title}`) * 2 });
+    }
+    for (const [name, text] of MEDIA) {
+      options.push({ kind: 'media', ref: name, label: text, score: score(text),
+        description: `Press the Mac's media key to ${text} (it may be a different app from ${view.app || 'the one in front'}).` });
+    }
+    if (this.#goal.fileName && !this.#openedFile) {
+      options.push({ kind: 'open_file', ref: 'goal-file', label: this.#goal.fileName.text, score: 10,
+        description: `Find the file or folder named “${this.#goal.fileName.text}” on this Mac and open it.` });
+    }
+    if (view.pid && this.#goal.windows) {
+      const actions: [string, string][] = [['minimize', 'minimise the front window to the Dock'],
+        ['fullscreen', 'make the front window full screen (or leave full screen)'],
+        ['zoom', 'zoom the front window to fill the screen'],
+        ...(this.#goal.quit ? [['close', 'close the front window (the app keeps running)'] as [string, string]] : []),
+        ['hide_app', `hide the app ${view.app}`]];
+      for (const [action, text] of actions) {
+        options.push({ kind: 'window_action', ref: action, label: text, description: `In ${view.app}: ${text}.`, score: score(text) });
+      }
+    }
     for (const name of (view.runningApps ?? []).slice(0, 20)) {
-      if (plain(name) === plain(view.app) || name === this.#goal.app
-        || (this.#goal.quit && named && plain(name) === named)) continue;
+      if (plain(name) === plain(view.app) && view.frontmost !== false || name === this.#goal.app
+        || withWindows.has(plain(name)) || (this.#goal.quit && named && plain(name) === named)) continue;
       options.push({ kind: 'open_app', ref: `app:${name}`, label: name,
         description: `Switch to the app ${name} (already open).`, score: score(name) * 3 });
     }
@@ -461,7 +516,10 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       const base = { candidateId, description: option.description.slice(0, 1_200), preconditions: ['fresh_observation'],
         verifier: { kind: 'content_changed' }, delivery: 'semantic', riskPolicyRef: AGENT_POLICY,
         replayPolicy: 'only_if_not_applied' };
-      const candidate: Record<string, JSONValue> = option.kind === 'quit_app'
+      const candidate: Record<string, JSONValue> = ['focus_window', 'window_action', 'media', 'open_file'].includes(option.kind)
+        ? { ...base, operation: 'invoke', targetRef: `${option.kind}:${option.ref}`.replace(/[^A-Za-z0-9_.:-]/gu, '-').slice(0, 160),
+          parameters: {}, effects: ['NAVIGATE', 'EXTERNAL_WRITE'] }
+        : option.kind === 'quit_app'
         ? { ...base, operation: 'invoke', targetRef: option.ref.replace(/[^A-Za-z0-9_.:-]/gu, '-').slice(0, 160),
           parameters: {}, effects: ['EXTERNAL_WRITE'] }
         : option.kind === 'close'
@@ -585,6 +643,10 @@ function describeKind(option: Option): string {
     case 'paste': return `pasted the copied text into “${option.label}”`;
     case 'close': return `closed the tab “${option.label.slice(0, 60)}”`;
     case 'quit_app': return `quit the app ${option.label}`;
+    case 'focus_window': return `brought the window “${option.label.slice(0, 80)}” to the front`;
+    case 'window_action': return option.label;
+    case 'media': return `pressed the media key to ${option.label}`;
+    case 'open_file': return `opened the file or folder “${option.label}”`;
     default: return 'finished';
   }
 }

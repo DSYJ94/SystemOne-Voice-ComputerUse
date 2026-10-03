@@ -17,6 +17,17 @@ export interface AgentElement {
   readonly closable?: boolean;
 }
 
+/** One open window anywhere on the Mac. */
+export interface AgentWindow {
+  readonly id: string;
+  readonly app: string;
+  readonly title: string;
+  readonly minimized?: boolean;
+  readonly hidden?: boolean;
+  /** The front window of the front app. */
+  readonly front?: boolean;
+}
+
 export interface AgentSnapshot {
   readonly app: string;
   readonly bundleId: string;
@@ -36,11 +47,16 @@ export interface AgentSnapshot {
   /** Executor-measured read time and nodes visited, for traces. */
   readonly readMs?: number;
   readonly visited?: number;
+  /** False when the app being read is open but behind another app. */
+  readonly frontmost?: boolean;
+  /** Every open window on the Mac (front app first). */
+  readonly windows?: readonly AgentWindow[];
   /** "dom" when a browser tab was read from its page, "ax" otherwise. */
   readonly via?: string;
 }
 
-export type AgentOperation = 'snapshot' | 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste' | 'close' | 'quit_app';
+export type AgentOperation = 'snapshot' | 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste' | 'close' | 'quit_app'
+  | 'focus_window' | 'window_action' | 'media' | 'open_file';
 
 /** Host-side end of the private pipe to the app's Accessibility executor. The
  * app accepts a request only for the active, host-admitted agent task. */

@@ -23,7 +23,7 @@ import type { NativeFixtureDecision } from './native-fixture-task.ts';
 import type { BrowseDecision, BrowseProposal } from '../../browser/src/managed-browse-task.ts';
 import { parseBrowseFollowUp, parseScopedBrowse } from './scoped-native-command.ts';
 import { AgentAXClient } from './agent-ax-client.ts';
-import { bindCommandSpan, installedApps, parseAgentGoal } from './agent-goal.ts';
+import { bindCommandSpan, installedApps, parseAgentGoal, refineGoal } from './agent-goal.ts';
 import type { AgentDecision } from './universal-agent-task.ts';
 import { NativeFieldPipeWorker } from './native-field-pipe-worker.ts';
 import { ChromeReadSession } from './chrome-read-session.ts';
@@ -1253,20 +1253,24 @@ export class NativeManagedController {
       }
       const factory = this.#agentDecisions;
       if (!factory) throw new ContractError('no agent decision provider');
-      const goal = parseAgentGoal(command.text, installedApps());
-      // "Reply in the chat" with no words: ask, rather than guess or wander.
-      if (goal.needsText) { this.#send(request.requestId, 'agent_needs_text'); return; }
+      const parsed = parseAgentGoal(command.text, installedApps());
       const { UniversalAgentTask, AGENT_POLICY, AGENT_VERIFIER } = await import('./universal-agent-task.ts');
       const revision = { taskId: request.requestId, taskEpoch: 1, goalRevision: 1 };
       const endpoint = bindEndpoint(['command']);
       const input = new CommittedInputSession(endpoint, revision);
       const route = input.accept(endpoint, Buffer.from(JSON.stringify(command)));
       if (route.kind !== 'interpret_command') throw new ContractError('not a command');
-      const parameters = goal.typedText ? [bindCommandSpan(route.input, 'typed-text', goal.typedText)] : [];
       const context = this.#agentContext && Date.now() - this.#agentContext.at < 600_000
         ? this.#agentContext.text : undefined;
       const decision = await factory(request.requestId, route.input.text, context);
       if (active.cancelled) return;
+      // Jev picks the exact words to type (and a file name) from pieces of what was said.
+      const goal = await refineGoal(route.input.text, parsed, decision.pickSpan?.bind(decision));
+      if (active.cancelled) return;
+      // "Reply in the chat" with no words: ask, rather than guess or wander.
+      if (goal.needsText) { this.#send(request.requestId, 'agent_needs_text'); return; }
+      const parameters = [...(goal.typedText ? [bindCommandSpan(route.input, 'typed-text', goal.typedText)] : []),
+        ...(goal.fileName ? [bindCommandSpan(route.input, 'file-name', goal.fileName)] : [])];
       const registry = new TaskAdmissionRegistry(revision, input);
       const admission = registry.admit(route.input, { admissionId: randomUUID(), goal: route.input.text,
         outcomeKind: 'USER_CONFIRMATION', scopeRef: `agent-session:${request.requestId}`,

@@ -31,7 +31,7 @@ export function createJevAgentDecision(options: {
   const client = new CLMDecisionClient(POLICY, PROVIDER, CALIBRATION, transport, JEV_CODEC);
   const describeState = (view: AgentSnapshot, history: readonly string[], origin?: string) => {
     const tabs = view.elements.filter(element => element.role === 'AXTab' && element.closable);
-    const where = (view.pid ? `Current app: ${view.app}, window “${view.windowTitle || 'untitled'}”${
+    const where = (view.pid ? `Current app: ${view.app}${view.frontmost === false ? ' (open, but behind other windows: not in front)' : ''}, window “${view.windowTitle || 'untitled'}”${
       view.url ? `, showing ${view.url}` : ''}.` : 'No app window is in front yet.')
       + (typeof view.scrollY === 'number' ? view.scrollY <= 0 ? ' The page is scrolled to the very top.'
         : ` The page is scrolled ${view.scrollY} pixels down from the top.` : '')
@@ -56,6 +56,38 @@ export function createJevAgentDecision(options: {
           { candidateId: 'not_done', description: 'No. At least one part of the request has not happened yet.' }] };
       const raw = await transport.send(encodeJevProviderView(providerView), signal);
       return decodeJevChoice(raw, providerView).probabilities.done ?? 0;
+    },
+    async pickSpan(request, role, spans, signal) {
+      // Each candidate states what is left over as instructions; this framing measured best.
+      const question = role === 'typed'
+        ? 'Some requests include words to type into a search box, message or note. Which candidate is exactly those words, with no instruction words such as play, open, find, click or the app or site name? If the request has no words to type, choose none.'
+        : 'Which candidate is exactly the name of the file or folder the user wants opened, without instruction words? If no file or folder is named, choose none.';
+      const describe = (text: string) => {
+        const at = request.indexOf(text);
+        const rest = `${request.slice(0, at)} … ${request.slice(at + text.length)}`.trim().slice(0, 600);
+        return role === 'typed' ? `Type exactly “${text.slice(0, 400)}”. The rest (“${rest}”) is instructions, not text to type.`
+          : `The file or folder is named “${text.slice(0, 400)}”. The rest (“${rest}”) is the instruction.`;
+      };
+      const ask = async (ids: readonly number[]) => {
+        const view = { projectionRevision: `agent-span-${role}-v2`, stateText: `The user said: “${request.slice(0, 1_200)}”`,
+          questionText: question, candidates: [...ids.map(id => ({ candidateId: `s${id}`, description: describe(spans[id]!) })),
+            { candidateId: 'none', description: role === 'typed' ? 'None: the request has no words to type.'
+              : 'None: no file or folder is named.' }] };
+        const raw = await transport.send(encodeJevProviderView(view), signal ?? AbortSignal.timeout(15_000));
+        return Object.entries(decodeJevChoice(raw, view).probabilities).sort((a, b) => b[1] - a[1]);
+      };
+      const all = spans.map((_, id) => id);
+      let finalists = all;
+      if (all.length > 60) {
+        // Long requests: judged in parallel rounds; each round's best runs go to a final.
+        const rounds: number[][] = [];
+        for (let i = 0; i < all.length; i += 60) rounds.push(all.slice(i, i + 60));
+        const picks = await Promise.all(rounds.map(async round => (await ask(round))
+          .filter(([id]) => id !== 'none').slice(0, 2).map(([id]) => Number(id.slice(1)))));
+        finalists = [...new Set(picks.flat())];
+      }
+      const [best] = await ask(finalists);
+      return !best || best[0] === 'none' ? null : Number(best[0].slice(1));
     },
     async bestActions(set, view, signal, history, origin) {
       const proposal = await client.decide(set, project(set, view, history, origin), signal);

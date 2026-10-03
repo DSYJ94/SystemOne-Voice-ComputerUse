@@ -10,7 +10,10 @@ import { createJevAgentDecision } from '../packages/providers/src/jev-agent-deci
 const filter = process.argv[2];
 const apiKey = execFileSync('/usr/bin/security', ['find-generic-password', '-s', 'systemone-jev', '-w'],
   { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-const chosen = SCENARIOS.filter(scenario => !filter || scenario.name.includes(filter));
+// Each paraphrase runs as its own case, so a wording-specific fix shows up as failures.
+const chosen = SCENARIOS.flatMap(scenario => [scenario, ...(scenario.paraphrases ?? [])
+  .map((goal, index) => ({ ...scenario, name: `${scenario.name}~${index + 1}`, goal }))])
+  .filter(scenario => !filter || scenario.name.includes(filter));
 const results: RunResult[] = [];
 const queue = [...chosen];
 await Promise.all(Array.from({ length: 4 }, async () => {

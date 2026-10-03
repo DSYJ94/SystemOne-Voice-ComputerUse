@@ -6,7 +6,7 @@ import type { JSONValue } from '../../protocol/src/json.ts';
 import { bindEndpoint } from '../../protocol/src/session.ts';
 import { AgentAXClient } from '../src/agent-ax-client.ts';
 import type { AgentElement } from '../src/agent-ax-client.ts';
-import { bindCommandSpan, parseAgentGoal } from '../src/agent-goal.ts';
+import { bindCommandSpan, parseAgentGoal, refineGoal } from '../src/agent-goal.ts';
 import { AttemptJournal } from '../src/attempt-journal.ts';
 import { CommittedInputSession } from '../src/committed-input.ts';
 import { PersistentTaskActor } from '../src/persistent-task-actor.ts';
@@ -46,6 +46,8 @@ export interface Scenario {
   readonly apps: readonly string[];
   /** Built fresh per run so state never leaks between runs. */
   readonly world: () => SimWorld;
+  /** Other natural ways to say the same request; each must pass too. */
+  readonly paraphrases?: readonly string[];
 }
 
 export interface SimWorld {
@@ -58,6 +60,12 @@ export interface SimWorld {
   openUrl?(url: string, newTab: boolean): void;
   openApp?(name: string): void;
   quitApp?(name: string): void;
+  /** Open windows (one per app is fine), front first. */
+  windows?(): readonly { readonly app: string; readonly title: string; readonly minimized?: boolean }[];
+  focusWindow?(app: string): void;
+  media?(name: string): void;
+  windowAction?(action: string): void;
+  openFile?(name: string): boolean;
   /** Regular apps running now (defaults to the scenario's app list). */
   running?(): readonly string[];
   /** Did the user's goal happen? */
@@ -85,6 +93,7 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
   const started = performance.now();
   const steps: string[] = [];
   let elements: SimElement[] = [];
+  let windows: { app: string; title: string }[] = [];
   let client!: AgentAXClient;
   client = new AgentAXClient(request => queueMicrotask(() => {
     let value: JSONValue = null;
@@ -108,6 +117,9 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
           contentSignature: JSON.stringify([screen?.app, screen?.windowTitle, screen?.url, screen?.scrollY ?? 0,
             elements.map(item => [item.role, item.label, item.value, item.selected])]),
           ...(screen?.scrollY !== undefined ? { scrollY: screen.scrollY } : {}),
+          frontmost: true,
+          windows: (windows = [...(world.windows?.() ?? [])]).map((item, index) => ({ id: `w${index}`, app: item.app,
+            title: item.title, ...(item.minimized ? { minimized: true } : {}), front: index === 0 && item.app === screen?.app })),
           runningApps: (world.running?.() ?? scenario.apps).filter(name => name !== screen?.app) };
         break;
       }
@@ -120,6 +132,14 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
         } else ok = false;
         break;
       }
+      case 'focus_window': {
+        const target = windows[Number(String(request.id).slice(1))];
+        if (target && world.focusWindow) world.focusWindow(target.app); else ok = false;
+        break;
+      }
+      case 'media': world.media ? world.media(String(request.name)) : ok = false; break;
+      case 'window_action': world.windowAction ? world.windowAction(String(request.action)) : ok = false; break;
+      case 'open_file': ok = world.openFile?.(String(request.name)) ?? false; break;
       case 'quit_app': if (world.quitApp && (world.running?.() ?? scenario.apps).includes(String(request.name))) {
         world.quitApp(String(request.name));
       } else ok = false; break;
@@ -144,14 +164,16 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
   const input = new CommittedInputSession(endpoint, revision);
   const command = input.accept(endpoint, Buffer.from(JSON.stringify({ ...structuredClone(schema.examples[0]),
     ...revision, messageId: 'm', utteranceId: 'u', source: 'voice', text: scenario.goal }))).input;
-  const goal = parseAgentGoal(command.text, scenario.apps);
+  const made = decision(scenario.goal);
+  const goal = await refineGoal(command.text, parseAgentGoal(command.text, scenario.apps), made.pickSpan?.bind(made));
   const registry = new TaskAdmissionRegistry(revision, input);
   const admission = registry.admit(command, { admissionId: 'a', goal: command.text, outcomeKind: 'USER_CONFIRMATION',
     scopeRef: 'agent-session:eval', completionVerifierRef: AGENT_VERIFIER, policyRevision: AGENT_POLICY,
     approvedEffects: ['READ', 'NAVIGATE', 'EXTERNAL_READ', 'LOCAL_EDIT', 'EXTERNAL_WRITE'],
-    parameters: goal.typedText ? [bindCommandSpan(command, 'typed-text', goal.typedText)] : [] });
+    parameters: [...(goal.typedText ? [bindCommandSpan(command, 'typed-text', goal.typedText)] : []),
+      ...(goal.fileName ? [bindCommandSpan(command, 'file-name', goal.fileName)] : [])] });
   let done = 0;
-  const task = UniversalAgentTask.start(journal, registry, admission, client, { goal, decision: decision(scenario.goal),
+  const task = UniversalAgentTask.start(journal, registry, admission, client, { goal, decision: made,
     trace: event => { if (event.kind === 'step') done = Number(event.done ?? 0); },
     confirmation: { async confirm(proposal: AgentProposal) {
       steps.push(`${proposal.kind} “${proposal.label.slice(0, 60)}”${proposal.risky ? ' (risky)' : ''} [done ${done}]`);

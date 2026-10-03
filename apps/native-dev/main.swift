@@ -1448,16 +1448,16 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                           options: .regularExpression) != nil {
             let name = frontmost.localizedName ?? frontmost.bundleIdentifier ?? "an unnamed app"
             capturedApp = (bundleID, frontmost.processIdentifier, launchDate)
-            commandTarget?.stringValue = "Target: \(name) (\(bundleID))."
+            commandTarget?.stringValue = "Starting in \(name). Jev can switch to any app or window."
             focusField?.stringValue = "Previously focused: \(name) (PID \(frontmost.processIdentifier)). Select a target explicitly."
         } else if let last = lastExternalApp, !last.isTerminated, let bundleID = last.bundleIdentifier,
                   let launchDate = last.launchDate {
             // Opened while SystemOne was in front: act on the app the user was just in.
             capturedApp = (bundleID, last.processIdentifier, launchDate)
-            commandTarget?.stringValue = "Target: \(last.localizedName ?? bundleID)."
+            commandTarget?.stringValue = "Starting in \(last.localizedName ?? bundleID). Jev can switch to any app or window."
         } else {
             capturedApp = nil
-            commandTarget?.stringValue = "No app in front yet. Ask to open a site or app, or switch to one first."
+            commandTarget?.stringValue = "No app in front. Jev can open or switch to any app or window."
             focusField?.stringValue = "No external app captured. Enter the target explicitly."
         }
         NSApp.activate(ignoringOtherApps: true)
@@ -1945,7 +1945,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         runningRequestText = text
         commandStatus?.stringValue = "Working on it\(target.map { " in \($0.localizedName ?? "the app")" } ?? "")…"
         // Give the target app the keyboard; the bar stays visible on top.
-        target?.activate()
+        if let target { UniversalAX.bringToFront(target) }
     }
 
     private func handleAgentRequest(_ object: [String: Any]) {
@@ -1969,10 +1969,11 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                         // Nothing in front: Jev can still open a site or switch to an app.
                         reply(true, ["app": "no app", "bundleId": "", "pid": 0, "windowTitle": "", "url": "",
                                      "elements": [] as [Any], "truncated": false, "signature": "none",
-                                     "runningApps": UniversalAX.runningApps()], nil)
+                                     "runningApps": UniversalAX.runningApps(), "windows": self.universalAX.windows()], nil)
                         return
                     }
                     var elements = snap.elements
+                    let windows = self.universalAX.windows()
                     var value: [String: Any] = [:]
                     repeat {
                         value = ["app": snap.app, "bundleId": snap.bundleID, "pid": Int(snap.pid),
@@ -1980,6 +1981,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                                  "truncated": snap.truncated || elements.count < snap.elements.count,
                                  "signature": snap.signature, "contentSignature": snap.contentSignature,
                                  "scrollY": snap.scrollY as Any? ?? NSNull(), "runningApps": UniversalAX.runningApps(),
+                                 "frontmost": UniversalAX.isFront(snap.pid), "windows": windows,
                                  "readMs": self.universalAX.lastReadMs, "visited": snap.visited, "via": snap.via]
                         if let hint = snap.hint, hint != self.lastBrowserHint {
                             // Once per distinct problem: how to enable the faster page read.
@@ -2006,6 +2008,11 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     try await self.universalAX.open(url: url, newTab: object["newTab"] as? Bool ?? true); reply(true, nil, nil)
                 case "open_app":
                     try await self.universalAX.open(app: object["name"] as? String ?? ""); reply(true, nil, nil)
+                case "focus_window": try self.universalAX.focus(window: object["id"] as? String ?? ""); reply(true, nil, nil)
+                case "window_action": try self.universalAX.window(action: object["action"] as? String ?? ""); reply(true, nil, nil)
+                case "media": try UniversalAX.media(object["name"] as? String ?? ""); reply(true, nil, nil)
+                case "open_file":
+                    try await self.universalAX.openFile(named: object["name"] as? String ?? ""); reply(true, nil, nil)
                 case "quit_app":
                     try await self.universalAX.quit(app: object["name"] as? String ?? ""); reply(true, nil, nil)
                 default: reply(false, nil, "unsupported operation")
