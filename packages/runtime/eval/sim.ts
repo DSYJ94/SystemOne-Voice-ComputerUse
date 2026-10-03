@@ -46,6 +46,7 @@ export interface Scenario {
 
 export interface SimWorld {
   front: string;
+  clipboard?: string;
   screen(): SimScreen | null;
   key?(name: string): void;
   type?(element: SimElement, text: string): void;
@@ -88,7 +89,7 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
         elements = screen ? [...screen.elements] : [];
         const described: AgentElement[] = elements.map((item, index) => ({ id: `e${index}`, role: item.role,
           label: item.label, context: item.context ?? '', editable: item.editable === true,
-          pressable: item.editable !== true || item.press !== undefined,
+          pressable: item.role !== 'AXStaticText' && (item.editable !== true || item.press !== undefined),
           ...(item.value !== undefined ? { value: item.value } : {}),
           ...(item.selected ? { selected: true } : {}), ...(item.url ? { url: item.url } : {}) }));
         value = { app: screen?.app ?? 'no app', bundleId: screen?.bundleId ?? '', pid: screen ? 1 : 0,
@@ -99,6 +100,8 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
         break;
       }
       case 'press': if (element?.press) element.press(); else ok = !!element; break;
+      case 'copy': if (element) { world.clipboard = element.value ?? element.label; value = world.clipboard; } else ok = false; break;
+      case 'paste': if (element && world.type && world.clipboard) world.type(element, world.clipboard); else ok = false; break;
       case 'type': if (element && world.type) world.type(element, String(request.text)); else ok = false; break;
       case 'key': world.key?.(String(request.name)); break;
       case 'scroll': world.scroll?.(request.down === true); break;

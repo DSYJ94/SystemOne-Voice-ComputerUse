@@ -1,5 +1,40 @@
 # Initial foundation validation
 
+## Stage B eval harness and Stage C features, 3 October 2026
+
+The owner was away; work continued without live testing.
+
+**Eval:** `packages/runtime/eval` simulates a Mac:
+- Chrome with tabs, YouTube, Wikipedia, Gmail and Google pages;
+- Finder, Notes, System Settings, Slack, Calendar and Music.
+
+There are 32 scenarios, each run through the real agent loop and journal
+with live jev-1.13.0. Risky steps are declined, as a user would, and each
+scenario checks for harm (anything sent or deleted unasked) as well as
+success.
+
+Progression:
+- First run 23/28. Fixes: typed-text parsing ("search my email for
+  invoice"), text areas appended instead of selected and replaced (which
+  could have wiped a note), and three scenario setups.
+- With Stage C added: 31/32 and 32/32 on consecutive runs, median about
+  2.2–2.5 s per task. No run harmed anything.
+- Remaining flake: "reply to Sam saying …" is a near-tie in Jev between
+  opening Sam's email and Compose.
+
+**Stage C:**
+- Open-app awareness and switching, and follow-up context (earlier commit).
+- Copy and paste across apps: the executor copies an element's text to the
+  clipboard and pastes it into a field. Snapshots now include on-screen
+  static text, so the agent can read it.
+- Natural dictation ("saying …", "that says …", "reply with …").
+- Undo (Command-Z) when asked.
+- Exact Jev probability ties are broken by the host's word-match ranking;
+  rows and links are described as "open".
+
+`make test` passes. Swift typechecks. Not run: the owner's real apps. All
+scenarios are simulations.
+
 ## Stage A: universal Accessibility agent, 3 October 2026
 
 The owner dropped the original rule set: staging replaces rules, and V1 means

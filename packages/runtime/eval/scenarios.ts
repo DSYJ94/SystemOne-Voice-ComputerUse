@@ -32,6 +32,7 @@ class Mac implements SimWorld {
   slackDraft = '';
   calendarView = 'Month';
   musicPlaying = false;
+  lastNoteEdit: { index: number; before: string } | null = null;
   track = 0;
 
   constructor(tabs: Partial<Tab>[] = [{ url: 'https://www.google.com/', title: 'Google' }]) {
@@ -74,6 +75,10 @@ class Mac implements SimWorld {
       if (name === 'escape') this.fullscreen = false;
       if (name === 'return') this.submitFocused();
     }
+    if (name === 'undo' && this.front === 'Notes' && this.lastNoteEdit) {
+      const { index, before } = this.lastNoteEdit;
+      this.notes[index]!.body = before; this.lastNoteEdit = null;
+    }
     if (this.front === 'Music' && name === 'space') this.musicPlaying = !this.musicPlaying;
   }
 
@@ -100,6 +105,7 @@ class Mac implements SimWorld {
     else if (label === 'Note body' && this.openNote !== null) {
       // Text areas append (like the real executor); only fields are replaced.
       const note = this.notes[this.openNote]!;
+      this.lastNoteEdit = { index: this.openNote, before: note.body };
       note.body = note.body ? `${note.body}\n${text}` : text;
     }
     else if (label.startsWith('Message ')) this.slackDraft = text;
@@ -222,7 +228,10 @@ class Mac implements SimWorld {
         page.push({ role: 'AXButton', label: 'Back to Inbox', context: 'toolbar', press: () => { this.openEmail = null; this.replyBody = null; } },
           { role: 'AXButton', label: 'Archive', context: 'toolbar' },
           { role: 'AXButton', label: 'Delete', context: 'toolbar', press: () => { this.sent.push(`deleted:${this.openEmail}`); this.openEmail = null; } },
-          { role: 'AXButton', label: 'Reply', context: 'message', press: () => { this.replyBody = this.replyBody ?? ''; } });
+          { role: 'AXButton', label: 'Reply', context: 'message', press: () => { this.replyBody = this.replyBody ?? ''; } },
+          ...(this.openEmail === 'Acme Billing' ? [{ role: 'AXStaticText', label: 'Invoice number: INV-4412', context: 'message' },
+            { role: 'AXStaticText', label: 'Amount due: £120.00', context: 'message' }]
+            : [{ role: 'AXStaticText', label: 'Are you free for lunch tomorrow at 12?', context: 'message' }]));
         if (this.replyBody !== null) page.push({ role: 'AXTextArea', label: 'Message body', context: 'reply', editable: true, value: this.replyBody },
           { role: 'AXButton', label: 'Send', context: 'reply', press: () => { this.sent.push(`mail:${this.openEmail}:${this.replyBody}`); this.replyBody = null; } });
       } else {
@@ -302,4 +311,16 @@ export const SCENARIOS: readonly Scenario[] = [
   scenario('music-play', 'play music', mac => { mac.front = 'Music'; }, mac => mac.musicPlaying),
   scenario('switch-app', 'switch to Notes', () => {}, mac => mac.front === 'Notes'),
   scenario('scroll', 'scroll down', () => {}, mac => mac.scrolled > 0, [WATCH]),
+  scenario('copy-gmail-to-notes', 'copy the invoice number from the Acme email into a new note in Notes',
+    mac => { mac.openEmail = 'Acme Billing'; },
+    mac => mac.notes.some(note => note.body.includes('INV-4412')) && !!mac.notes.find(note => note.title === 'Groceries')?.body.includes('eggs'),
+    [{ url: 'https://mail.google.com/mail/u/0/#inbox', title: 'Acme Billing - Gmail' }]),
+  scenario('undo-note', 'undo that', mac => {
+    mac.front = 'Notes'; mac.lastNoteEdit = { index: 0, before: 'eggs' }; mac.notes[0]!.body = 'eggs\noops wrong text'; },
+  mac => mac.notes[0]!.body === 'eggs'),
+  scenario('dictate-slack', 'message Priya on Slack saying running 5 minutes late', () => {},
+    mac => mac.slackChannel === 'Priya Natarajan' && mac.slackDraft === 'running 5 minutes late'),
+  scenario('dictate-reply', 'reply to Sam saying I will be late', () => {},
+    mac => mac.openEmail === 'Sam Lee' && mac.replyBody === 'I will be late',
+    [{ url: 'https://mail.google.com/mail/u/0/#inbox', title: 'Inbox (3) - Gmail' }]),
 ];

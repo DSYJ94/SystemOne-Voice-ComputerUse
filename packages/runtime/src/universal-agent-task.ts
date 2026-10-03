@@ -44,7 +44,7 @@ const AGENT_LIMITS = Object.freeze({ maxObservations: 200, maxDecisions: 60, max
 /** One step proposal, shown to the user with exact observed labels only. */
 export interface AgentProposal {
   readonly step: number;
-  readonly kind: 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'finish';
+  readonly kind: 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste' | 'finish';
   readonly label: string;
   readonly destinationUrl: string | null;
   readonly pageUrl: string;
@@ -96,6 +96,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
   #openedApp = false;
   #typedAt = new Set<string>();
   #waits = 0;
+  /** Text this task copied, available to paste. */
+  #clipboard: string | null = null;
   /** Steps that changed nothing on a given screen are not offered there again. */
   readonly #noEffect = new Set<string>();
   readonly #trace: ((event: Record<string, JSONValue>) => void) | undefined;
@@ -191,7 +193,11 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         throw new ContractError('agent task was stopped');
       }
       this.#journal.markDispatchBoundary(permit.executionId);
-      try { await this.#act(chosen); }
+      let copied: string | null = null;
+      try {
+        const result = await this.#act(chosen);
+        if (chosen.kind === 'copy' && typeof result === 'string' && result) { copied = result; this.#clipboard = result; }
+      }
       catch (error) {
         // The executor reported that the step could not be performed.
         this.#journal.recordOutcome(permit.executionId, { deliveryStatus: 'not_dispatched', effectStatus: 'not_applied',
@@ -203,7 +209,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       }
       await new Promise(resolve => setTimeout(resolve, chosen.kind === 'open_url' || chosen.kind === 'open_app' ? 300 : 700));
       const after = await this.#observe().catch(() => undefined);
-      const changed = !!after && after.signature !== view.signature;
+      // Copying changes the clipboard, not the screen.
+      const changed = copied !== null || (!!after && after.signature !== view.signature);
       const evidenceRef = `agent-${chosen.kind}-${permit.executionId}`;
       this.#journal.recordOutcome(permit.executionId, changed
         ? { deliveryStatus: 'dispatched', effectStatus: 'applied', verification: 'matched', evidenceRef }
@@ -244,14 +251,15 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
     catch { return EMPTY_SNAPSHOT; }
   }
 
-  async #act(option: Option): Promise<void> {
-    const params: Record<string, JSONValue> = option.kind === 'press' ? { id: option.ref }
+  async #act(option: Option): Promise<unknown> {
+    const params: Record<string, JSONValue> = option.kind === 'press' || option.kind === 'copy' || option.kind === 'paste'
+      ? { id: option.ref }
       : option.kind === 'type' ? { id: option.ref, text: this.#goal.typedText!.text }
         : option.kind === 'key' ? { name: option.ref }
           : option.kind === 'scroll' ? { down: option.ref === 'scroll-down' }
             : option.kind === 'open_url' ? { url: this.#goal.url! }
               : { name: option.label };
-    await this.#ax.call(this.taskId, option.kind as Exclude<Option['kind'], 'finish'>, params,
+    return await this.#ax.call(this.taskId, option.kind as Exclude<Option['kind'], 'finish'>, params,
       option.kind === 'open_url' || option.kind === 'open_app' ? 20_000 : 10_000);
   }
 
@@ -269,9 +277,20 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
               : element.value ? ` (replaces “${element.value.slice(0, 40)}”)` : ''}.`,
           score: score(element.label) + 3 });
       }
-      if (element.pressable || !element.editable) {
+      if (this.#goal.clipboard && element.label.length <= 160 && !element.editable) {
+        options.push({ kind: 'copy', ref: element.id, element, label: element.label,
+          description: `In ${view.app}: copy the text “${element.label}”${where(element)} to the clipboard.`,
+          score: score(element.label) * 2 + (/\d/u.test(element.label) ? 1 : 0) });
+      }
+      if (element.editable && this.#clipboard) {
+        options.push({ kind: 'paste', ref: element.id, element, label: element.label,
+          description: `In ${view.app}: paste the copied text “${this.#clipboard.slice(0, 60)}” into the ${role(element.role)} “${element.label}”${where(element)}.`,
+          score: score(element.label) + 4 });
+      }
+      if (element.role !== 'AXStaticText' && (element.pressable || !element.editable)) {
         options.push({ kind: 'press', ref: element.id, element, label: element.label,
-          description: `In ${view.app}: click the ${role(element.role)} “${element.label}”${where(element)}${
+          description: `In ${view.app}: ${['AXRow', 'AXCell', 'AXLink'].includes(element.role) ? 'open' : 'click'} the ${
+            role(element.role)} “${element.label}”${where(element)}${
             element.url ? ` (goes to ${element.url.slice(0, 160)})` : ''}${element.selected ? ' (currently selected)' : ''}.`,
           score: score(`${element.label} ${element.context}`) });
       }
@@ -290,7 +309,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         description: `Open the app ${this.#goal.app}.`, score: 10 });
     }
     if (view.pid) {
-      const keys = BROWSERS.has(view.bundleId) ? [...BROWSER_KEYS, ...KEYS] : KEYS;
+      const keys = [...(BROWSERS.has(view.bundleId) ? BROWSER_KEYS : []), ...KEYS,
+        ...(this.#goal.undo ? [['undo', 'Undo the last change (Command-Z)'] as [string, string]] : [])];
       for (const [name, text] of keys) {
         options.push({ kind: 'key', ref: name, label: text, description: `In ${view.app}: ${text}.`,
           score: score(text) });
@@ -313,7 +333,12 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       const base = { candidateId, description: option.description.slice(0, 1_200), preconditions: ['fresh_observation'],
         verifier: { kind: 'content_changed' }, delivery: 'semantic', riskPolicyRef: AGENT_POLICY,
         replayPolicy: 'only_if_not_applied' };
-      const candidate: Record<string, JSONValue> = option.kind === 'press'
+      const candidate: Record<string, JSONValue> = option.kind === 'copy'
+        ? { ...base, operation: 'copy', targetRef: option.ref, parameters: {}, effects: ['READ', 'CLIPBOARD_WRITE'] }
+        : option.kind === 'paste'
+          ? { ...base, operation: 'set_value', targetRef: option.ref, parameters: { textRef: 'clipboard-text' },
+            effects: ['LOCAL_EDIT', 'CLIPBOARD_READ', 'EXTERNAL_WRITE'] }
+        : option.kind === 'press'
         ? { ...base, operation: 'invoke', targetRef: option.ref, parameters: {}, effects: ['NAVIGATE', 'EXTERNAL_WRITE'] }
         : option.kind === 'type'
           ? { ...base, operation: 'set_value', targetRef: option.ref, parameters: { textRef: 'typed-text' },
@@ -330,7 +355,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       candidates.push(Object.freeze(candidate));
       byId.set(candidateId, option);
       resolutions.set(candidateId, Object.freeze({ candidateId,
-        operation: option.kind === 'type' ? 'set_value' : option.kind === 'open_url' ? 'navigate' : 'invoke',
+        operation: option.kind === 'type' || option.kind === 'paste' ? 'set_value' : option.kind === 'open_url' ? 'navigate' : 'invoke',
         targetRef: option.ref, parameterRef: option.kind }));
     }
     const fallback = (id: string, operation: string, description: string, parameters: Record<string, JSONValue>) => {
@@ -425,6 +450,8 @@ function describeKind(option: Option): string {
     case 'scroll': return option.label.toLowerCase();
     case 'open_url': return `opened ${option.label}`;
     case 'open_app': return `opened the app ${option.label}`;
+    case 'copy': return `copied “${option.label.slice(0, 60)}”`;
+    case 'paste': return `pasted the copied text into “${option.label}”`;
     default: return 'finished';
   }
 }

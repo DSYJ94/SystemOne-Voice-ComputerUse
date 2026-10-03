@@ -28,7 +28,7 @@ export interface AgentSnapshot {
   readonly runningApps?: readonly string[];
 }
 
-export type AgentOperation = 'snapshot' | 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app';
+export type AgentOperation = 'snapshot' | 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste';
 
 /** Host-side end of the private pipe to the app's Accessibility executor. The
  * app accepts a request only for the active, host-admitted agent task. */

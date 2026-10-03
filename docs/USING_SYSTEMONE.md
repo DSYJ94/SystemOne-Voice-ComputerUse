@@ -45,6 +45,10 @@ request replaces the running one. Typed text comes only from your own words
 
 Follow-ups within 10 minutes know what just happened ("now play the second
 one", "go back"). Jev also knows your other open apps ("switch to Slack").
+More examples: "copy the invoice number from the Acme email into a new note",
+"message Priya on Slack saying running 5 minutes late" (no quotes needed),
+"reply to Sam saying I will be late", "undo that". Typing into a document or
+note appends; it never replaces what is already there.
 
 When something goes wrong, run `npm run traces` and paste the output into
 the chat. It shows each recent request's steps, as recorded locally on your

@@ -1911,6 +1911,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     } while !elements.isEmpty
                     reply(true, value, nil)
                 case "press": try self.universalAX.press(object["id"] as? String ?? ""); reply(true, nil, nil)
+                case "copy": reply(true, try self.universalAX.copy(object["id"] as? String ?? ""), nil)
+                case "paste": try self.universalAX.paste(object["id"] as? String ?? ""); reply(true, nil, nil)
                 case "type":
                     try self.universalAX.type(object["id"] as? String ?? "", text: object["text"] as? String ?? "")
                     reply(true, nil, nil)

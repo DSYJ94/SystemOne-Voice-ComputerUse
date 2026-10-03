@@ -11,6 +11,10 @@ export interface AgentGoal {
   readonly typedText: { readonly text: string; readonly start: number; readonly end: number } | null;
   readonly url: string | null;
   readonly app: string | null;
+  /** The request moves text between places ("copy …", "paste …"). */
+  readonly clipboard: boolean;
+  /** The request asks to undo something. */
+  readonly undo: boolean;
 }
 
 const NOT_SITES = new Set(['the', 'a', 'an', 'my', 'this', 'that', 'it', 'new', 'next', 'first', 'last', 'video',
@@ -32,7 +36,7 @@ export function parseAgentGoal(text: string, apps: readonly string[]): AgentGoal
   const lower = text.toLowerCase();
   let app: string | null = null;
   for (const name of apps) {
-    const pattern = new RegExp(`\\b(?:open|launch|start|switch to|use|in)\\s+(?:the\\s+)?${name.toLowerCase()
+    const pattern = new RegExp(`\\b(?:open|launch|start|switch to|use|in|into|to)\\s+(?:the\\s+)?${name.toLowerCase()
       .replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}\\b`, 'u');
     if (name.length >= 3 && pattern.test(lower) && (!app || name.length > app.length)) app = name;
   }
@@ -56,14 +60,15 @@ export function parseAgentGoal(text: string, apps: readonly string[]): AgentGoal
   let typedText: AgentGoal['typedText'] = null;
   const quoted = /["“]([^"”]{1,512})["”]/u.exec(text);
   const phrase = quoted ? null
-    : /\b(?:search(?:\s+[\w.'-]+){0,3}\s+for|search|type|write|enter|look up)\s+(.+?)(?:\s*,|\s+(?:and|then)\s+.*)?$/iu.exec(text);
+    : /\b(?:saying|that says|with the (?:text|message)|reply with|note that|search(?:\s+[\w.'-]+){0,3}\s+for|search|type|write|enter|look up)\s+(.+?)(?:\s*,|\s+(?:and|then)\s+(?!.*\b(?:saying|says)\b).*)?$/iu.exec(text);
   const value = quoted?.[1] ?? phrase?.[1] ?? null;
   if (value && value.trim() === value && Buffer.byteLength(value, 'utf8') <= 512) {
     const index = quoted ? quoted.index + quoted[0].indexOf(value) : phrase!.index + phrase![0].lastIndexOf(value);
     const start = Buffer.byteLength(text.slice(0, index), 'utf8');
     typedText = { text: value, start, end: start + Buffer.byteLength(value, 'utf8') };
   }
-  return Object.freeze({ typedText, url, app });
+  return Object.freeze({ typedText, url, app, clipboard: /\b(?:copy|paste|clipboard)\b/iu.test(text),
+    undo: /\bundo\b/iu.test(text) });
 }
 
 /** Binds an exact byte span of the final command (not only a suffix). */

@@ -49,6 +49,7 @@ final class UniversalAX {
         elements = [:]
         var collected: [[String: Any]] = []
         var visited = 0
+        var texts = 0
         var queue: [(AXUIElement, String)] = [(window, "")]
         let windowFrame = frame(of: window)
         var url = ""
@@ -61,7 +62,15 @@ final class UniversalAX {
                 url = value.absoluteString
             }
             let label = Self.label(of: element, role: role)
-            if let entry = describe(element, role: role, label: label, context: context, window: windowFrame) {
+            if role == "AXStaticText", texts < 80, let text: String = attribute(element, kAXValueAttribute),
+               case let clean = text.trimmingCharacters(in: .whitespacesAndNewlines), (2...160).contains(clean.count) {
+                // Plain text on screen, so the agent can read and copy it.
+                texts += 1
+                let id = "e\(collected.count)"
+                elements[id] = element
+                collected.append(["id": id, "role": "AXStaticText", "label": clean, "context": context,
+                                  "editable": false, "pressable": false])
+            } else if let entry = describe(element, role: role, label: label, context: context, window: windowFrame) {
                 let id = "e\(collected.count)"
                 elements[id] = element
                 var described = entry
@@ -232,13 +241,35 @@ final class UniversalAX {
         }
     }
 
+    /// Copies an element's text (value, else label) to the clipboard and returns it.
+    func copy(_ id: String) throws -> String {
+        guard let element = elements[id] else { throw AXError.stale }
+        let role: String = attribute(element, kAXRoleAttribute) ?? ""
+        let value: String = attribute(element, kAXValueAttribute) ?? ""
+        let text = value.isEmpty ? Self.label(of: element, role: role) : value
+        guard !text.isEmpty else { throw AXError.actionFailed }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        return text
+    }
+
+    /// Pastes the clipboard into a field (appending in multi-line text).
+    func paste(_ id: String) throws {
+        guard let element = elements[id] else { throw AXError.stale }
+        try activateTarget()
+        AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        usleep(60_000)
+        if (attribute(element, kAXRoleAttribute) as String?) == "AXTextArea" { key(code: 125, flags: .maskCommand) }
+        key(code: 9, flags: .maskCommand) // Command-V
+    }
+
     static let keys: [String: (CGKeyCode, CGEventFlags)] = [
         "space": (49, []), "return": (36, []), "escape": (53, []), "tab": (48, []),
         "down": (125, []), "up": (126, []), "left": (123, []), "right": (124, []),
         "pagedown": (121, []), "pageup": (116, []), "back": (33, .maskCommand),
         "forward": (30, .maskCommand), "find": (3, .maskCommand), "newtab": (17, .maskCommand),
         "address": (37, .maskCommand), "reload": (15, .maskCommand), "closetab": (13, .maskCommand),
-        "nexttab": (48, .maskControl), "prevtab": (48, [.maskControl, .maskShift])]
+        "nexttab": (48, .maskControl), "prevtab": (48, [.maskControl, .maskShift]), "undo": (6, .maskCommand)]
 
     func press(key name: String) throws {
         guard let (code, flags) = Self.keys[name] else { throw AXError.actionFailed }

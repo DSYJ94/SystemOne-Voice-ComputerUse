@@ -47,7 +47,22 @@ export function createJevAgentDecision(options: {
         .sort((a, b) => b[1] - a[1]).slice(0, 2).map(([id]) => id);
     },
     async select(set, view, signal, history) {
-      const proposal = await client.decide(set, project(set, view, history), signal);
+      let proposal = await client.decide(set, project(set, view, history), signal);
+      // Jev reports two-decimal probabilities, so exact ties are common. Break
+      // a tie between strong contenders by the host's ranking (options are
+      // ordered by how well they match the user's words).
+      if (proposal.status === 'abstained' && proposal.reason === 'low_confidence' && proposal.probabilities) {
+        const top = Math.max(...Object.values(proposal.probabilities));
+        const tied = set.candidates.map(c => c.candidateId as string)
+          .filter(id => Math.abs((proposal.probabilities![id] ?? 0) - top) < 1e-9);
+        if (top >= CALIBRATION.minProbability && tied.length > 1) {
+          const winner = tied[0]!;
+          const operation = set.candidates.find(c => c.candidateId === winner)?.operation;
+          proposal = { ...proposal, candidateId: winner, reason: 'accepted',
+            status: operation === 'finish' ? 'finish' : operation === 'wait' ? 'wait'
+              : operation === 'request_help' ? 'request_help' : 'selected' };
+        }
+      }
       const chosen = proposal.candidateId ? set.candidates.find(c => c.candidateId === proposal.candidateId) : undefined;
       const label = chosen ? String(chosen.description).replace(/^In [^:]+: /u, '').slice(0, 120)
         : proposal.status === 'abstained' ? null : proposal.status;
