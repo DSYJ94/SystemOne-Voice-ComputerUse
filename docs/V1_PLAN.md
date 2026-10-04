@@ -69,12 +69,15 @@ happy. Stages after A are proposals to agree, not commitments.
 
 ## Immediate next steps
 
-1. **Stage B, continuous:** owner keeps using SystemOne with 👍/👎 and
-   corrections; builder turns each round into general fixes plus eval cases.
-2. **C:** summaries and multi-part answers (choose a text-writing model,
-   local or cloud).
-3. **Owner test of the new OS-level work** on the real multi-monitor setup (outline, displays, menus, notifications).
-4. **Speed:** settling now watches the screen (0.7 s → 0.2 s per task); Jev decisions (~0.9 s per task) are the main cost.
+See [HANDOFF.md](../HANDOFF.md) for the current state, the owner's pending decisions,
+and the builder's next steps (4 October 2026). In short:
+1. **Stage B, continuous:** the owner tests; every failure becomes a general fix and
+   eval cases.
+2. **Stage D:** with the owner's go-ahead, UI-TARS-1.5-7B for clicks in the vision
+   fallback (benchmark: 88% vs OCR + Jev 44%).
+3. **Telemetry upload** once the owner provides GCP or AWS.
+4. **Stage F:** train a SystemOne chooser from the collected judgments when about
+   1–2k labelled examples exist.
 
 ## Where things live
 

@@ -1,5 +1,9 @@
 # Mac GPU smoke continuation handoff
 
+> **Superseded on 4 October 2026 by [HANDOFF.md](../HANDOFF.md)** (the current entry
+> point: voice computer use with Jev, Stages A–F). This file is kept for the CLM
+> history below.
+
 Updated 2 October 2026, immediately after the first real CLM inference on the
 owner M5. This supersedes [MAC_CONTINUATION_HANDOFF.md](MAC_CONTINUATION_HANDOFF.md)
 as the current entry point; read [V1_PLAN.md](V1_PLAN.md) for the consolidated

@@ -2201,3 +2201,28 @@ live voice/native/browser/owner-profile action, signing/TCC/Keychain change or
 billable provisioning occurred. The laptop commands and 70% MPS memory allowance
 are prepared settings, not measured hardware capability. Full encoder/vLLM parity,
 calibration, live Mac and release/acceptance gates remain open. V1 is not ready.
+
+## 4 October 2026: agent evaluation and benchmarks (simulated and offline; not owner-Mac qualification)
+
+All results below come from the simulator with live Jev, or from offline benchmarks on
+this M5. They are not live qualification of the app on the owner's screen.
+
+- **Agent eval** (`npm run eval:agent`): 94 scenarios plus 74 paraphrases, 158/168
+  (median about 1.5 s per task after the pooled-HTTPS fix; it was 7.0 s when parallel
+  Jev calls queued on one connection). With on-device understanding (Qwen):
+  106/113 on the 3 Oct set. Stage C composed answers add 0.47–0.66 s each.
+- **Words to type** (`span-bench.ts`, 22 labelled requests): Jev picking word runs
+  20/22; Qwen2.5-0.5B 17/22 (median 41 ms); Apple FoundationModels 2/22 (invented
+  text); lead-word rules 14/18.
+- **Composed answers** (5 cases, key facts present): Llama-3.2-3B 5/5 (median
+  0.54 s), Qwen2.5-3B 4/5, Qwen2.5-1.5B 2/5.
+- **Vision fallback** (ScreenSpot-v2, 100 samples, hit = click inside target):
+  OCR + Jev 44% (text 76%, icons 12%); UI-TARS-1.5-7B 88% (text 98%, icons 78%,
+  2.6 s); Qwen2.5-VL-7B 75%; Qwen2.5-VL-3B 73%; ShowUI-2B 22%.
+- **Owner-Mac findings fixed from traces:** tab cycling, play/pause flip-flops,
+  windows not landing, Outlook folders never collected (ARIA tree items), icon-font
+  labels, synthetic clicks ignored (Gmail "View Event"), "latest email" order, an
+  orphaned controller sharing the journal.
+- Not yet run on the owner's Mac: the vision fallback (Screen Recording not granted),
+  the redesigned bar and Settings, earcons and voices, Stage C, telemetry outbox.
+
