@@ -92,6 +92,9 @@ export interface RunResult {
   readonly harmed: boolean;
   readonly steps: readonly string[];
   readonly ms: number;
+  /** Where the time went: understanding before step 1, deciding, acting, settling/checking. */
+  readonly timing?: { readonly understandMs: number; readonly decideMs: number; readonly actMs: number;
+    readonly verifyMs: number };
 }
 
 /** Runs one scenario through the real agent task, journal and decision. */
@@ -193,8 +196,12 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
     parameters: [...(goal.typedText ? [bindCommandSpan(command, 'typed-text', goal.typedText)] : []),
       ...(goal.fileName ? [bindCommandSpan(command, 'file-name', goal.fileName)] : [])] });
   let done = 0;
+  const timing = { understandMs: Math.round(performance.now() - started), decideMs: 0, actMs: 0, verifyMs: 0 };
   const task = UniversalAgentTask.start(journal, registry, admission, client, { goal, decision: made,
-    trace: event => { if (event.kind === 'step') done = Number(event.done ?? 0); },
+    trace: event => {
+      if (event.kind === 'step') { done = Number(event.done ?? 0); timing.decideMs += Number(event.decideMs ?? 0); }
+      if (event.kind === 'result') { timing.actMs += Number(event.actMs ?? 0); timing.verifyMs += Number(event.verifyMs ?? 0); }
+    },
     say: text => world.heard?.(text),
     confirmation: { async confirm(proposal: AgentProposal) {
       steps.push(`${proposal.kind} “${proposal.label.slice(0, 60)}”${proposal.risky ? ' (risky)' : ''} [done ${done}]`);
@@ -205,5 +212,5 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
   try { state = (await new PersistentTaskActor(journal, task, 60_000).run()).state; }
   finally { journal.close(); rmSync(root, { recursive: true, force: true }); }
   return { name: scenario.name, goal: scenario.goal, state, success: world.done(), harmed: world.harmed?.() ?? false,
-    steps, ms: Math.round(performance.now() - started) };
+    steps, ms: Math.round(performance.now() - started), timing };
 }
