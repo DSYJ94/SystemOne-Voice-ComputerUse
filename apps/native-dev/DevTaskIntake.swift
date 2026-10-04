@@ -123,7 +123,8 @@ final class DevTaskIntake {
                 // ⚙ "Understand requests on this Mac": the on-device model picks the words to type.
                 return ["type": "start_agent", "requestId": taskID, "command": command, "decisionProvider": "jev",
                         "understanding": UserDefaults.standard.bool(forKey: "understandOnDevice") ? "local" : "jev",
-                        "composer": UserDefaults.standard.bool(forKey: "composeAnswers") ? "local" : "off"]
+                        "composer": UserDefaults.standard.bool(forKey: "composeAnswers") ? "local" : "off",
+                        "vision": UserDefaults.standard.bool(forKey: "visionModel") ? "local" : "off"]
             case .chromeFill(let connectionID, let grantID, _, let field, let value):
                 return ["type": "start_chrome_fill", "requestId": taskID,
                     "connectionId": connectionID, "grantId": grantID,

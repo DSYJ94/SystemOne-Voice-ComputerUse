@@ -82,9 +82,17 @@ class Mac implements SimWorld {
       { role: 'AXImageText', label: 'Search assets', press: () => { this.focusedAsset = true; } },
       // What a real canvas app then shows: a confirmation, or the matching assets.
       ...(this.exported ? [{ role: 'AXImageText', label: `Exported Untitled drawing.${this.exported}` }] : []),
+      ...(this.shared ? [{ role: 'AXImageText', label: 'Link copied to share' }] : []),
       ...(this.assetSearch ? [{ role: 'AXImageText', label: `3 assets for “${this.assetSearch}”` }] : [])];
   }
   focusedAsset = false;
+  shared = false;
+  /** Icons with no text: only a vision model finds them (here: Share). */
+  visionClick(instruction: string): boolean {
+    if (this.front !== 'Sketchy') return false;
+    if (/share/iu.test(instruction)) { this.shared = true; return true; }
+    return true;
+  }
   chromeWindows = 1;
   bookmarked: string[] = [];
   notesFolders = false;
@@ -699,6 +707,7 @@ const BASE: readonly Scenario[] = [
   // Stage D: an app readable only from its screen image.
   scenario('vision-export', 'export the drawing as a png', mac => { mac.apps.push('Sketchy'); mac.front = 'Sketchy'; },
     mac => mac.exported === 'png'),
+  scenario('vision-icon', 'share this drawing', mac => { mac.apps.push('Sketchy'); mac.front = 'Sketchy'; }, mac => mac.shared),
   scenario('vision-type', 'search the assets for tiger', mac => { mac.apps.push('Sketchy'); mac.front = 'Sketchy'; },
     mac => mac.assetSearch === 'tiger'),
   // Stage C: summaries and answers that combine facts (composed on this Mac when on).

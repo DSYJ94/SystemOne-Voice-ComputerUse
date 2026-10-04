@@ -74,7 +74,7 @@ export interface AgentProposal {
   readonly step: number;
   readonly kind: 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste' | 'close' | 'quit_app'
     | 'focus_window' | 'window_action' | 'media' | 'open_file' | 'system' | 'answer' | 'open_settings' | 'menu' | 'status'
-  | 'notifications' | 'look' | 'compose' | 'finish';
+  | 'notifications' | 'look' | 'compose' | 'ground' | 'finish';
   readonly label: string;
   readonly destinationUrl: string | null;
   readonly pageUrl: string;
@@ -151,6 +151,11 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
   readonly #say: ((text: string) => void) | undefined;
   readonly #compose: ((question: string, screen: string) => Promise<{ readonly answer: string; readonly ms: number }>) | undefined;
   readonly #question: string;
+  readonly #ground: ((image: string, instruction: string) => Promise<{ readonly x: number; readonly y: number; readonly ms: number }>) | undefined;
+  /** Screens ("app|window") where the vision fallback is active: few readable controls, or "look" was chosen. */
+  readonly #visionScreens = new Set<string>();
+  /** Screens where the vision model already clicked (its automatic use is once per screen). */
+  readonly #groundedAt = new Set<string>();
   /** The last step acted on the whole Mac, which the screen cannot confirm. */
   #lastOffScreen = false;
   /** Loop prevention, three general rules (no per-app special cases):
@@ -179,6 +184,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       readonly confirmation: AgentConfirmation; readonly trace?: (event: Record<string, JSONValue>) => void;
       /** Shows and speaks an answer to the user. */
       readonly say?: (text: string) => void;
+      /** Stage D (optional): the point to click in a window image for an instruction (UI-TARS). */
+      readonly ground?: (image: string, instruction: string) => Promise<{ readonly x: number; readonly y: number; readonly ms: number }>;
       /** Stage C (optional): composes a short answer from screen text with an on-device model. */
       readonly compose?: (question: string, screen: string) => Promise<{ readonly answer: string; readonly ms: number }>;
       /** A screen read already taken while the request was being understood. */
@@ -203,10 +210,12 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
     options: { readonly goal: AgentGoal; readonly decision: AgentDecision; readonly confirmation: AgentConfirmation;
       readonly trace?: (event: Record<string, JSONValue>) => void; readonly initialView?: AgentSnapshot;
       readonly say?: (text: string) => void;
-      readonly compose?: (question: string, screen: string) => Promise<{ readonly answer: string; readonly ms: number }> }) {
+      readonly compose?: (question: string, screen: string) => Promise<{ readonly answer: string; readonly ms: number }>;
+      readonly ground?: (image: string, instruction: string) => Promise<{ readonly x: number; readonly y: number; readonly ms: number }> }) {
     this.#trace = options.trace;
     this.#say = options.say;
     this.#compose = options.compose;
+    this.#ground = options.ground;
     this.#question = String(admission.goal ?? '');
     this.#nextView = options.initialView;
     this.taskId = admission.taskId; this.#journal = journal; this.#ax = ax; this.#goal = options.goal;
@@ -259,22 +268,28 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         ? all.find(option => option.kind === 'compose') ?? all.find(option => option.kind === 'answer' && option.ref === 'read-page')
         : answers[answerIndex];
       if (answer) ({ set, byId } = this.#set(observationId, [answer], step));
+      // Where UI-TARS kicks in by itself: on a screen that cannot be read, when Jev finds no
+      // confident step among what can be read (once per screen). Jev may also choose it.
+      const screenKey = `${view.bundleId}|${view.windowTitle}`;
+      const visionFallback = () => this.#visionScreens.has(screenKey) && !this.#groundedAt.has(screenKey)
+        ? all.find(option => option.kind === 'ground') : undefined;
       // "Open a Settings pane…", "use a menu command…", "click a menu-bar icon…" are resolved
       // to one concrete item from the Mac's own list before anything is proposed.
       const general = !answer && proposedId ? byId.get(proposedId) : undefined;
       if (general && general.ref === 'choose' && this.#decision.chooseOne) {
         const concrete = await this.#resolve(general, view);
         this.#active(generation);
-        if (!concrete) throw new ContractError(`nothing in the list fits: ${general.label}`);
-        answer = concrete;
-        ({ set, byId } = this.#set(observationId, [concrete], step));
+        const chosenItem = concrete ?? visionFallback();
+        if (!chosenItem) throw new ContractError(`nothing in the list fits: ${general.label}`);
+        answer = chosenItem;
+        ({ set, byId } = this.#set(observationId, [chosenItem], step));
       }
       // Once the user has been answered, a few more steps may look for the rest, not more.
       const lastTold = this.#history.findLastIndex(item => item.startsWith('Told the user'));
       const lookedLong = lastTold >= 0 && this.#history.length - 1 - lastTold >= 2;
       // Only a clear "yes" overrides the chooser; it can still choose to finish itself.
       // Once something has been told and the task is judged done, finish rather than say more.
-      const chosenId = told.size && doneProbability >= 0.8 ? 'finish'
+      let chosenId = told.size && doneProbability >= 0.8 ? 'finish'
         : answer ? 'c0' : doneProbability >= 0.8 || lookedLong ? 'finish' : proposedId;
       const decideMs = Math.round(performance.now() - decideStarted);
       // After a step on the whole Mac (dark mode, volume, media) the screen cannot show the
@@ -282,7 +297,14 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       const finishing = set.candidates.find(item => item.operation === 'finish');
       let candidate = (chosenId ? set.candidates.find(item => item.candidateId === chosenId) : undefined)
         ?? (this.#lastOffScreen ? finishing : undefined);
-      if (!candidate) throw new ContractError('no confident agent step');
+      if (!candidate) {
+        const fallback = visionFallback();
+        if (!fallback) throw new ContractError('no confident agent step');
+        ({ set, byId } = this.#set(observationId, [fallback], step));
+        chosenId = 'c0';
+        candidate = set.candidates.find(item => item.candidateId === 'c0');
+        if (!candidate) throw new ContractError('no confident agent step');
+      }
       // Waiting cannot show a whole-Mac change either; once the waits are used up, it was done.
       if (candidate.operation === 'wait' && this.#waits >= 3 && this.#lastOffScreen && finishing) candidate = finishing;
       if (candidate.operation === 'wait' && this.#waits < 3) {
@@ -402,7 +424,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       // changed and its layout held for one read (a loading page keeps changing), or until a
       // deadline when nothing changes. Steps whose effect is elsewhere get one quick look.
       const verifyStarted = performance.now();
-      const opening = ['open_url', 'open_app', 'focus_window', 'open_file', 'open_settings', 'notifications'].includes(chosen.kind);
+      const opening = ['open_url', 'open_app', 'focus_window', 'open_file', 'open_settings', 'notifications', 'ground'].includes(chosen.kind);
       const elsewhere = chosen.kind === 'copy' || ['media', 'system', 'window_action', 'menu', 'status'].includes(chosen.kind);
       const quiet = elsewhere ? 150 : opening ? 1_500 : 700;
       const deadline = verifyStarted + (opening ? 3_000 : elsewhere ? 600 : 1_500);
@@ -492,6 +514,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
     const readable = view.elements.filter(element => element.role !== 'AXStaticText' && element.label.trim()).length;
     const where = `${view.bundleId}|${view.windowTitle}`;
     if (view.vision && view.pid && (readable < 5 || this.#lookAt === where)) {
+      this.#visionScreens.add(where);
       const found = await this.#ax.call(this.taskId, 'vision_read', {}, 8_000).catch(() => []) as AgentElement[];
       if (Array.isArray(found) && found.length) {
         const labels = found.map(element => element.label).join('|');
@@ -506,6 +529,21 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
   #lookAt: string | undefined;
 
   async #act(option: Option): Promise<unknown> {
+    if (option.kind === 'ground') {
+      // Capture the window, ask UI-TARS for the point, click it for real; the image is deleted.
+      const shot = await this.#ax.call(this.taskId, 'vision_capture', {}, 10_000) as
+        { path: string; x: number; y: number; width: number; height: number; imageWidth: number; imageHeight: number };
+      this.#groundedAt.add(`${this.#lastView.bundleId}|${this.#lastView.windowTitle}`);
+      const recent = this.#history.slice(-2).join(' ');
+      const instruction = `${this.#question}${recent ? ` (next step; done so far: ${recent})` : ''}`;
+      let point: { x: number; y: number; ms: number };
+      try { point = await this.#ground!(shot.path, instruction); }
+      finally { try { (await import('node:fs')).unlinkSync(shot.path); } catch { /* already gone */ } }
+      const x = shot.x + point.x * (shot.width / shot.imageWidth);
+      const y = shot.y + point.y * (shot.height / shot.imageHeight);
+      this.#trace?.({ kind: 'vision_model', ms: point.ms, x: Math.round(x), y: Math.round(y) });
+      return await this.#ax.call(this.taskId, 'click_at', { x, y, instruction }, 10_000);
+    }
     const params: Record<string, JSONValue> = option.kind === 'press' || option.kind === 'copy' || option.kind === 'paste'
       || option.kind === 'close'
       ? { id: option.ref }
@@ -522,8 +560,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
                           : option.kind === 'menu' ? { path: option.ref }
                 : { name: option.label };
     const op = option.kind === 'menu' ? 'menu_press' : option.kind === 'status' ? 'status_press'
-      : option.kind as Exclude<Option['kind'], 'finish' | 'answer' | 'menu' | 'status' | 'look' | 'compose'>;
-    return await this.#ax.call(this.taskId, op as Exclude<typeof op, 'look' | 'compose'>, params,
+      : option.kind as Exclude<Option['kind'], 'finish' | 'answer' | 'menu' | 'status' | 'look' | 'compose' | 'ground'>;
+    return await this.#ax.call(this.taskId, op as Exclude<typeof op, 'look' | 'compose' | 'ground'>, params,
       ['open_url', 'open_app', 'open_file', 'open_settings'].includes(option.kind) ? 20_000 : 10_000);
   }
 
@@ -671,6 +709,12 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       options.push({ kind: 'menu', ref: 'choose', label: `a menu command of ${view.app}`, score: 1,
         description: `Use one of ${view.app}'s own menu commands (its File, Edit, View, Window or Help menus); only for things inside ${view.app} itself, not other apps or the Mac's System Settings.` });
     }
+    // Stage D, step 2: where the vision fallback is active and the vision model is on, Jev may
+    // ask UI-TARS where to click (icons and controls with no readable text). Jev still decides.
+    if (this.#ground && view.vision && view.pid && this.#visionScreens.has(`${view.bundleId}|${view.windowTitle}`)) {
+      options.push({ kind: 'ground', ref: 'vision-model', label: 'find it on screen with the vision model', score: 1,
+        description: `The control the request needs is not among the texts listed for ${view.app} (for example an icon with no label): have the vision model find it in the window and click it (about 3 s).` });
+    }
     if (view.vision && view.pid && this.#lookAt !== `${view.bundleId}|${view.windowTitle}`) {
       options.push({ kind: 'look', ref: 'screen-image', label: 'read the screen image', score: 0,
         description: `Read ${view.app}'s window from its screen image, to find buttons and text the app does not expose (slower).` });
@@ -812,7 +856,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         verifier: { kind: 'content_changed' }, delivery: 'semantic', riskPolicyRef: AGENT_POLICY,
         replayPolicy: 'only_if_not_applied' };
       const candidate: Record<string, JSONValue> = ['focus_window', 'window_action', 'media', 'open_file', 'system', 'answer',
-        'open_settings', 'menu', 'status', 'notifications', 'look', 'compose'].includes(option.kind)
+        'open_settings', 'menu', 'status', 'notifications', 'look', 'compose', 'ground'].includes(option.kind)
         ? { ...base, operation: 'invoke', targetRef: `${option.kind}:${option.ref}`.replace(/[^A-Za-z0-9_.:-]/gu, '-').slice(0, 160),
           parameters: {}, effects: ['NAVIGATE', 'EXTERNAL_WRITE'] }
         : option.kind === 'quit_app'
@@ -972,6 +1016,7 @@ function describeKind(option: Option): string {
     case 'notifications': return 'opened Notification Centre';
     case 'look': return 'read the screen image';
     case 'compose': return 'composed an answer';
+    case 'ground': return 'clicked where the vision model found it on screen';
     default: return 'finished';
   }
 }

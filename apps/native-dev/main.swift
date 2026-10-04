@@ -694,6 +694,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
                     toggle(UserDefaults.standard.bool(forKey: "understandOnDevice"), #selector(toggleUnderstandOnDevice(_:)))),
                 row("Summaries and combined answers", "Composes short spoken answers from what's on screen, on this Mac (about 2 GB, installed once).",
                     toggle(UserDefaults.standard.bool(forKey: "composeAnswers"), #selector(toggleComposeAnswers(_:)))),
+                row("Vision model for icons", "When an app can't be read and has icons without text, UI-TARS on this Mac finds where to click (about 3 s each, 5 GB once). Jev still decides each step.",
+                    toggle(UserDefaults.standard.bool(forKey: "visionModel"), #selector(toggleVisionModel(_:)))),
                 row("Read the screen when apps can't be", "For apps that don't expose their buttons, reads the window's image on this Mac.",
                     toggle(UserDefaults.standard.object(forKey: "readScreenImage") as? Bool ?? true, #selector(toggleReadScreen(_:)))),
             ]),
@@ -862,8 +864,18 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
         var models: [String] = []
         if UserDefaults.standard.bool(forKey: "understandOnDevice") { models.append("understanding") }
         if UserDefaults.standard.bool(forKey: "composeAnswers") { models.append("answers") }
+        if UserDefaults.standard.bool(forKey: "visionModel") { models.append("vision") }
         guard !models.isEmpty, let input = controllerInput else { return }
         _ = send(["type": "prepare_understanding", "requestId": UUID().uuidString.lowercased(), "models": models], through: input)
+    }
+
+    @objc private func toggleVisionModel(_ sender: NSSwitch) {
+        UserDefaults.standard.set(sender.state == .on, forKey: "visionModel")
+        prepareUnderstanding()
+        commandStatus?.stringValue = sender.state == .on
+            ? (VisionReader.permitted ? "Vision model on. It installs once in the background (about 5 GB)."
+               : "Vision model on. It also needs Screen Recording (Settings › Permissions).")
+            : "Vision model off. Apps that can't be read use text recognition only."
     }
 
     @objc private func toggleComposeAnswers(_ sender: NSSwitch) {
@@ -1490,7 +1502,16 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
             if object["type"] as? String == "agent_understanding" {
                 guard let requestID = object["requestId"] as? String, requestID == activeRequestID else { continue }
                 showUnderstanding(by: object["by"] as? String ?? "jev", typed: object["typed"] as? String,
-                                  problem: object["problem"] as? String ?? "", composer: object["composer"] as? String ?? "off")
+                                  problem: object["problem"] as? String ?? "", composer: object["composer"] as? String ?? "off",
+                                  vision: object["vision"] as? String ?? "off")
+                continue
+            }
+            if object["type"] as? String == "agent_grounded" {
+                guard let requestID = object["requestId"] as? String, requestID == activeRequestID else { continue }
+                let seconds = Double(object["ms"] as? Int ?? 0) / 1000
+                let base = understandingLabel?.stringValue ?? ""
+                understandingLabel?.stringValue = (base.isEmpty ? "" : base + " · ") + String(format: "found on screen by the vision model in %.1f s", seconds)
+                understandingLabel?.isHidden = false
                 continue
             }
             if object["type"] as? String == "agent_composed" {
@@ -1771,7 +1792,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
     }
 
     /// Who understood the request and what will be typed, so a test shows whether Qwen ran.
-    private func showUnderstanding(by: String, typed: String?, problem: String, composer: String = "off") {
+    private func showUnderstanding(by: String, typed: String?, problem: String, composer: String = "off", vision: String = "off") {
         let words = typed.map { "will type “\($0)”" } ?? "nothing to type"
         let local = UserDefaults.standard.bool(forKey: "understandOnDevice")
         let text: String
@@ -1789,7 +1810,13 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
         case "failed": "answer model unavailable"
         default: ""
         }
-        let full = [text, composing].filter { !$0.isEmpty }.joined(separator: " · ")
+        let seeing = switch vision {
+        case "loading": "vision model loading"
+        case "installing": "vision model installing (one time, about 5 GB)"
+        case "failed": "vision model unavailable"
+        default: ""
+        }
+        let full = [text, composing, seeing].filter { !$0.isEmpty }.joined(separator: " · ")
         understandingLabel?.stringValue = full
         understandingLabel?.isHidden = full.isEmpty
         understandingLabel?.textColor = by == "local" ? .controlAccentColor : .tertiaryLabelColor
@@ -2507,6 +2534,12 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
                 case "menu_press": try self.universalAX.pressMenu(object["path"] as? String ?? ""); reply(true, nil, nil)
                 case "status_items": reply(true, self.universalAX.statusItems(), nil)
                 case "vision_read": reply(true, try await self.universalAX.readScreenImage(), nil)
+                case "vision_capture": reply(true, try await self.universalAX.captureForVision(), nil)
+                case "click_at":
+                    guard let x = (object["x"] as? NSNumber)?.doubleValue, let y = (object["y"] as? NSNumber)?.doubleValue else {
+                        reply(false, nil, "no point"); return
+                    }
+                    try self.universalAX.click(atScreen: CGPoint(x: x, y: y)); reply(true, nil, nil)
                 case "notifications": try self.universalAX.openNotificationCentre(); reply(true, nil, nil)
                 case "status_press": try self.universalAX.pressStatusItem(object["id"] as? String ?? ""); reply(true, nil, nil)
                 case "open_settings":

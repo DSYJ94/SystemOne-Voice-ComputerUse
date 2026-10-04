@@ -125,6 +125,8 @@ interface StartAgent {
   readonly understanding: 'jev' | 'local';
   /** Stage C: compose answers on this Mac ('local') or not ('off'). */
   readonly composer: 'local' | 'off';
+  /** Stage D: the on-device vision model (UI-TARS) may locate controls ('local') or not ('off'). */
+  readonly vision: 'local' | 'off';
 }
 
 interface ContinueBrowse {
@@ -155,7 +157,7 @@ interface PrepareUnderstanding {
   readonly type: 'prepare_understanding';
   readonly requestId: string;
   /** Which on-device models to load: words to type, composed answers. */
-  readonly models: readonly ('understanding' | 'answers')[];
+  readonly models: readonly ('understanding' | 'answers' | 'vision')[];
 }
 
 interface ConfirmStep {
@@ -258,6 +260,13 @@ function decisionProviderValid(value: Record<string, JSONValue>): boolean {
 }
 
 let sharedLocal: LocalUnderstanding | undefined;
+let sharedVision: LocalUnderstanding | undefined;
+function localVision(): LocalUnderstanding {
+  sharedVision ??= new LocalUnderstanding(process.env.SYSTEMONE_LOCAL_MODEL_DIR
+    ?? join(process.env.HOME ?? '', 'Library/Application Support/SystemOne-Dev/local-model'), 'vision');
+  return sharedVision;
+}
+
 let sharedAnswers: LocalUnderstanding | undefined;
 function localAnswers(): LocalUnderstanding {
   sharedAnswers ??= new LocalUnderstanding(process.env.SYSTEMONE_LOCAL_MODEL_DIR
@@ -368,14 +377,16 @@ function requestFromLine(line: Uint8Array): NativeRequest {
   if (value.type === 'start_agent') {
     const keys = Object.keys(value);
     const required = ['command', 'decisionProvider', 'requestId', 'type'];
-    if (!required.every(key => keys.includes(key)) || keys.some(key => !required.includes(key) && key !== 'understanding' && key !== 'composer')
+    if (!required.every(key => keys.includes(key)) || keys.some(key => !required.includes(key) && !['understanding', 'composer', 'vision'].includes(key))
+      || (value.vision !== undefined && value.vision !== 'local' && value.vision !== 'off')
       || value.decisionProvider !== 'jev' || value.command === undefined || !isRecord(value.command)
       || (value.understanding !== undefined && value.understanding !== 'jev' && value.understanding !== 'local')
       || (value.composer !== undefined && value.composer !== 'local' && value.composer !== 'off')) {
       throw new ContractError('invalid agent request');
     }
     return { type: 'start_agent', requestId: value.requestId as string, command: value.command, decisionProvider: 'jev',
-      understanding: value.understanding === 'local' ? 'local' : 'jev', composer: value.composer === 'local' ? 'local' : 'off' };
+      understanding: value.understanding === 'local' ? 'local' : 'jev', composer: value.composer === 'local' ? 'local' : 'off',
+      vision: value.vision === 'local' ? 'local' : 'off' };
   }
   if (value.type === 'continue_browse') {
     if (Object.keys(value).sort().join(',') !== 'command,decisionProvider,requestId,targetRequestId,type'
@@ -389,11 +400,11 @@ function requestFromLine(line: Uint8Array): NativeRequest {
   if (value.type === 'prepare_understanding') {
     const models = value.models;
     if (Object.keys(value).sort().join(',') !== 'models,requestId,type' || !Array.isArray(models)
-      || models.some(model => model !== 'understanding' && model !== 'answers')) {
+      || models.some(model => model !== 'understanding' && model !== 'answers' && model !== 'vision')) {
       throw new ContractError('invalid prepare request');
     }
     return { type: 'prepare_understanding', requestId: value.requestId as string,
-      models: models as ('understanding' | 'answers')[] };
+      models: models as ('understanding' | 'answers' | 'vision')[] };
   }
   if (value.type === 'agent_feedback') {
     const extra = Object.keys(value).filter(key => !['requestId', 'targetRequestId', 'type', 'value'].includes(key));
@@ -776,6 +787,7 @@ export class NativeManagedController {
     if (request.type === 'prepare_understanding') {
       if (request.models.includes('understanding')) localUnderstanding().prepare();
       if (request.models.includes('answers')) localAnswers().prepare();
+      if (request.models.includes('vision')) localVision().prepare();
       return;
     }
     if (request.type === 'agent_feedback') {
@@ -1418,13 +1430,29 @@ export class NativeManagedController {
           };
         } else answers.prepare();
       }
+      // Stage D: UI-TARS may locate controls, alongside Jev (loaded in the background; never waited for).
+      let grounder: ((image: string, instruction: string) => Promise<{ x: number; y: number; ms: number }>) | undefined;
+      let visionState = 'off';
+      if (request.vision === 'local') {
+        const vision = localVision();
+        visionState = vision.status === 'ready' ? 'on' : vision.status === 'failed' ? 'failed'
+          : vision.status === 'starting' ? 'loading' : 'installing';
+        if (vision.status === 'ready') {
+          grounder = async (image, instruction) => {
+            const point = await vision.locate(image, instruction);
+            this.#chromeOutput?.({ type: 'agent_grounded', requestId: request.requestId, ms: point.ms });
+            return point;
+          };
+        } else vision.prepare();
+      }
       // The bar shows who understood the request and what will be typed (Qwen on this Mac or Jev).
       this.#chromeOutput?.({ type: 'agent_understanding', requestId: request.requestId,
         by: understanding === 'local' ? 'local' : request.understanding === 'local'
           ? (localUnderstanding().status === 'failed' ? 'local_failed'
             : localUnderstanding().status === 'installing' || localUnderstanding().status === 'not_installed' ? 'local_installing'
               : 'local_loading') : 'jev',
-        typed: goal.typedText?.text ?? null, problem: localUnderstanding().problem.slice(0, 120), composer: composerState });
+        typed: goal.typedText?.text ?? null, problem: localUnderstanding().problem.slice(0, 120), composer: composerState,
+        vision: visionState });
       trace?.({ kind: 'understanding', by: understanding, answer: goal.wantsAnswer, typed: goal.typedText?.text ?? null,
         file: goal.fileName?.text ?? null });
       if (active.cancelled) return;
@@ -1441,6 +1469,7 @@ export class NativeManagedController {
       const task = UniversalAgentTask.start(this.#journal, registry, admission, this.#agentAX, { goal, decision,
         ...(initialView ? { initialView } : {}),
         ...(composer ? { compose: composer } : {}),
+        ...(grounder ? { ground: grounder } : {}),
         say: text => { this.#chromeOutput?.({ type: 'agent_answer', requestId: request.requestId, text: text.slice(0, 3_000) }); },
         ...(trace ? { trace } : {}),
         confirmation: { confirm: (proposal, signal) => this.#awaitConfirmation(request.requestId, proposal, signal) } });
@@ -1779,6 +1808,7 @@ async function main(): Promise<void> {
     void controller.close().catch(() => { process.exitCode = 1; }).finally(() => {
       sharedLocal?.stop();
       sharedAnswers?.stop();
+      sharedVision?.stop();
       setTimeout(() => process.exit(process.exitCode ?? 0), 100);
     });
   };

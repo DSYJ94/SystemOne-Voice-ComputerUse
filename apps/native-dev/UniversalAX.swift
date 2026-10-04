@@ -664,6 +664,28 @@ final class UniversalAX {
     private let vision = VisionReader()
     private var visionRefs: [String: CGRect] = [:]
 
+    /// The target window as a temporary PNG (for the on-device vision model), with its
+    /// screen frame so a point in the image maps back to the screen. The host deletes it.
+    func captureForVision() async throws -> [String: Any] {
+        guard let pid = targetPID else { throw AXError.noTarget }
+        let (image, frame) = try await vision.capture(windowOf: pid)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("systemone-vision", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let url = folder.appendingPathComponent("\(UUID().uuidString).png")
+        guard let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]),
+              FileManager.default.createFile(atPath: url.path, contents: data, attributes: [.posixPermissions: 0o600]) else {
+            throw AXError.actionFailed
+        }
+        return ["path": url.path, "x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height,
+                "imageWidth": image.width, "imageHeight": image.height]
+    }
+
+    /// A real click at a global screen point (from the vision model).
+    func click(atScreen point: CGPoint) throws {
+        try activateTarget()
+        click(at: point)
+    }
+
     /// The target window's text read from its pixels, as pressable elements ("v0", "v1", …).
     func readScreenImage() async throws -> [[String: Any]] {
         guard let pid = targetPID else { throw AXError.noTarget }

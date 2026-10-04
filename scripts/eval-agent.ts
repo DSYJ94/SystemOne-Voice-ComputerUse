@@ -58,7 +58,10 @@ const results: RunResult[] = [];
 const queue = [...chosen];
 await Promise.all(Array.from({ length: 4 }, async () => {
   for (let next = queue.shift(); next; next = queue.shift()) {
-    const result = await runScenario(next, decide, answers ? { compose: (question, screen) => answers.answer(question, screen) } : {})
+    // GROUND=stub: a stand-in vision model (the benchmark measures the real one); tests when Jev uses it.
+    const ground = process.env.GROUND === 'stub' ? async () => ({ x: 50, y: 50, ms: 0 }) : undefined;
+    const result = await runScenario(next, decide, { ...(answers ? { compose: (question: string, screen: string) => answers.answer(question, screen) } : {}),
+      ...(ground ? { ground } : {}) })
       .catch(error => ({ name: next!.name, goal: next!.goal, state: `crash: ${error}`, success: false, harmed: false,
         steps: [], ms: 0 }));
     results.push(result);

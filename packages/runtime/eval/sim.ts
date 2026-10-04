@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { schema } from '../../protocol/src/contract.ts';
@@ -80,6 +80,8 @@ export interface SimWorld {
   openNotifications?(): boolean;
   /** Text the front window shows only as pixels (read by the vision fallback). */
   screenImage?(): readonly SimElement[];
+  /** What a vision model click for `instruction` would hit (icons with no text). */
+  visionClick?(instruction: string): boolean;
   pressStatus?(id: string): boolean;
   openSettings?(id: string): boolean;
   /** What SystemOne told the user (answers, read-outs). */
@@ -109,7 +111,8 @@ export interface RunResult {
 /** Runs one scenario through the real agent task, journal and decision. */
 export async function runScenario(scenario: Scenario, decision: (goal: string) => AgentDecision,
   options: { readonly allowRisky?: boolean;
-    readonly compose?: (question: string, screen: string) => Promise<{ readonly answer: string; readonly ms: number }> } = {}): Promise<RunResult> {
+    readonly compose?: (question: string, screen: string) => Promise<{ readonly answer: string; readonly ms: number }>;
+    readonly ground?: (image: string, instruction: string) => Promise<{ readonly x: number; readonly y: number; readonly ms: number }> } = {}): Promise<RunResult> {
   const world = scenario.world();
   const root = mkdtempSync(join(tmpdir(), 'systemone-eval-'));
   const journal = new AttemptJournal(join(root, 'attempts.sqlite'));
@@ -174,6 +177,14 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
       case 'status_items': value = [...(world.statusItems?.() ?? [])].map(item => ({ ...item })); break;
       case 'status_press': ok = world.pressStatus?.(String(request.id)) ?? false; break;
       case 'notifications': ok = world.openNotifications?.() ?? false; break;
+      case 'vision_capture': {
+        // A stand-in image; the eval's stub model returns the centre, the world decides what is hit.
+        const path = join(mkdtempSync(join(tmpdir(), 'systemone-vision-')), 'shot.png');
+        writeFileSync(path, '');
+        value = { path, x: 0, y: 0, width: 100, height: 100, imageWidth: 100, imageHeight: 100 };
+        break;
+      }
+      case 'click_at': ok = world.visionClick?.(String(request.instruction ?? '')) ?? false; break;
       case 'vision_read':
         imageText = [...(world.screenImage?.() ?? [])];
         value = imageText.map((item, index) => ({ id: `v${index}`, role: 'AXImageText', label: item.label,
@@ -230,6 +241,7 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
     },
     say: text => world.heard?.(text),
     ...(options.compose ? { compose: options.compose } : {}),
+    ...(options.ground ? { ground: options.ground } : {}),
     confirmation: { async confirm(proposal: AgentProposal) {
       steps.push(`${proposal.kind} “${proposal.label.slice(0, 60)}”${proposal.risky ? ' (risky)' : ''} [done ${done}]`);
       // Risky steps are declined unless the run allows them, like a user saying no.

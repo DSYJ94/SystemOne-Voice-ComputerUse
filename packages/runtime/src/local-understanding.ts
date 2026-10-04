@@ -13,10 +13,12 @@ export type LocalStatus = 'not_installed' | 'installing' | 'starting' | 'ready' 
 const SCRIPTS = join(dirname(fileURLToPath(import.meta.url)), '../../../scripts/local-model');
 /** Two on-device models share one Python environment: Qwen2.5-0.5B picks the words to type
  * (worker.py); Llama-3.2-3B composes short spoken answers from screen text (answer_worker.py). */
-export type LocalKind = 'understanding' | 'answers';
-const KINDS: Readonly<Record<LocalKind, { readonly worker: string; readonly marker: string }>> = {
+export type LocalKind = 'understanding' | 'answers' | 'vision';
+const KINDS: Readonly<Record<LocalKind, { readonly worker: string; readonly marker: string; readonly extra?: string }>> = {
   understanding: { worker: join(SCRIPTS, 'worker.py'), marker: 'installed' },
   answers: { worker: join(SCRIPTS, 'answer_worker.py'), marker: 'installed-answers' },
+  // UI-TARS-1.5-7B for screen grounding (Stage D); needs the vision add-on package.
+  vision: { worker: join(SCRIPTS, 'vision_worker.py'), marker: 'installed-vision', extra: 'mlx-vlm==0.7.4' },
 };
 const MLX_LM = 'mlx-lm==0.32.0';
 const PYTHONS = ['/opt/homebrew/bin/python3', '/usr/local/bin/python3', '/usr/bin/python3'];
@@ -32,11 +34,13 @@ export class LocalUnderstanding {
   #starting: Promise<void> | undefined;
   readonly #worker_: string;
   readonly #marker: string;
+  readonly #extra: string | undefined;
 
   constructor(dir: string, kind: LocalKind = 'understanding') {
     this.#dir = dir;
     this.#worker_ = KINDS[kind].worker;
     this.#marker = KINDS[kind].marker;
+    this.#extra = KINDS[kind].extra;
     this.#status = existsSync(join(dir, this.#marker)) ? 'starting' : 'not_installed';
   }
 
@@ -57,6 +61,19 @@ export class LocalUnderstanding {
     const reply = await this.#ask({ text }, timeoutMs);
     const answer = reply.answer.trim();
     return { answer: !answer || answer.toUpperCase() === 'NONE' ? null : answer, ms: reply.ms };
+  }
+
+  /** The point to click in `image` (its own pixels) for `instruction` (vision model). */
+  async locate(image: string, instruction: string, timeoutMs = 15_000): Promise<{ readonly x: number; readonly y: number; readonly ms: number }> {
+    if (this.#status !== 'ready' || !this.#worker) { this.prepare(); throw new Error(`local model ${this.#status}`); }
+    const id = `q${++this.#next}`;
+    const reply = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      const timer = setTimeout(() => { this.#pending.delete(id); reject(new Error('vision model timed out')); }, timeoutMs);
+      this.#pending.set(id, value => { clearTimeout(timer); resolve(value as Record<string, unknown>); });
+      this.#worker!.stdin.write(`${JSON.stringify({ id, image, instruction })}\n`);
+    });
+    if (typeof reply.x !== 'number' || typeof reply.y !== 'number') throw new Error(String(reply.error ?? 'no point'));
+    return { x: reply.x, y: reply.y, ms: typeof reply.ms === 'number' ? reply.ms : 0 };
   }
 
   /** A short spoken answer to `question` composed only from `screen` (answers model). */
@@ -99,6 +116,7 @@ export class LocalUnderstanding {
       await run(join(venv, 'bin/pip'), ['install', '--quiet', '--disable-pip-version-check', MLX_LM]);
       writeFileSync(join(venv, '.mlx-ready'), `${MLX_LM}\n`, { mode: 0o600 });
     }
+    if (this.#extra) await run(join(venv, 'bin/pip'), ['install', '--quiet', '--disable-pip-version-check', this.#extra]);
     // Loading once downloads the pinned model into the support folder.
     await run(join(venv, 'bin/python'), [this.#worker_, '--download'], { HF_HOME: join(this.#dir, 'hf') });
     writeFileSync(join(this.#dir, this.#marker), `${MLX_LM}\n`, { mode: 0o600 });
