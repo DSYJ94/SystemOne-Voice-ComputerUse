@@ -17,6 +17,8 @@ export const AGENT_POLICY = 'universal-agent-confirmed-v1';
 export const AGENT_VERIFIER = 'user-confirmed-agent-goal-v1';
 const ROUND_SIZE = 45;
 const MAX_OPTIONS = 300;
+/** A round's pick reaches the final only within this factor of the strongest pick's odds. */
+const FINAL_ODDS = 3;
 /** Labels that always need an explicit yes, even with auto-allow on. */
 const RISKY = /\b(send|post|publish|buy|purchase|pay|checkout|check out|order|subscribe|delete|remove|trash|erase|discard|unsubscribe|sign out|log ?out|password|transfer|withdraw|donate|book now|reserve|accept|agree)\b/iu;
 const FILLER = new Set(['and', 'the', 'for', 'then', 'please', 'with', 'from', 'this', 'that', 'into', 'onto', 'open', 'click']);
@@ -88,8 +90,10 @@ export interface AgentProposal {
 export interface AgentDecision {
   select(set: BuiltCandidateSet, view: AgentSnapshot, signal: AbortSignal, history: readonly string[],
     origin?: string): Promise<string | null>;
+  /** A preliminary round's best picks, each with its odds against the fallbacks every round
+   * shares (finish, wait, ask), so picks from different rounds can be compared. */
   bestActions?(set: BuiltCandidateSet, view: AgentSnapshot, signal: AbortSignal,
-    history: readonly string[], origin?: string): Promise<readonly string[]>;
+    history: readonly string[], origin?: string): Promise<readonly { readonly id: string; readonly odds: number }[]>;
   /** Picks which candidate piece of the request answers `question` (index), or null for none. */
   pickSpan?(request: string, role: 'typed' | 'file', spans: readonly string[], signal?: AbortSignal): Promise<number | null>;
   /** Which of `texts` (visible on screen) answers the user's question: its index, -1 when several
@@ -280,7 +284,13 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         const concrete = await this.#resolve(general, view);
         this.#active(generation);
         const chosenItem = concrete ?? visionFallback();
-        if (!chosenItem) throw new ContractError(`nothing in the list fits: ${general.label}`);
+        if (!chosenItem) {
+          // Nothing in that list fits ("night mode" is not a Chrome menu command): rule the list
+          // out on this screen and decide again, so another kind of step can be taken.
+          this.#noEffect.add(`${content(view)}|${general.kind}:${general.ref}`);
+          this.#history.push(`Looked for ${general.label} that fits; there is none.`);
+          return;
+        }
         answer = chosenItem;
         ({ set, byId } = this.#set(observationId, [chosenItem], step));
       }
@@ -919,13 +929,17 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       // Preliminary rounds are independent, so they run in parallel.
       const picks = await Promise.all(rounds.map(async round => {
         const { set, byId } = this.#set(observationId, round, step);
-        const ids = this.#decision.bestActions
+        const best = this.#decision.bestActions
           ? await this.#decision.bestActions(set, view, this.#abort.signal, [...this.#history], this.#origin)
-          : [await this.#decision.select(set, view, this.#abort.signal, [...this.#history], this.#origin)];
-        return ids.slice(0, 2).map(id => (id ? byId.get(id) : undefined)).filter((item): item is Option => !!item);
+          : [{ id: await this.#decision.select(set, view, this.#abort.signal, [...this.#history], this.#origin), odds: 1 }];
+        return best.slice(0, 2).flatMap(({ id, odds }) => { const option = id ? byId.get(id) : undefined; return option ? [{ option, odds }] : []; });
       }));
       this.#active(generation);
-      finalists = [...new Set(picks.flat())];
+      // Only picks that compete with the strongest go to the final: a round with nothing fitting
+      // (only keys and scrolling) still sends its best, and in the final a clear winner from
+      // another round could lose to it once its own near-twins split the vote.
+      const strongest = Math.max(0, ...picks.flat().map(pick => pick.odds));
+      finalists = [...new Set(picks.flat().filter(pick => pick.odds >= strongest / FINAL_ODDS).map(pick => pick.option))];
     }
     const { set, byId } = this.#set(observationId, finalists, step);
     const chosenId = await this.#decision.select(set, view, this.#abort.signal, [...this.#history], this.#origin);

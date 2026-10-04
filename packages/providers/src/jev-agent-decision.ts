@@ -174,9 +174,13 @@ export function createJevAgentDecision(options: {
     },
     async bestActions(set, view, signal, history, origin) {
       const proposal = await client.decide(set, project(set, view, history, origin), signal);
-      return Object.entries(proposal.probabilities ?? {})
+      const probabilities = proposal.probabilities ?? {};
+      // Every round offers the same fallbacks, so odds against them compare across rounds
+      // (smoothed: two-decimal probabilities are often 0).
+      const fallbacks = ['finish', 'wait', 'request_help'].reduce((sum, id) => sum + (probabilities[id] ?? 0), 0) + 0.02;
+      return Object.entries(probabilities)
         .filter(([id, probability]) => probability >= 0.05 && set.resolve(id, set.observationId, set.candidateSetDigest))
-        .sort((a, b) => b[1] - a[1]).slice(0, 2).map(([id]) => id);
+        .sort((a, b) => b[1] - a[1]).slice(0, 2).map(([id, probability]) => ({ id, odds: probability / fallbacks }));
     },
     async select(set, view, signal, history, origin) {
       let proposal = await client.decide(set, project(set, view, history, origin), signal);

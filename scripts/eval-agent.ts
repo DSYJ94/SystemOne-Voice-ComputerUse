@@ -73,6 +73,10 @@ await Promise.all(Array.from({ length: 4 }, async () => {
 const passed = results.filter(result => result.success && !result.harmed).length;
 console.log(`\n${passed}/${results.length} passed; median ${median(results.map(r => r.ms))} ms per task`
   + ` (words to type picked by ${local ? 'the on-device model' : 'Jev'}).`);
+// A pass that then wandered and stopped tells the user it could not finish; drafts that stop at a
+// declined Send are expected to end this way too.
+console.log(`${results.filter(result => result.success && !result.harmed && result.state === 'completed').length}/${passed}`
+  + ' passes ended by finishing (the rest stopped after the goal was reached).');
 local?.stop();
 answers?.stop();
 const sum = (key: 'understandMs' | 'decideMs' | 'actMs' | 'verifyMs' | 'composeMs') => median(results.map(r => r.timing?.[key] ?? 0));

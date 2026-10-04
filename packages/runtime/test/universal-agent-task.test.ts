@@ -24,10 +24,13 @@ class FakeApp {
   playing = false;
   query = '';
   searched = false;
+  /** Extra list rows, for screens big enough to be judged in rounds. */
+  rows = 0;
   calls: Record<string, JSONValue>[] = [];
   elements(): AgentElement[] {
     if (!this.url) return [];
-    return [
+    return [...Array.from({ length: this.rows }, (_, index): AgentElement => ({ id: `e${index + 4}`, role: 'AXRow',
+      label: `Message ${index + 1}`, context: 'Message list', editable: false, pressable: true })),
       { id: 'e0', role: 'AXSearchField', label: 'Search', context: 'masthead', editable: true, pressable: false,
         value: this.query },
       { id: 'e1', role: 'AXButton', label: 'Search', context: 'masthead', editable: false, pressable: true },
@@ -53,7 +56,7 @@ class FakeApp {
 }
 
 function harness(t: TestContext, text: string, plan: ((c: Record<string, JSONValue>) => boolean)[],
-  confirm: (p: AgentProposal) => boolean = () => true) {
+  confirm: (p: AgentProposal) => boolean = () => true, custom?: AgentDecision) {
   const root = mkdtempSync(join(tmpdir(), 'systemone-agent-'));
   const journal = new AttemptJournal(join(root, 'attempts.sqlite'));
   t.after(() => { journal.close(); rmSync(root, { recursive: true, force: true }); });
@@ -75,7 +78,7 @@ function harness(t: TestContext, text: string, plan: ((c: Record<string, JSONVal
     approvedEffects: ['READ', 'NAVIGATE', 'EXTERNAL_READ', 'LOCAL_EDIT', 'EXTERNAL_WRITE'],
     parameters: goal.typedText ? [bindCommandSpan(command, 'typed-text', goal.typedText)] : [] });
   let index = 0;
-  const decision: AgentDecision = { async select(set) {
+  const decision: AgentDecision = custom ?? { async select(set) {
     const want = plan[index++];
     return (set.candidates.find(c => want?.(c))?.candidateId as string | undefined) ?? null;
   } };
@@ -129,4 +132,47 @@ test('open apps are offered as switch targets and the agent switches by name', a
   assert.equal((await h.actor.run()).state, 'completed');
   assert.deepEqual(h.proposals.map(p => p.kind), ['open_app', 'finish']);
   assert.equal(h.app.calls.find(call => call.op === 'open_app')?.name, 'Slack');
+});
+
+test('a general list with nothing that fits is ruled out on that screen and the step is decided again', async t => {
+  const offered: string[][] = [];
+  const decision: AgentDecision = {
+    async select(set) {
+      offered.push(set.candidates.map(c => String(c.description)));
+      const menu = set.candidates.find(c => /own menu commands/u.test(String(c.description)));
+      return String((menu ?? set.candidates.find(c => c.operation === 'finish'))!.candidateId);
+    },
+    async chooseOne() { return null; },
+  };
+  const h = harness(t, 'turn on night mode', [], () => true, decision);
+  h.app.url = 'https://youtube.com/';
+  assert.equal((await h.actor.run()).state, 'completed');
+  assert.equal(offered.length, 2);
+  assert.ok(offered[0]!.some(text => /own menu commands/u.test(text)));
+  assert.ok(!offered[1]!.some(text => /own menu commands/u.test(text)));
+});
+
+test('only round picks that compete with the strongest reach the final', async t => {
+  const finals: string[][] = [];
+  const decision: AgentDecision = {
+    // Each round: a confident row where there is one, else a weak scroll against strong fallbacks.
+    async bestActions(set) {
+      const row = set.candidates.find(c => /“Message 2”/u.test(String(c.description)));
+      const twin = set.candidates.find(c => /“Message 3”/u.test(String(c.description)));
+      const scroll = set.candidates.find(c => c.operation === 'scroll');
+      return row ? [{ id: String(row.candidateId), odds: 30 }, ...(twin ? [{ id: String(twin.candidateId), odds: 4 }] : [])]
+        : scroll ? [{ id: String(scroll.candidateId), odds: 6 }] : [];
+    },
+    async select(set) {
+      finals.push(set.candidates.filter(c => c.delivery !== 'controller').map(c => String(c.description)));
+      const row = set.candidates.find(c => /“Message 2”/u.test(String(c.description)));
+      return String((row ?? set.candidates.find(c => c.operation === 'finish'))!.candidateId);
+    },
+  };
+  const h = harness(t, 'open message 2', [], () => true, decision);
+  h.app.url = 'https://mail.example.com/';
+  h.app.rows = 80;
+  await h.actor.run();
+  assert.equal(finals[0]!.length, 1);
+  assert.match(finals[0]![0]!, /“Message 2”/u);
 });

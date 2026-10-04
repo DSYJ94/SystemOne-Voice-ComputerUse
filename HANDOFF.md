@@ -1,6 +1,6 @@
 # SystemOne handoff
 
-Updated 4 October 2026. This is the entry point for a new agent session. Read it
+Updated 4 October 2026 (evening, after a Stage B round). This is the entry point for a new agent session. Read it
 first, then [docs/V1_PLAN.md](docs/V1_PLAN.md) (stages and status) and
 [docs/USING_SYSTEMONE.md](docs/USING_SYSTEMONE.md) (what the owner sees).
 [docs/MAC_GPU_HANDOFF.md](docs/MAC_GPU_HANDOFF.md) is the older CLM-era
@@ -13,8 +13,8 @@ Voice or text computer use on the owner's Mac. The user holds a shortcut
 shows progress. A Node controller runs an agent loop:
 
 1. Read the front app: the browser's own page through AppleScript JavaScript
-   (`dom-agent.js`), Accessibility otherwise, and the screen image when an app
-   exposes nothing.
+   (`dom-agent.js`) plus the browser's toolbar and pop-ups through Accessibility,
+   Accessibility otherwise, and the screen image when an app exposes nothing.
 2. Build every possible action as an option.
 3. **Jev** (TypeSafe, `jev-1.13.0`, a choice-only model) picks one.
 4. Act, check the screen changed, and record the step.
@@ -82,12 +82,13 @@ datasets and attachments under `.../datasets`, logs `~/Library/Logs/SystemOne De
 ```sh
 npm start                      # owner: build (signed) and run; agents must not build in place
 npx tsc --noEmit               # TypeScript
-npm test                       # 504 unit tests (4 Oct)
-npm run eval:agent             # simulated Mac, live Jev: 158/168, median ~1.5 s per task (4 Oct)
+npm test                       # 506 unit tests (4 Oct)
+npm run eval:agent             # simulated Mac, live Jev: 170/178, median ~1.5 s per task (4 Oct)
 UNDERSTANDING=local npm run eval:agent    # words picked by on-device Qwen
 COMPOSER=local npm run eval:agent         # Stage C answers composed by on-device Llama
 GROUND=stub npm run eval:agent            # Stage D with a stand-in vision model (tests when it is used)
 VERBOSE=1 node scripts/eval-agent.ts <name-filter>   # one scenario family with steps
+node scripts/eval-explain.ts <name>[~N]              # one case with every Jev question and answer (STATE=1)
 node packages/runtime/eval/span-bench.ts  # words-to-type benchmark (Jev 20/22, Qwen 17/22)
 npm run traces                 # the owner's recent real tasks
 npm run traces:export          # rebuild datasets from traces
@@ -107,8 +108,15 @@ Tools `swiftc`.
 - **B, reliability (continuous):**
   - Traces, automatic training data, and 👍/👎 with reason, correction and
     screenshots.
-  - Eval: 95 scenarios plus 74 paraphrases, 162/169 (median 1.46 s per task).
-    `vision-icon` passes only with the vision model (`GROUND=stub` in the eval).
+  - Eval: 98 scenarios plus 80 paraphrases, 170/178 (median 1.56 s per task); it
+    also prints how many passes ended by finishing (143/170) rather than stopping
+    after the goal. `vision-icon` passes only with `GROUND=stub`.
+  - Round of 4 Oct evening (details in `docs/VALIDATION.md`): browser toolbar and
+    extensions are read (the owner's Claude-extension 👎); round picks reach the final
+    only if they compete with the strongest (the Santander-email 👎: a weak "scroll"
+    beat two near-identical rows); a general list with nothing fitting is ruled out
+    and the step re-decided instead of stopping. Tried and reverted: describing what
+    a click did in the step history (160/178).
   - Loop prevention by three general rules: no undo of the last step, no
     repeating a step taken from a screen seen before, no retrying a step that
     changed nothing.
@@ -116,9 +124,11 @@ Tools `swiftc`.
     interactive role, cleans icon-glyph labels, gives list positions, and falls
     back to a real click.
   - Known failures: compressed Slack phrasings ("slack Priya running late"),
-    "find my budget spreadsheet and open it", "I need the system settings app"
-    (Jev picks Chrome › Settings…), "wikipedia alan turing", ambiguous "this
-    monitor".
+    "find my budget spreadsheet and open it", ambiguous "this monitor"; flip
+    between runs: two VS Code windows side by side, Space pressed on an autoplaying
+    video after "play the first result", a second Next after the media key when
+    "is it done?" lands just under 0.8. Passes that wander after the goal (27 of 170 in the last run)
+    include dark mode via the whole-Mac option, then Chrome › Settings….
 - **C, conversation:**
   - Follow-ups, copy/paste across apps, dictation, undo, spoken replies.
   - Answers read from the screen. A separate focused Jev question picks the text
@@ -165,6 +175,10 @@ Tools `swiftc`.
   (median 7.0 s per task). Keep the pooled HTTPS agent.
 - Jev provider views need candidate descriptions of at least 10 characters,
   candidate ids matching `^[A-Za-z0-9_.:-]{1,160}$`, and at least 2 candidates.
+- Rounds: every round shares the fallbacks (finish, wait, ask), so a pick's odds
+  against them compare across rounds; probabilities are two-decimal, so smooth.
+- Adding "the page is now …" to the step history made Jev act more after a goal was
+  reached (reverted, 4 Oct evening). Evidence for "done" belongs in the screen state.
 - Jev's framing matters and is measured, not guessed:
   - Span picking describes the leftover words.
   - Answer-finding uses a focused state ("The user asked …. These texts are on
@@ -188,19 +202,24 @@ Tools `swiftc`.
    email (plan in `docs/TELEMETRY.md`).
 3. A test round with `npm start` after the latest commits. Screen Recording grant
    (⚙ Permissions); optionally a Premium voice (⚙ Voice › Get Better Voices…);
-   try the Qwen, Summaries and Vision model toggles.
+   try the Qwen, Summaries and Vision model toggles. New to try: "open the Claude
+   extension in Chrome" (the browser toolbar is now read; check `npm run traces`
+   page-read times stay close to ~0.55 s) and "open/delete the Santander cycles
+   email" in Outlook.
 4. Whether to push the local commits after `5527c96`.
 
 ## Next steps (builder)
 
-1. Stage B round: read the newest traces (`npm run traces`), outbox records and 👎
-   notes and screenshots (`datasets/attachments`); fix failures generally; add eval
-   scenarios and paraphrases; re-run the whole eval.
+1. Stage B round after the owner's next test: read the newest traces (`npm run traces
+   -- 20`), outbox records and 👎 notes and screenshots (`datasets/attachments`); fix
+   failures generally; add eval scenarios and paraphrases; re-run the whole eval.
+   First check the toolbar read on real Chrome (labels, read time, extension pop-up).
 2. Vision: once the owner has tried it, confirm UI-TARS on the owner's 👎
    screenshots and re-run `scripts/vision-bench`. Consider making Jev prefer the
    vision model over unrelated actions on icon-only screens; in the eval it first
    tried File and Export for "share this drawing".
 3. Telemetry upload (endpoint, background sending with preview, bucket, weekly
    digest) once cloud details arrive (`docs/TELEMETRY.md`).
-4. Remaining known eval failures, each with a general cause.
+4. Remaining known eval failures, each with a general cause; and passes that wander
+   after the goal (the eval's "ended by finishing" count), e.g. after whole-Mac steps.
 5. Stage F planning once about 1–2k labelled judgments exist.

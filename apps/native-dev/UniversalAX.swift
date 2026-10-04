@@ -96,20 +96,66 @@ final class UniversalAX {
                                     "selected": index + 1 == active])
             }
         }
+        // Nor can it see the browser's own controls (toolbar, extensions, an open pop-up).
+        let (controls, pages) = browserControls(pid: app.processIdentifier)
         // The layout signature ignores free text (clocks, video time), so a ticking
-        // page is still the same screen; the content signature includes it.
-        let structural = (tabElements + elements).filter { ($0["role"] as? String) != "AXStaticText" }
-        let signature = "\(title)|\(url)|\(value["scrollY"] ?? 0)|"
+        // page is still the same screen; the content signature includes it. A side panel
+        // opening shows as one more page in the window.
+        let structural = (tabElements + controls + elements).filter { ($0["role"] as? String) != "AXStaticText" }
+        let signature = "\(title)|\(url)|\(value["scrollY"] ?? 0)|\(pages)|"
             + structural.map { "\($0["role"] ?? "")\($0["label"] ?? "")\($0["value"] ?? "")\($0["selected"] ?? "")" }
                 .joined(separator: "¦")
         var snap = Snapshot(app: app.localizedName ?? bundle, bundleID: bundle, pid: app.processIdentifier,
-                            windowTitle: title, url: url, elements: tabElements + elements,
+                            windowTitle: title, url: url, elements: tabElements + controls + elements,
                             truncated: value["truncated"] as? Bool ?? false,
                             signature: String(signature.hashValue), visited: elements.count)
         snap.contentSignature = String((signature + Self.texts(of: elements)).hashValue)
         snap.scrollY = (value["scrollY"] as? NSNumber)?.intValue
         snap.via = "dom"
         return snap
+    }
+
+    /// The browser's own controls outside the page, read with Accessibility: toolbar buttons
+    /// (Back, Extensions, pinned extensions, profile, bookmarks) and any pop-up open over the
+    /// window (the Extensions menu). Pages and the tab strip are skipped; they are read faster
+    /// above. Text fields are left out: going to an address is its own option. Also returns how
+    /// many pages the window holds (a side panel adds one).
+    private func browserControls(pid: pid_t) -> (controls: [[String: Any]], pages: Int) {
+        let appElement = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(appElement, 0.25)
+        elements = [:]
+        guard let main: AXUIElement = attribute(appElement, kAXMainWindowAttribute)
+                ?? attribute(appElement, kAXFocusedWindowAttribute) else { return ([], 0) }
+        var roots: [(AXUIElement, String)] = [(main, "browser toolbar")]
+        for window in ((attribute(appElement, kAXWindowsAttribute) as [AXUIElement]?) ?? []).prefix(6)
+        where !CFEqual(window, main) && (attribute(window, kAXSubroleAttribute) as String?) != "AXStandardWindow" {
+            let title: String = attribute(window, kAXTitleAttribute) ?? ""
+            roots.append((window, title.isEmpty ? "browser pop-up" : "browser pop-up “\(title.prefix(40))”"))
+        }
+        var collected: [[String: Any]] = []
+        var pages = 0
+        for (root, context) in roots {
+            let frame = frame(of: root)
+            var queue: [AXUIElement] = [root]
+            var head = 0
+            while head < queue.count && head < 400 && collected.count < 40 {
+                let element = queue[head]
+                head += 1
+                let node = Node(element)
+                if node.role == "AXWebArea" { pages += 1; continue }
+                if node.role == "AXTabGroup" { continue }
+                if !Self.textRoles.contains(node.role),
+                   var entry = describe(element, node: node, context: context, window: frame) {
+                    let id = "e\(collected.count)"
+                    elements[id] = element
+                    entry["id"] = id
+                    collected.append(entry)
+                }
+                if Self.leafRoles.contains(node.role) { continue }
+                queue.append(contentsOf: node.children.prefix(60))
+            }
+        }
+        return (collected, pages)
     }
 
     private func axSnapshot(app: NSRunningApplication, pid: pid_t) throws -> Snapshot {

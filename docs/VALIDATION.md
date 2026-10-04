@@ -2226,3 +2226,48 @@ this M5. They are not live qualification of the app on the owner's screen.
 - Not yet run on the owner's Mac: the vision fallback (Screen Recording not granted),
   the redesigned bar and Settings, earcons and voices, Stage C, telemetry outbox.
 
+
+## 4 October 2026 (evening): Stage B round from the owner's traces (simulated; not owner-Mac qualification)
+
+Read: the 147 local traces, the one outbox record (19:35) and every 👎 note; no
+`datasets/attachments` existed yet. Earlier 👎s (window halves, View Event, latest
+email, Notification Centre) were already fixed by earlier commits. Two failures were open:
+
+- **"Open the Claude site bar plug-in on the chrome" (👎: opened the Claude app).**
+  Cause: when a browser is read through its page, the browser's own controls (toolbar,
+  extension buttons, the Extensions pop-up, side panel) were never offered. Fix
+  (`UniversalAX.swift`, `browserControls`): the page read also lists the browser
+  window's controls and any open pop-up through Accessibility, skipping pages and the
+  tab strip; a side panel opening counts as a change. Eval: without the toolbar 0/3
+  (opened claude.ai or the Claude app), with it 3/3 (Extensions → Claude).
+- **"Select the Santander cycles email and delete it" / "Open the Santander cycles
+  email" (👎: no action; stopped).** Cause: large screens are judged in rounds and each
+  round's top two went to the final however weak they were. A round of only keys and
+  scrolling sent "scroll down"; in the final the two Santander rows split the vote
+  (0.29 + 0.07) and scrolling won (0.49), although the first round had picked the row
+  at 0.75. Fix: a round reports each pick's odds against the fallbacks every round shares
+  (finish, wait, ask), and only picks within 3× of the strongest go to the final.
+- **General option with nothing fitting stopped the task** ("turn on night mode",
+  "open claude in the chrome side panel" picked "a Chrome menu command"). Now that list
+  is ruled out on that screen and the step is decided again.
+- **Tried and reverted:** saying in the step history what a click did (now selected,
+  page or window changed). It measured worse, 160/178, because Jev then pressed Space
+  on autoplaying videos and opened extra tabs.
+
+Simulator: Chrome's toolbar and Extensions pop-up as the new reader reports them; the
+Claude app installed; Outlook with two emails from one sender, emails that open at their
+own address with links in the body (clicking one counts as harm), and Delete. New
+scenarios: `outlook-open-same-sender`, `outlook-delete`, `chrome-extension` (+2
+paraphrases each). The eval now also prints how many passes ended by finishing.
+
+Results (live Jev, same simulator): old round rule 166/178 (138 ended by finishing,
+median 1.53 s per task); new rule 168/178 (140, 1.49 s); with the re-decide fix 170/178
+(143, 1.56 s; Jev calls ran ~240 ms each today vs ~200 ms earlier). `npm test` 506/506;
+`npx tsc --noEmit` clean; Swift typecheck clean. Remaining failures: compressed Slack
+phrasings, "find my budget spreadsheet and open it", "this monitor", `vision-icon`
+(passes only with `GROUND=stub`), and three that flip between runs
+(`two-windows-side-by-side`, `youtube-search-play~2`, `media-next-from-chrome~2`).
+
+Not run: the toolbar read against the owner's real Chrome (this terminal has no
+Accessibility grant, and the app is not built in place). Its read time shows in
+`npm run traces` as the page read time.
