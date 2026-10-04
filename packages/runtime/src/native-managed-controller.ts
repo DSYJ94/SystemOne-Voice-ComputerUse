@@ -26,6 +26,7 @@ import { AgentAXClient } from './agent-ax-client.ts';
 import { bindCommandSpan, installedApps, parseAgentGoal, refineGoal } from './agent-goal.ts';
 import { LocalUnderstanding } from './local-understanding.ts';
 import { writeTaskDataset } from './training-data.ts';
+import { writeOutbox } from './telemetry.ts';
 import type { AgentDecision } from './universal-agent-task.ts';
 import { NativeFieldPipeWorker } from './native-field-pipe-worker.ts';
 import { ChromeReadSession } from './chrome-read-session.ts';
@@ -234,6 +235,9 @@ type TraceWriter = ((event: Record<string, JSONValue>) => void) & { readonly pat
 function refreshDataset(tracePath: string): void {
   try { writeTaskDataset(tracePath, join(dirname(dirname(tracePath)), 'datasets')); }
   catch { /* Training data is best effort. */ }
+  // The structured record for the company database (uploaded later, once an endpoint exists).
+  try { writeOutbox(tracePath, dirname(dirname(tracePath))); }
+  catch { /* Telemetry is best effort. */ }
 }
 
 function agentTraceWriter(taskId: string, goal: string): TraceWriter | undefined {
