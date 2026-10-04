@@ -215,6 +215,7 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
     trace: event => {
       if (event.kind === 'step') { done = Number(event.done ?? 0); timing.decideMs += Number(event.decideMs ?? 0); }
       if (event.kind === 'result') { timing.actMs += Number(event.actMs ?? 0); timing.verifyMs += Number(event.verifyMs ?? 0); }
+      if (event.kind === 'stopped') steps.push(`(stopped: ${String(event.reason).slice(0, 120)})`);
     },
     say: text => world.heard?.(text),
     confirmation: { async confirm(proposal: AgentProposal) {

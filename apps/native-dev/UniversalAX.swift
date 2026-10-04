@@ -496,6 +496,17 @@ final class UniversalAX {
                 && $0.localizedName?.lowercased() == name.lowercased() }) {
             targetPID = running.processIdentifier
             guard Self.bringToFront(running) else { throw AXError.notFront }
+            // No window open: ask the app to reopen, as clicking it in the Dock does (Finder opens one).
+            let element = AXUIElementCreateApplication(running.processIdentifier)
+            AXUIElementSetMessagingTimeout(element, 0.3)
+            let standard = ((attribute(element, kAXWindowsAttribute) as [AXUIElement]?) ?? [])
+                .filter { (attribute($0, kAXSubroleAttribute) as String?) == "AXStandardWindow" }
+            if standard.isEmpty, let url = running.bundleURL {
+                let config = NSWorkspace.OpenConfiguration()
+                config.activates = true
+                _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: config)
+                try await Task.sleep(for: .milliseconds(600))
+            }
             try await Task.sleep(for: .milliseconds(300))
             return
         }

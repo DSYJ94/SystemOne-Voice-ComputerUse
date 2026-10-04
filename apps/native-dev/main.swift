@@ -19,6 +19,12 @@ private final class GlassCommandPanel: NSPanel {
     }
 }
 
+/// Content view that reports each layout pass, so the bar can grow and shrink to fit.
+private final class FittingView: NSView {
+    var onLayout: (() -> Void)?
+    override func layout() { super.layout(); onLayout?() }
+}
+
 private func systemOneHotkeyHandler(_ event: EventHandlerCallRef?,
                                     _ eventRef: EventRef?,
                                     _ userData: UnsafeMutableRawPointer?) -> OSStatus {
@@ -38,7 +44,7 @@ private func systemOneHotkeyHandler(_ event: EventHandlerCallRef?,
 }
 
 @MainActor
-final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
+final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverDelegate {
     private let taskIntake = DevTaskIntake()
     private var activeRequestID: String? { taskIntake.activeRequestID }
     private var activeSurface: DevTaskIntake.Surface? { taskIntake.activeSurface }
@@ -74,6 +80,12 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// While SystemOne itself is in front, its text field and the input-source
     /// shortcut can swallow the chord, so it is also caught as a local key event.
     private var localHotkeyMonitor: Any?
+    /// The user's push-to-talk shortcut (⚙ Push to talk); Stop stays Control-Option-Escape.
+    private var talkShortcut = TalkShortcut.load()
+    /// Settings' shortcut recorder, while it waits for the next key press.
+    private var shortcutRecorder: Any?
+    private weak var shortcutButton: NSButton?
+    private weak var shortcutNote: NSTextField?
     private var lastHotkeyEvent: (id: UInt32, pressed: Bool, at: Date)?
     private var nativeBundleField: NSTextField?
     private var nativeLabelField: NSTextField?
@@ -122,6 +134,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var approvalRow: NSStackView?
     /// 👍/👎 after a task: the label that makes its private trace useful for training.
     private var feedbackRow: NSStackView?
+    private weak var runButton: NSButton?
+    private weak var stopButton: NSButton?
     /// Outline around the window Jev is acting on, on whichever display it is.
     private let highlight = ActivityHighlight()
     /// "Chrome on LG UltraFine": where the agent is working, for the status line.
@@ -361,7 +375,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             } else { window?.orderOut(nil) }
         }
         window.center()
-        let content = NSView()
+        let content = FittingView()
         let surface: NSView
         if #available(macOS 26.0, *) {
             let glass = NSGlassEffectView()
@@ -419,38 +433,34 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         field.action = #selector(runTaskRequest)
         field.cell?.sendsActionOnEndEditing = false
         taskField = field
-        let chip = NSTextField(labelWithString: " Jev ")
-        chip.font = .systemFont(ofSize: 11, weight: .semibold)
-        chip.textColor = .secondaryLabelColor
-        chip.wantsLayer = true
-        chip.layer?.cornerRadius = 6
-        chip.layer?.backgroundColor = NSColor.secondaryLabelColor.withAlphaComponent(0.15).cgColor
-        chip.isHidden = !jevEnabled
-        jevChip = chip
-        chip.toolTip = "Jev (TypeSafe) chooses steps; this sends the task and visible control labels to TypeSafe."
         let more = symbolButton("gearshape", "Settings", size: 18)
         more.target = self
         more.action = #selector(showSettings(_:))
-        let run = symbolButton("arrow.up.circle.fill", "Run request", size: 26)
+        let run = symbolButton("arrow.up.circle.fill", "Run", size: 26)
         run.contentTintColor = .controlAccentColor
         run.target = self
         run.action = #selector(runTaskRequest)
-        let stopButton = symbolButton("stop.circle", "Stop", size: 22)
+        runButton = run
+        // Run and Stop share a place: Stop shows only while a task runs.
+        let stopButton = symbolButton("stop.circle.fill", "Stop", size: 26)
+        stopButton.contentTintColor = .secondaryLabelColor
         stopButton.target = self
         stopButton.action = #selector(stop)
-        let bar = NSStackView(views: [talk, field, chip, more, run, stopButton])
+        stopButton.isHidden = true
+        self.stopButton = stopButton
+        let bar = NSStackView(views: [talk, field, more, run, stopButton])
         bar.orientation = .horizontal
         bar.alignment = .centerY
         bar.spacing = 12
         field.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let status = NSTextField(wrappingLabelWithString:
-            "Hold the mic to speak, or type. Voice stays on this Mac.")
+            "Hold \(talkShortcut.display) to talk, or type and press Return.")
         status.font = .systemFont(ofSize: 12)
         status.textColor = .secondaryLabelColor
         status.maximumNumberOfLines = 2
         status.setAccessibilityLabel("Task status")
         commandStatus = status
-        let target = NSTextField(labelWithString: "Open the panel from a target app.")
+        let target = NSTextField(labelWithString: "")
         target.font = .systemFont(ofSize: 11)
         target.textColor = .tertiaryLabelColor
         target.lineBreakMode = .byTruncatingTail
@@ -471,7 +481,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if prominent { button.keyEquivalent = "\r"; button.bezelColor = .controlAccentColor }
             return button
         }
-        let allowAll = pill("Allow all for this task", #selector(allowAllSteps))
+        let allowAll = pill("Allow for This Task", #selector(allowAllSteps))
         let stopStep = pill("Stop", #selector(stop))
         stopStep.keyEquivalent = "\u{1b}"
         let approvals = NSStackView(views: [pill("Allow", #selector(allowStep), prominent: true), allowAll, stopStep])
@@ -479,16 +489,23 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         approvals.spacing = 8
         approvals.isHidden = true
         approvalRow = approvals
-        let good = NSButton(title: "👍 Did what I wanted", target: self, action: #selector(feedbackGood))
-        let bad = NSButton(title: "👎 Wrong", target: self, action: #selector(feedbackBad))
-        for button in [good, bad] { button.bezelStyle = .inline; button.controlSize = .small }
-        let feedback = NSStackView(views: [good, bad])
+        let question = NSTextField(labelWithString: "Did that work?")
+        question.font = .systemFont(ofSize: 12)
+        question.textColor = .secondaryLabelColor
+        let good = symbolButton("hand.thumbsup", "Yes, it did what I wanted", size: 15)
+        good.target = self
+        good.action = #selector(feedbackGood)
+        let bad = symbolButton("hand.thumbsdown", "No, something was wrong", size: 15)
+        bad.target = self
+        bad.action = #selector(feedbackBad)
+        for button in [good, bad] { button.contentTintColor = .secondaryLabelColor }
+        let feedback = NSStackView(views: [question, good, bad])
         feedback.orientation = .horizontal
         feedback.spacing = 6
         feedback.isHidden = true
         feedbackRow = feedback
-        let reasons: [(String, String)] = [("Wrong app or place", "wrong_place"), ("Typed the wrong words", "wrong_words"),
-                                           ("Wrong or extra steps", "wrong_steps"), ("Stopped too early", "stopped_early"),
+        let reasons: [(String, String)] = [("Wrong place", "wrong_place"), ("Wrong words", "wrong_words"),
+                                           ("Wrong steps", "wrong_steps"), ("Stopped early", "stopped_early"),
                                            ("Too slow", "too_slow"), ("Other", "other")]
         let reasonButtons = reasons.map { title, reason -> NSButton in
             let button = NSButton(title: title, target: self, action: #selector(feedbackReason(_:)))
@@ -511,10 +528,20 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(stack)
+        // The bar fits what it shows (approvals, feedback), keeping its top edge in place.
+        content.onLayout = { [weak window, weak stack] in
+            guard let window, let stack else { return }
+            let height = max(112, ceil(stack.fittingSize.height) + 40)
+            guard abs(window.frame.height - height) > 1 else { return }
+            var frame = window.frame
+            frame.origin.y += frame.height - height
+            frame.size.height = height
+            window.setFrame(frame, display: true, animate: false)
+        }
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 22),
             stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -18),
-            stack.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+            stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 20),
             bar.widthAnchor.constraint(equalTo: stack.widthAnchor),
             footer.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),
             target.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),
@@ -556,93 +583,151 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func showSettings(_ sender: NSButton) {
         if let settingsPopover, settingsPopover.isShown { settingsPopover.close(); return }
-        func caption(_ text: String) -> NSTextField {
-            let label = NSTextField(wrappingLabelWithString: text)
-            label.font = .systemFont(ofSize: 11)
-            label.textColor = .secondaryLabelColor
-            label.preferredMaxLayoutWidth = 300
+        let width: CGFloat = 372
+        func text(_ value: String, size: CGFloat, weight: NSFont.Weight = .regular, color: NSColor = .labelColor,
+                  wraps: Bool = false) -> NSTextField {
+            let label = wraps ? NSTextField(wrappingLabelWithString: value) : NSTextField(labelWithString: value)
+            label.font = .systemFont(ofSize: size, weight: weight)
+            label.textColor = color
+            if wraps { label.preferredMaxLayoutWidth = width - 120 }
             return label
         }
-        func row(_ title: String, _ button: NSButton?) -> NSStackView {
-            let label = NSTextField(labelWithString: title)
-            label.font = .systemFont(ofSize: 13)
-            let views: [NSView] = button.map { [label, $0] } ?? [label]
-            let stack = NSStackView(views: views)
-            stack.orientation = .horizontal
-            stack.spacing = 8
-            return stack
+        /// Title and a one-line explanation on the left, the control on the right.
+        func row(_ title: String, _ detail: String?, _ control: NSView, note: ((NSTextField) -> Void)? = nil) -> NSView {
+            let titleLabel = text(title, size: 13, weight: .medium)
+            var lefts: [NSView] = [titleLabel]
+            if let detail {
+                let detailLabel = text(detail, size: 11, color: .secondaryLabelColor, wraps: true)
+                note?(detailLabel)
+                lefts.append(detailLabel)
+            }
+            let left = NSStackView(views: lefts)
+            left.orientation = .vertical
+            left.alignment = .leading
+            left.spacing = 2
+            let spacer = NSView()
+            spacer.setContentHuggingPriority(.init(1), for: .horizontal)
+            let line = NSStackView(views: [left, spacer, control])
+            line.orientation = .horizontal
+            line.alignment = .centerY
+            line.spacing = 12
+            line.edgeInsets = NSEdgeInsets(top: 9, left: 12, bottom: 9, right: 12)
+            return line
         }
-        func link(_ title: String, _ action: Selector) -> NSButton {
-            let button = NSButton(title: title, target: self, action: action)
-            button.bezelStyle = .inline
+        func toggle(_ isOn: Bool, _ action: Selector) -> NSSwitch {
+            let control = NSSwitch()
+            control.controlSize = .small
+            control.state = isOn ? .on : .off
+            control.target = self
+            control.action = action
+            return control
+        }
+        func status(_ ok: Bool, _ okText: String, fix: String, _ action: Selector) -> NSView {
+            if ok {
+                let label = text("\u{2713} " + okText, size: 12, color: .secondaryLabelColor)
+                return label
+            }
+            let button = NSButton(title: fix, target: self, action: action)
+            button.controlSize = .small
+            button.bezelStyle = .rounded
             return button
         }
-        let heading = NSTextField(labelWithString: "Settings")
-        heading.font = .boldSystemFont(ofSize: 14)
-        let jevSwitch = NSSwitch()
-        jevSwitch.state = jevEnabled ? .on : .off
-        jevSwitch.target = self
-        jevSwitch.action = #selector(toggleJev(_:))
-        let jevRow = row("Let Jev choose each step", nil)
-        jevRow.insertArrangedSubview(jevSwitch, at: 0)
-        let jevNote = caption("Sends your request and the visible control labels to TypeSafe (jev-1.13.0). Off keeps everything on this Mac.")
-        let autoSwitch = NSSwitch()
-        autoSwitch.state = autoAllowSession ? .on : .off
-        autoSwitch.target = self
-        autoSwitch.action = #selector(toggleAutoAllow(_:))
-        let autoRow = row("Auto-allow steps", nil)
-        autoRow.insertArrangedSubview(autoSwitch, at: 0)
-        let autoNote = caption("Jev acts without asking each time. Every step is still checked, and Esc or Control-Option-Escape stops.")
-        let riskySwitch = NSSwitch()
-        riskySwitch.state = askBeforeRisky ? .on : .off
-        riskySwitch.target = self
-        riskySwitch.action = #selector(toggleAskBeforeRisky(_:))
-        let riskyRow = row("Ask before send / buy / delete", nil)
-        riskyRow.insertArrangedSubview(riskySwitch, at: 0)
-        let voiceRow = row("Voice: " + (speech.isAuthorized ? "ready (on this Mac)" : "not enabled"),
-                           speech.isAuthorized ? nil : link("Enable", #selector(enableVoice)))
+        /// A titled, rounded group of rows with hairlines between them.
+        func section(_ title: String, _ rows: [NSView]) -> NSView {
+            let header = text(title.uppercased(), size: 10, weight: .semibold, color: .secondaryLabelColor)
+            var items: [NSView] = []
+            for (index, row) in rows.enumerated() {
+                if index > 0 {
+                    let rule = NSBox()
+                    rule.boxType = .separator
+                    items.append(rule)
+                }
+                items.append(row)
+            }
+            let box = NSStackView(views: items)
+            box.orientation = .vertical
+            box.alignment = .leading
+            box.spacing = 0
+            box.wantsLayer = true
+            box.layer?.cornerRadius = 10
+            box.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.05).cgColor
+            for item in items { item.widthAnchor.constraint(equalTo: box.widthAnchor).isActive = true }
+            let group = NSStackView(views: [header, box])
+            group.orientation = .vertical
+            group.alignment = .leading
+            group.spacing = 6
+            box.widthAnchor.constraint(equalTo: group.widthAnchor).isActive = true
+            return group
+        }
+        let shortcut = NSButton(title: talkShortcut.display, target: self, action: #selector(recordShortcut(_:)))
+        shortcut.bezelStyle = .rounded
+        shortcut.controlSize = .small
+        shortcut.setAccessibilityLabel("Push-to-talk shortcut")
+        let reset = NSButton(title: "Reset", target: self, action: #selector(resetShortcut))
+        reset.bezelStyle = .inline
+        reset.controlSize = .small
+        reset.isHidden = talkShortcut == .standard
+        let shortcutControls = NSStackView(views: [reset, shortcut])
+        shortcutControls.spacing = 6
         let axGranted = hasAccessibilityAccess()
-        let axRow = row("Accessibility: " + (axGranted ? "granted to this build" : "not granted to this build"),
-                        link(axGranted ? "Details" : "Fix…", #selector(openAccessibilityRecovery)))
-        let advanced = NSTextField(labelWithString: "Advanced")
-        advanced.font = .boldSystemFont(ofSize: 12)
-        advanced.textColor = .secondaryLabelColor
-        let tools = NSStackView(views: [link("Show fields", #selector(showCapturedFields)),
-                                        link("Developer tools", #selector(openDeveloperPanel))])
-        tools.orientation = .horizontal
-        tools.spacing = 6
-        let speakSwitch = NSSwitch()
-        speakSwitch.state = voice.enabled ? .on : .off
-        speakSwitch.target = self
-        speakSwitch.action = #selector(toggleSpeakReplies(_:))
-        let speakRow = row("Speak replies", nil)
-        speakRow.insertArrangedSubview(speakSwitch, at: 0)
-        let localSwitch = NSSwitch()
-        localSwitch.state = UserDefaults.standard.bool(forKey: "understandOnDevice") ? .on : .off
-        localSwitch.target = self
-        localSwitch.action = #selector(toggleUnderstandOnDevice(_:))
-        let glowSwitch = NSSwitch()
-        glowSwitch.state = highlight.enabled ? .on : .off
-        glowSwitch.target = self
-        glowSwitch.action = #selector(toggleHighlight(_:))
-        let glowRow = row("Show where Jev is working", nil)
-        glowRow.insertArrangedSubview(glowSwitch, at: 0)
-        let localRow = row("Understand requests on this Mac", nil)
-        localRow.insertArrangedSubview(localSwitch, at: 0)
-        let localNote = caption("On: a small on-device model (Qwen2.5 0.5B, about 700 MB with its runtime, installed once in the background) picks the words to type. Off: Jev picks them. Jev still chooses every step either way.")
-        let stack = NSStackView(views: [heading, jevRow, jevNote, autoRow, autoNote, riskyRow, speakRow, glowRow, localRow, localNote, voiceRow, axRow,
-                                        advanced, tools])
+        let sections: [NSView] = [
+            section("Assistant", [
+                row("Choose steps with Jev", "Sends your request and the names of on-screen controls to TypeSafe. Off: nothing leaves this Mac.",
+                    toggle(jevEnabled, #selector(toggleJev(_:)))),
+                row("Understand requests on this Mac", "A small on-device model picks the words to type. Installs once (about 700 MB).",
+                    toggle(UserDefaults.standard.bool(forKey: "understandOnDevice"), #selector(toggleUnderstandOnDevice(_:)))),
+            ]),
+            section("Approvals", [
+                row("Act without asking", "Every step is still checked. Press Esc to stop at any time.",
+                    toggle(autoAllowSession, #selector(toggleAutoAllow(_:)))),
+                row("Confirm sending, buying and deleting", "Asks first for steps like these, even when acting without asking.",
+                    toggle(askBeforeRisky, #selector(toggleAskBeforeRisky(_:)))),
+            ]),
+            section("Voice", [
+                row("Push to talk", "Hold to talk, let go to run. Click to change.", shortcutControls,
+                    note: { [weak self] label in self?.shortcutNote = label }),
+                row("Speak replies", "Says “Done”, answers and questions out loud.", toggle(voice.enabled, #selector(toggleSpeakReplies(_:)))),
+                row("Speech recognition", "Runs on this Mac.", status(speech.isAuthorized, "On", fix: "Turn On", #selector(enableVoice))),
+            ]),
+            section("Display", [
+                row("Show where Jev is working", "Outlines the window Jev is using, on any display.",
+                    toggle(highlight.enabled, #selector(toggleHighlight(_:)))),
+            ]),
+            section("Permissions", [
+                row("Accessibility", axGranted ? "Lets SystemOne see and use other apps." : "Needed to see and use other apps.",
+                    status(axGranted, "Allowed", fix: "Fix…", #selector(openAccessibilityRecovery))),
+            ]),
+        ]
+        let version = text("Jev 1.13.0 · SystemOne", size: 10, color: .tertiaryLabelColor)
+        let developer = NSButton(title: "Developer Tools…", target: self, action: #selector(openDeveloperPanel))
+        developer.bezelStyle = .inline
+        developer.controlSize = .small
+        let footerSpacer = NSView()
+        footerSpacer.setContentHuggingPriority(.init(1), for: .horizontal)
+        let footer = NSStackView(views: [version, footerSpacer, developer])
+        footer.orientation = .horizontal
+        let title = text("Settings", size: 15, weight: .semibold)
+        let stack = NSStackView(views: [title] + sections + [footer])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 10
-        stack.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 16)
+        stack.spacing = 14
+        stack.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 14, right: 16)
+        for view in sections + [footer] { view.widthAnchor.constraint(equalToConstant: width - 32).isActive = true }
+        stack.widthAnchor.constraint(equalToConstant: width).isActive = true
+        shortcutButton = shortcut
         let controller = NSViewController()
         controller.view = stack
         let popover = NSPopover()
         popover.behavior = .transient
         popover.contentViewController = controller
+        popover.delegate = self
         settingsPopover = popover
         popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+    }
+
+    /// Closing Settings mid-recording keeps the current shortcut.
+    func popoverWillClose(_ notification: Notification) {
+        if shortcutRecorder != nil { endRecording() }
     }
 
     @objc private func toggleHighlight(_ sender: NSSwitch) {
@@ -1269,13 +1354,13 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 let appName = (object["app"] as? String).flatMap { $0.isEmpty || $0 == "no app" ? nil : $0 }
                 if let appName, kind != "open_url", kind != "open_app" { action += " in \(appName)" }
                 if !(risky && askBeforeRisky), autoAllowSession || autoAllowTaskID == requestID {
-                    commandStatus?.stringValue = "Step \(step): Jev will \(action) (auto-allowed; Esc stops)."
+                    commandStatus?.stringValue = "Step \(step) · \(Self.sentence(action))…"
                     confirmProposal((requestID, proposalID), allow: true)
                     continue
                 }
                 commandStatus?.stringValue = risky
-                    ? "Step \(step): Jev wants to \(action). This could send, buy or delete something; Allow?"
-                    : "Step \(step): Jev wants to \(action). Allow, or say “yes”."
+                    ? "This may send, buy or delete something. Allow Jev to \(action)?"
+                    : "Allow Jev to \(action)? You can also say “yes”."
                 approvalRow?.isHidden = false
                 commandPanel?.orderFrontRegardless()
                 askAloud(risky ? "Should I \(action)? Say yes or no." : "Shall I \(action)?")
@@ -1296,7 +1381,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 default: text = "Jev was not confident or unavailable (\(probability)). Nothing was pressed."
                 }
                 statusField?.stringValue = text
-                commandStatus?.stringValue = text
+                // The bar shows what is happening in plain words; probabilities stay in Developer Tools.
+                commandStatus?.stringValue = activeSurface == .agent
+                    ? (status == "selected" && !label.isEmpty ? Self.sentence(label) + "…" : status == "finish" ? "Checking it's done…" : "Thinking…")
+                    : text
                 nativeOutput?.string = (nativeOutput?.string ?? "") + "\n" + text
                 continue
             }
@@ -1325,8 +1413,11 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             statusField?.stringValue = phase == "host_unavailable"
                 ? "Waiting for the active session and interruption fence."
                 : phase == "ready"
-                ? "Ready. Only the approved page origin can load."
+                ? "Ready."
                 : "Earlier task unresolved. Inspect the private task record before starting again."
+            commandStatus?.stringValue = phase == "host_unavailable" ? "Waiting for this Mac session to be active…"
+                : phase == "ready" ? "Hold \(talkShortcut.display) to talk, or type and press Return."
+                : "An earlier task didn't finish cleanly. Press Stop to clear it."
             return
         }
         if requestID == taskIntake.replacementRequestID {
@@ -1425,21 +1516,23 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 stopRequestID = nil
                 if quitPending { quitPending = false; NSApp.reply(toApplicationShouldTerminate: true) } // the user asked to quit; any uncertainty stays journaled
             }
-        case "blocked_recovery": statusField?.stringValue = "Task paused or effect unresolved. For a native task, use Check recovery; otherwise inspect its state and Stop."
+        case "blocked_recovery": statusField?.stringValue = activeSurface == .agent
+            ? "An earlier task didn't finish cleanly. Press Stop, then try again."
+            : "Task paused or effect unresolved. For a native task, use Check recovery; otherwise inspect its state and Stop."
         case "stopping": statusField?.stringValue = nativeActionActive
             ? "Fencing the native worker; a dispatched edit may already have happened…"
-            : "Stopping browser and fencing future actions…"
+            : "Stopping…"
         case "stopped":
             highlight.hide()
-            statusField?.stringValue = "Stopped. An already-sent action may have taken effect."
-        case "busy": statusField?.stringValue = "A task is already active."
-        case "error": statusField?.stringValue = "The request was rejected or failed. No success is claimed."
+            statusField?.stringValue = "Stopped. The last step may already have happened."
+        case "busy": statusField?.stringValue = "Still working on the last request."
+        case "error": statusField?.stringValue = "Something went wrong, so I stopped. Try again, or say it another way."
         case "browsing":
             statusField?.stringValue = "Jev is reading the page…"
         case "local_model_preparing":
-            statusField?.stringValue = "Installing the on-device model (one time, about 700 MB). Jev is used for this request."
+            statusField?.stringValue = "Setting up on-device understanding (one time). Using Jev for now…"
         case "agent_working":
-            statusField?.stringValue = workingWhere.isEmpty ? "Jev is looking at the screen…" : "Jev is working in \(workingWhere)…"
+            statusField?.stringValue = workingWhere.isEmpty ? "Working…" : "Working in \(workingWhere)…"
         case "agent_done":
             pendingProposal = nil
             approvalRow?.isHidden = true
@@ -1450,12 +1543,12 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             pendingProposal = nil
             approvalRow?.isHidden = true
             voice.say("What should it say?")
-            statusField?.stringValue = "What should it say? Ask again with the words, e.g. “reply saying I'll be there at six”."
+            statusField?.stringValue = "What should it say? Try again with the words, like “reply saying I'll be there at six”."
         case "agent_paused":
             pendingProposal = nil
             approvalRow?.isHidden = true
-            voice.say("I'm not sure what to do next. Try saying it another way.")
-            statusField?.stringValue = "Paused: Jev wasn't sure what to do next, or a step was declined. Try rephrasing."
+            voice.say("I couldn't finish that. Try saying it another way.")
+            statusField?.stringValue = "I couldn't finish that. Try saying it another way."
             askFeedback(requestID)
         case "verified_browse":
             browseKeptOpen = true
@@ -1481,7 +1574,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 taskField?.stringValue = queued
                 DispatchQueue.main.async { [weak self] in self?.runTaskRequest() }
             }
-        default: statusField?.stringValue = "Unrecognized controller status."
+        default: statusField?.stringValue = "Working…"
         }
         if phase == "stopped" && requestID == stopRequestID {
             if let activeRequestID {
@@ -1493,6 +1586,20 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if phase != "ready", let message = statusField?.stringValue {
             commandStatus?.stringValue = message
         }
+        updateRunState()
+    }
+
+    /// Run when idle, Stop while a task runs.
+    private func updateRunState() {
+        let running = activeRequestID != nil
+        runButton?.isHidden = running
+        stopButton?.isHidden = !running
+    }
+
+    /// "click the button “Search”" → "Click the button “Search”".
+    private static func sentence(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: #"\.$"#, with: "", options: .regularExpression)
+        return trimmed.prefix(1).uppercased() + trimmed.dropFirst()
     }
 
     private func controllerExited(_ code: Int32) {
@@ -1527,16 +1634,16 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                           options: .regularExpression) != nil {
             let name = frontmost.localizedName ?? frontmost.bundleIdentifier ?? "an unnamed app"
             capturedApp = (bundleID, frontmost.processIdentifier, launchDate)
-            commandTarget?.stringValue = "Starting in \(name). Jev can switch to any app or window."
+            commandTarget?.stringValue = "Starting in \(name)"
             focusField?.stringValue = "Previously focused: \(name) (PID \(frontmost.processIdentifier)). Select a target explicitly."
         } else if let last = lastExternalApp, !last.isTerminated, let bundleID = last.bundleIdentifier,
                   let launchDate = last.launchDate {
             // Opened while SystemOne was in front: act on the app the user was just in.
             capturedApp = (bundleID, last.processIdentifier, launchDate)
-            commandTarget?.stringValue = "Starting in \(last.localizedName ?? bundleID). Jev can switch to any app or window."
+            commandTarget?.stringValue = "Starting in \(last.localizedName ?? bundleID)"
         } else {
             capturedApp = nil
-            commandTarget?.stringValue = "No app in front. Jev can open or switch to any app or window."
+            commandTarget?.stringValue = ""
             focusField?.stringValue = "No external app captured. Enter the target explicitly."
         }
         NSApp.activate(ignoringOtherApps: true)
@@ -1640,7 +1747,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         if activeRequestID != nil, (taskField?.stringValue ?? "") == runningRequestText {
-            commandStatus?.stringValue = "Already working on that. Say or type something new to replace it, or press ■ to stop."
+            commandStatus?.stringValue = "Already on it. Say something new to replace it, or press Stop."
             return
         }
         if activeRequestID != nil, stopRequestID == nil, !browseKeptOpen {
@@ -1686,7 +1793,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let input = controllerInput, controller?.isRunning == true,
               activeRequestID == nil, stopRequestID == nil,
               !inspectionPending else {
-            commandStatus?.stringValue = "Controller unavailable or another task is active."
+            commandStatus?.stringValue = "SystemOne is still starting. Try again in a moment."
             return
         }
         let text = taskField?.stringValue ?? ""
@@ -1765,8 +1872,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         commandStatus?.stringValue = "Observing the captured app and exact field…"
     }
 
-    /// Control-Option-Space is push-to-talk: hold to speak, release to run.
-    /// A quick tap only opens the bar. Control-Option-Escape stops.
+    /// The push-to-talk shortcut (default Control-Option-Space): hold to speak, release to
+    /// run. A quick tap only opens the bar. Control-Option-Escape stops.
     func handleGlobalHotkey(_ id: UInt32, pressed: Bool) {
         // The same press can arrive from both the global and the local path.
         if let last = lastHotkeyEvent, last.id == id, last.pressed == pressed, Date().timeIntervalSince(last.at) < 0.25 { return }
@@ -1776,7 +1883,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             openPanel()
             hotkeyPressedAt = Date()
             guard speech.isAuthorized, hostActionsAvailable, !speech.isCapturing else {
-                if !speech.isAuthorized { commandStatus?.stringValue = "Click the mic once to allow voice; then hold Control-Option-Space to talk." }
+                if !speech.isAuthorized { commandStatus?.stringValue = "Click the mic once to turn on voice, then hold \(talkShortcut.display) to talk." }
                 return
             }
             hotkeyDictation = true
@@ -1787,7 +1894,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 // A tap, not speech: keep the bar open and stay quiet.
                 hotkeyDictation = false
                 speech.cancel()
-                commandStatus?.stringValue = "Hold Control-Option-Space and speak; release to run."
+                commandStatus?.stringValue = "Hold \(talkShortcut.display) while you speak, then let go."
             } else {
                 speech.stop()
             }
@@ -1840,11 +1947,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             shortcutField?.stringValue = "Global shortcuts unavailable (handler \(handlerStatus)); use the menu or Dock."
             return
         }
-        let modifiers = UInt32(controlKey | optionKey)
-        let openStatus = RegisterEventHotKey(UInt32(kVK_Space), modifiers,
+        let openStatus = RegisterEventHotKey(talkShortcut.keyCode, talkShortcut.modifiers,
             EventHotKeyID(signature: systemOneHotkeySignature, id: openPanelHotkeyID),
             GetApplicationEventTarget(), OptionBits(kEventHotKeyExclusive), &openHotkey)
-        let stopStatus = RegisterEventHotKey(UInt32(kVK_Escape), modifiers,
+        let stopStatus = RegisterEventHotKey(TalkShortcut.stop.keyCode, TalkShortcut.stop.modifiers,
             EventHotKeyID(signature: systemOneHotkeySignature, id: stopHotkeyID),
             GetApplicationEventTarget(), OptionBits(kEventHotKeyExclusive), &stopHotkey)
         if openStatus != noErr || stopStatus != noErr {
@@ -1854,19 +1960,71 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         localHotkeyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
             guard let self else { return event }
-            let chord = event.modifierFlags.intersection([.control, .option, .command, .shift]) == [.control, .option]
-            if event.keyCode == UInt16(kVK_Space), chord || (event.type == .keyUp && self.hotkeyDictation) {
+            if self.shortcutRecorder != nil { return event }
+            let talk = self.talkShortcut.matches(event)
+            if UInt32(event.keyCode) == self.talkShortcut.keyCode, talk || (event.type == .keyUp && self.hotkeyDictation) {
                 if event.type == .keyUp { self.handleGlobalHotkey(openPanelHotkeyID, pressed: false) }
                 else if !event.isARepeat { self.handleGlobalHotkey(openPanelHotkeyID, pressed: true) }
                 return nil
             }
-            if event.type == .keyDown, event.keyCode == UInt16(kVK_Escape), chord {
+            if event.type == .keyDown, TalkShortcut.stop.matches(event) {
                 self.handleGlobalHotkey(stopHotkeyID, pressed: true)
                 return nil
             }
             return event
         }
-        shortcutField?.stringValue = "Control–Option–Space: open panel · Control–Option–Escape: Stop"
+        shortcutField?.stringValue = "\(talkShortcut.display): talk · ⌃⌥Esc: Stop"
+    }
+
+    /// Switches push-to-talk to `shortcut`, keeping the old one if macOS refuses it.
+    private func applyTalkShortcut(_ shortcut: TalkShortcut) -> Bool {
+        if let openHotkey { UnregisterEventHotKey(openHotkey); self.openHotkey = nil }
+        var registered: EventHotKeyRef?
+        let status = RegisterEventHotKey(shortcut.keyCode, shortcut.modifiers,
+            EventHotKeyID(signature: systemOneHotkeySignature, id: openPanelHotkeyID),
+            GetApplicationEventTarget(), OptionBits(kEventHotKeyExclusive), &registered)
+        if status != noErr {
+            RegisterEventHotKey(talkShortcut.keyCode, talkShortcut.modifiers,
+                EventHotKeyID(signature: systemOneHotkeySignature, id: openPanelHotkeyID),
+                GetApplicationEventTarget(), OptionBits(kEventHotKeyExclusive), &openHotkey)
+            return false
+        }
+        openHotkey = registered
+        talkShortcut = shortcut
+        shortcut.save()
+        shortcutField?.stringValue = "\(shortcut.display): talk · ⌃⌥Esc: Stop"
+        return true
+    }
+
+    @objc private func recordShortcut(_ sender: NSButton) {
+        if shortcutRecorder != nil { endRecording(); return }
+        sender.title = "Press keys…"
+        shortcutButton = sender
+        shortcutRecorder = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+            guard let self else { return event }
+            if event.keyCode == UInt16(kVK_Escape) && TalkShortcut.carbonFlags(event.modifierFlags) == 0 {
+                self.endRecording(); return nil
+            }
+            switch TalkShortcut.from(event) {
+            case .success(let shortcut):
+                let ok = shortcut == self.talkShortcut || self.applyTalkShortcut(shortcut)
+                self.endRecording(note: ok ? nil : ShortcutProblem.taken.message)
+            case .failure(let problem):
+                self.shortcutNote?.stringValue = problem.message
+            }
+            return nil
+        }
+    }
+
+    private func endRecording(note: String? = nil) {
+        if let shortcutRecorder { NSEvent.removeMonitor(shortcutRecorder) }
+        shortcutRecorder = nil
+        shortcutButton?.title = talkShortcut.display
+        shortcutNote?.stringValue = note ?? "Hold to talk, let go to run. Click to change."
+    }
+
+    @objc private func resetShortcut() {
+        if applyTalkShortcut(.standard) { endRecording() } else { endRecording(note: ShortcutProblem.taken.message) }
     }
 
     private func unregisterGlobalHotkeys() {
@@ -2036,7 +2194,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         browseKeptOpen = false
         runningRequestText = text
-        commandStatus?.stringValue = "Working on it\(target.map { " in \($0.localizedName ?? "the app")" } ?? "")…"
+        commandStatus?.stringValue = "Working on it…"
+        updateRunState()
         // Give the target app the keyboard; the bar stays visible on top.
         if let target { UniversalAX.bringToFront(target) }
     }
@@ -2151,7 +2310,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let target = feedbackTaskID else { return }
         sendFeedback(target, ["value": "bad"])
         reasonRow?.isHidden = false
-        commandStatus?.stringValue = "What went wrong? One tap is enough."
+        commandStatus?.stringValue = "What went wrong?"
     }
 
     @objc private func feedbackReason(_ sender: NSButton) {
@@ -2162,7 +2321,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         reasonRow?.arrangedSubviews.forEach { $0.isHidden = ($0 as? NSButton)?.title != "Skip" }
         taskField?.stringValue = ""
         taskField?.placeholderString = "What should it have done? Say or type it, then Return (optional)"
-        commandStatus?.stringValue = "Optional: say or type what it should have done. Skip to move on."
+        commandStatus?.stringValue = "If you like, say or type what it should have done. Or press Skip."
     }
 
     @objc private func skipCorrection() { endCorrection("Noted. Thanks.") }

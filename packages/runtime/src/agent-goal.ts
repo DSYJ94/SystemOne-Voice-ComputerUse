@@ -21,6 +21,8 @@ export interface AgentGoal {
   /** The typed text was quoted by the user, so it is exact and needs no choosing. */
   readonly quoted: boolean;
   readonly url: string | null;
+  /** Every site the request names, in order (url is the first). */
+  readonly urls: readonly string[];
   readonly app: string | null;
   /** The request moves text between places ("copy …", "paste …"). */
   readonly clipboard: boolean;
@@ -73,32 +75,37 @@ export function parseAgentGoal(text: string, apps: readonly string[]): AgentGoal
   for (const name of apps) {
     const escaped = name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
     const pattern = COMMON_WORD_APPS.has(name.toLowerCase())
-      ? new RegExp(`\\b(?:open|launch|start|switch to|use|in|into|to|on|from|up|close|quit|exit|shut|hide)\\s+(?:the\\s+|my\\s+)?${escaped}(?:\\s+app)?\\b`, 'u')
+      ? new RegExp(`\\b(?:open|launch|start|switch to|use|in|into|to|on|from|up|close|quit|exit|shut|hide)\\s+(?:(?:the|my|a|an|new)\\s+)*${escaped}(?:\\s+app)?\\b`, 'u')
       : new RegExp(`(?:^|[^\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'u');
     if (name.length >= 3 && pattern.test(lower) && (!app || name.length > app.length)) app = name;
   }
-  let url: string | null = null;
-  const site = /\b(?:go to|visit|navigate to|on|open)\s+(?:(the|my)\s+)?((?:https?:\/\/)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,63}(?:\/\S*)?|[a-z0-9-]{2,63})\b/iu
-    .exec(text);
-  if (site?.[2] && (!site[1] || site[2].includes('.') || KNOWN_SITES.has(site[2].toLowerCase()))) {
+  // Every site the request names is a candidate ("close this tab, open a new tab on Chrome and
+  // go to Gmail" names Gmail, not chrome.com); Jev decides which to use and when.
+  const urls: string[] = [];
+  const add = (target: string) => {
+    const url = target.includes('.') ? `https://${target}` : `https://${BARE_SITES[target] ?? SITE_HOSTS[target] ?? `${target}.com`}/`;
+    if (!urls.includes(url)) urls.push(url);
+  };
+  // A bare word that is part of an app's name ("chrome" in Google Chrome) is the app, not a site.
+  const appWords = new Set(apps.flatMap(name => name.toLowerCase().split(/\s+/u)));
+  for (const site of text.matchAll(/\b(?:go to|visit|navigate to|on|open)\s+(?:(the|my)\s+)?((?:https?:\/\/)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,63}(?:\/\S*)?|[a-z0-9-]{2,63})\b/giu)) {
+    if (!site[2] || (site[1] && !site[2].includes('.') && !KNOWN_SITES.has(site[2].toLowerCase()))) continue;
     const target = site[2].replace(/^https?:\/\//iu, '').replace(/[.,!?]$/u, '').toLowerCase();
-    const bare = !target.includes('.');
     const verb = /^(?:go to|visit|navigate to|on)\b/iu.test(site[0]) || KNOWN_SITES.has(target);
-    if (!bare) url = `https://${target}`;
-    else if (verb && !NOT_SITES.has(target) && !apps.some(name => name.toLowerCase() === target)) {
-      url = `https://${BARE_SITES[target] ?? SITE_HOSTS[target] ?? `${target}.com`}/`;
-    }
+    if (target.includes('.')) add(target);
+    else if (verb && !NOT_SITES.has(target) && !apps.some(name => name.toLowerCase() === target)
+      && (KNOWN_SITES.has(target) || !appWords.has(target))) add(target);
   }
-  if (!url) {
-    // A well-known site named anywhere ("wikipedia alan turing") is offered too; Jev decides whether to use it.
-    const known = [...text.toLowerCase().matchAll(/[a-z]+/gu)].map(match => match[0])
-      .find(word => KNOWN_SITES.has(word) && !apps.some(name => name.toLowerCase() === word));
-    if (known) url = `https://${BARE_SITES[known] ?? SITE_HOSTS[known] ?? `${known}.com`}/`;
+  // A well-known site named anywhere ("wikipedia alan turing") is offered too.
+  for (const word of text.toLowerCase().matchAll(/[a-z]+/gu)) {
+    if (KNOWN_SITES.has(word[0]) && !apps.some(name => name.toLowerCase() === word[0])) add(word[0]);
   }
+  let url: string | null = urls[0] ?? null;
   const searchOn = url ? null : /\bsearch\s+([a-z0-9-]+(?:\.[a-z0-9-]+)*)\s+for\b/iu.exec(text);
   if (searchOn?.[1] && !NOT_SITES.has(searchOn[1].toLowerCase())) {
     const target = searchOn[1].toLowerCase();
     url = target.includes('.') ? `https://${target}/` : `https://${BARE_SITES[target] ?? `${target}.com`}/`;
+    urls.push(url);
   }
   let typedText: AgentGoal['typedText'] = null;
   const quoted = /["“]([^"”]{1,512})["”]/u.exec(text);
@@ -111,7 +118,7 @@ export function parseAgentGoal(text: string, apps: readonly string[]): AgentGoal
     typedText = { text: value, start, end: start + Buffer.byteLength(value, 'utf8') };
   }
   const clipboard = /\b(?:copy|paste|clipboard)\b/iu.test(text);
-  return Object.freeze({ typedText, fileName: null, quoted: !!quoted, wantsAnswer: false, url, app, clipboard, undo: /\bundo\b/iu.test(text),
+  return Object.freeze({ typedText, fileName: null, quoted: !!quoted, wantsAnswer: false, url, urls: Object.freeze([...urls]), app, clipboard, undo: /\bundo\b/iu.test(text),
     wantsFile: FILE_WORDS.test(text),
     windows: /\b(?:windows?|minimi[sz]e|maximi[sz]e|full ?screen|zoom|hide|close|quit|half|move|resize|bigger|smaller|cent(?:er|re)|side|monitor|display|screen)\b/iu.test(text),
     quit: /\b(?:quit|close|exit|shut|kill|terminate|get rid of|log ?out|sign ?out)\b/iu.test(text),

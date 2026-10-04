@@ -36,8 +36,8 @@ fi
 SYSTEMONE_DECISION_PROVIDER=jev zsh "$script_dir/run-native-dev.sh" >/dev/null
 
 print '4/4  Ready.'
-print '     Press Control-Option-Space for the SystemOne bar. Hold the mic or type, e.g.'
-print '       go to wikipedia.org and search for Alan Turing'
-print '     Jev proposes each step; Return allows it, Esc stops. Control-Option-Escape stops anywhere.'
+print '     Hold Control-Option-Space (change it in Settings), speak, and let go. Or type, e.g.'
+print '       go to wikipedia and search for Alan Turing'
+print '     Esc or Control-Option-Escape stops at any time.'
 print '     First run after setup: add .build/native-dev/SystemOne Dev.app under'
 print '     System Settings → Privacy & Security → Accessibility (once; signing keeps it).'

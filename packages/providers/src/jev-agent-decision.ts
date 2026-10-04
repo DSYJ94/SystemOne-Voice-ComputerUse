@@ -46,7 +46,10 @@ export function createJevAgentDecision(options: {
   let wantsAnswer = false;
   const describeState = (view: AgentSnapshot, history: readonly string[], origin?: string) => {
     const tabs = view.elements.filter(element => element.role === 'AXTab' && element.closable);
-    const where = (view.pid ? `Current app: ${view.app}${view.frontmost === false ? ' (open, but behind other windows: not in front)' : ''}, window “${view.windowTitle || 'untitled'}”${
+    const plain = (name: string) => name.replace(/[\u200e\u200f]/gu, '').trim().toLowerCase();
+    const windowless = !!view.windows && !view.windows.some(window => plain(window.app) === plain(view.app) && !window.minimized);
+    const where = (view.pid ? `Current app: ${view.app}${view.frontmost === false ? ' (open, but behind other windows: not in front)' : ''}${
+      windowless ? ' (running, but no window of it is open: only its menu bar shows)' : `, window “${view.windowTitle || 'untitled'}”`}${
       view.url ? `, showing ${view.url}` : ''}.` : 'No app window is in front yet.')
       + (typeof view.scrollY === 'number' ? view.scrollY <= 0 ? ' The page is scrolled to the very top.'
         : ` The page is scrolled ${view.scrollY} pixels down from the top.` : '')
@@ -129,10 +132,12 @@ export function createJevAgentDecision(options: {
         stateText: `The user asked: “${options.goal.slice(0, 600)}”. These texts are on screen.`,
         questionText: 'Which text contains the information the user asked for?',
         candidates: [...texts.map((text, index) => ({ candidateId: `t${index}`, description: `This text contains it: “${text.slice(0, 300)}”.` })),
+          ...(texts.length > 1 ? [{ candidateId: 'all', description: 'Several of these texts together contain it (the user asked for a list or a summary of them).' }] : []),
           { candidateId: 'none', description: 'The information is not in any of these texts.' }] };
       const raw = await transport.send(encodeJevProviderView(providerView), signal);
       const [best] = Object.entries(decodeJevChoice(raw, providerView).probabilities).sort((a, b) => b[1] - a[1]);
-      return best && best[0] !== 'none' && best[1] >= 0.5 ? Number(best[0].slice(1)) : null;
+      if (!best || best[0] === 'none' || best[1] < 0.5) return null;
+      return best[0] === 'all' ? -1 : Number(best[0].slice(1));
     },
     async chooseOne(question, items, signal) {
       // Long lists (an app's whole menu bar) are judged in parallel rounds, then a final.

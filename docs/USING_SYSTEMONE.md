@@ -62,12 +62,19 @@ When something goes wrong, run `npm run traces` and paste the output into
 the chat. It shows each recent request's steps, as recorded locally on your
 Mac.
 
+### Push-to-talk shortcut
+
+Hold Control-Option-Space, speak, and let go. To use a different shortcut, open
+⚙ Settings › Voice › Push to talk, click the shortcut, and press the keys you
+want (it needs Control, Option or Command, or an F-key). Reset returns to
+Control-Option-Space. Control-Option-Escape always stops.
+
 ### Seeing where Jev works
 
 The bar stays where you are. While Jev acts, an accent outline with a
 "Jev · App" tag surrounds the window it is working in, on whichever display
 that is, and fades when it finishes; the status line names the app (and the
-display, with more than one). Turn the outline off with ⚙ "Show where Jev is
+display, with more than one). Turn the outline off with ⚙ Display › "Show where Jev is
 working". With several displays you can say "move this to the LG" or "put it on
 this monitor".
 

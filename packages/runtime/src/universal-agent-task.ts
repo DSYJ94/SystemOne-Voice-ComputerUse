@@ -92,7 +92,8 @@ export interface AgentDecision {
     history: readonly string[], origin?: string): Promise<readonly string[]>;
   /** Picks which candidate piece of the request answers `question` (index), or null for none. */
   pickSpan?(request: string, role: 'typed' | 'file', spans: readonly string[], signal?: AbortSignal): Promise<number | null>;
-  /** Which of `texts` (visible on screen) answers the user's question, or null when none does. */
+  /** Which of `texts` (visible on screen) answers the user's question: its index, -1 when several
+   * together do (read them all), or null when none does. */
   findAnswer?(view: AgentSnapshot, texts: readonly string[], signal: AbortSignal, history: readonly string[],
     origin?: string): Promise<number | null>;
   /** Picks one of `items` for the user's request (e.g. which Settings pane), or null. */
@@ -138,7 +139,10 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
   #generation = 0;
   #advancing = false;
   #step = 0;
-  #openedUrl = false;
+  readonly #openedUrls = new Set<string>();
+  /** Tabs closed so far: a second close in one task asks first (repeated closing is how a
+   * confused task does damage; one close is easily undone). */
+  #closes = 0;
   #openedApp = false;
   #openedFile = false;
   #typedAt = new Set<string>();
@@ -243,7 +247,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       ]);
       this.#active(generation);
       let { set, chosenId: proposedId, byId } = chosen0;
-      let answer = answerIndex === null ? undefined : answers[answerIndex];
+      let answer = answerIndex === null ? undefined : answerIndex === -1
+        ? all.find(option => option.kind === 'answer' && option.ref === 'read-page') : answers[answerIndex];
       if (answer) ({ set, byId } = this.#set(observationId, [answer], step));
       // "Open a Settings pane…", "use a menu command…", "click a menu-bar icon…" are resolved
       // to one concrete item from the Mac's own list before anything is proposed.
@@ -281,7 +286,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       if (!finish && !option) throw new ContractError('agent choice does not resolve');
       const proposal: AgentProposal = Object.freeze({ step, kind: finish ? 'finish' : option!.kind,
         label: finish ? (view.windowTitle || view.app) : option!.label,
-        destinationUrl: option?.kind === 'open_url' ? this.#goal.url : null, pageUrl: view.url, app: view.app,
+        destinationUrl: option?.kind === 'open_url' ? option.label : null, pageUrl: view.url, app: view.app,
         risky: !finish && (option!.risky === true || RISKY.test(`${option!.label} ${option!.element?.context ?? ''}`)) });
       this.#trace?.({ kind: 'step', step, app: view.app, window: view.windowTitle, url: view.url,
         elements: view.elements.length, options: options.length, chosen: proposal.kind, label: proposal.label,
@@ -321,8 +326,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         executionId = undefined;
         // Told once per screen: never repeated from the same screen.
         this.#takenFrom.set(content(view), (this.#takenFrom.get(content(view)) ?? new Set<string>()).add(actionKey));
-        this.#history.push(chosen.ref === 'read-page' ? `Read the page aloud to the user.`
-          : `Told the user: “${chosen.label.slice(0, 160)}”.`);
+        // Reading the screen out is an answer too: what was read counts as told.
+        this.#history.push(`Told the user: “${(chosen.ref === 'read-page' ? readable(view) : chosen.label).slice(0, 160)}”.`);
         this.#trace?.({ kind: 'result', step, changed: true, actMs: 0, verifyMs: 0, after: null });
         return;
       }
@@ -398,7 +403,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       this.#undo = new Set([...(INVERSE[actionKey] ?? []), ...(samePage ? after!.elements : [])
         .filter(item => item.pressable && before.get(item.id)?.role === item.role && before.get(item.id)!.label !== item.label)
         .map(item => `press:${item.id}`)]);
-      if (chosen.kind === 'open_url') this.#openedUrl = true;
+      if (chosen.kind === 'open_url') this.#openedUrls.add(chosen.label);
+      if (chosen.kind === 'close' || (chosen.kind === 'menu' && /close tab/iu.test(chosen.label))) this.#closes++;
       if (chosen.kind === 'open_app' && chosen.ref === 'goal-app') this.#openedApp = true;
       const relabelled = chosen.element && after?.elements.find(item => item.id === chosen.element!.id
         && item.role === chosen.element!.role && item.label !== chosen.element!.label);
@@ -442,7 +448,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       : option.kind === 'type' ? { id: option.ref, text: this.#goal.typedText!.text }
         : option.kind === 'key' ? { name: option.ref }
           : option.kind === 'scroll' ? { down: option.ref === 'scroll-down' }
-            : option.kind === 'open_url' ? { url: this.#goal.url!, newTab: this.#newTab(this.#lastView) }
+            : option.kind === 'open_url' ? { url: option.label, newTab: this.#newTab(this.#lastView) }
               : option.kind === 'quit_app' ? { name: option.label.replace(/[\u200e\u200f]/gu, '').trim() }
                 : option.kind === 'focus_window' ? { id: option.ref }
                   : option.kind === 'window_action' ? { action: option.ref.split('@')[0]!, window: option.ref.split('@')[1] ?? '' }
@@ -489,7 +495,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         // Closing a tab is always offered: it is easily undone (Command-Shift-T), unlike quitting an app.
         options.push({ kind: 'close', ref: element.id, element, label: element.label,
           description: `Close the browser tab “${element.label}”${where}${element.selected ? ' (the current tab)' : ''}.`,
-          score: score(`${element.label} ${element.url ?? ''}`) });
+          score: score(`${element.label} ${element.url ?? ''}`), risky: this.#closes > 0 });
         continue;
       }
       if (!this.#goal.quit && ENDS_APP.test(element.label.replace(/^\u200e/u, ''))) continue;
@@ -512,16 +518,17 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         if (tabs.length < 2) continue;
         options.push({ kind: 'close', ref: tabs.map(tab => tab.id).join(','), label: `${tabs.length} tabs “${tabs[0]!.label}”`,
           description: `Close all ${tabs.length} browser tabs titled “${tabs[0]!.label}”${tabs[0]!.url ? ` (${tabs[0]!.url.slice(0, 120)})` : ''} at once.`,
-          score: score(`${tabs[0]!.label} ${tabs[0]!.url ?? ''} all`) + 2 });
+          score: score(`${tabs[0]!.label} ${tabs[0]!.url ?? ''} all`) + 2, risky: this.#closes > 0 });
       }
     }
-    if (this.#goal.url && !this.#openedUrl && !view.url.includes(new URL(this.#goal.url).hostname.replace(/^www\./u, ''))) {
+    this.#goal.urls.forEach((url, index) => {
+      if (this.#openedUrls.has(url) || view.url.includes(new URL(url).hostname.replace(/^www\./u, ''))) return;
       const inBrowser = view.pid > 0 && BROWSERS.has(view.bundleId);
-      options.push({ kind: 'open_url', ref: 'goal-url', label: this.#goal.url,
-        description: !inBrowser ? `Open ${this.#goal.url} in the web browser.`
-          : this.#newTab(view) ? `Open ${this.#goal.url} in a new browser tab.`
-            : `Go to ${this.#goal.url} in this browser tab (replacing “${view.windowTitle.slice(0, 60)}”).`, score: 10 });
-    }
+      options.push({ kind: 'open_url', ref: `goal-url-${index}`, label: url,
+        description: !inBrowser ? `Open ${url} in the web browser.`
+          : this.#newTab(view) ? `Open ${url} in a new browser tab.`
+            : `Go to ${url} in this browser tab (replacing “${view.windowTitle.slice(0, 60)}”).`, score: 10 });
+    });
     const plain = (name: string) => name.replace(/[\u200e\u200f]/gu, '').trim().toLowerCase();
     const named = this.#goal.app ? plain(this.#goal.app) : null;
     if (this.#goal.quit) {
@@ -536,8 +543,10 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
     }
     // The whole Mac, not just the app in front: any open window can be brought forward.
     // The front window is the one whose title is the window being read (list order is not reliable).
+    // Window titles often carry extras ("Page - Google Chrome – Profile"), so containment counts.
     const isFrontWindow = (window: AgentWindow) => plain(window.app) === plain(view.app)
-      && (view.windowTitle ? window.title === view.windowTitle : window.front === true);
+      && (view.windowTitle ? window.title === view.windowTitle || window.title.includes(view.windowTitle)
+        || (window.front === true && view.windowTitle.includes(window.title)) : window.front === true);
     const withWindows = new Set<string>();
     for (const window of (view.windows ?? []).slice(0, 60)) {
       withWindows.add(plain(window.app));
@@ -584,8 +593,10 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       options.push({ kind: 'menu', ref: 'choose', label: `a menu command of ${view.app}`, score: 1,
         description: `Use one of ${view.app}'s own menu commands (its File, Edit, View, Window or Help menus); only for things inside ${view.app} itself, not other apps or the Mac's System Settings.` });
     }
-    options.push({ kind: 'notifications', ref: 'centre', label: 'Notification Centre', score: 1,
-      description: 'Open Notification Centre to see, read or open notifications (messages, reminders, alerts).' });
+    if (view.bundleId !== 'com.apple.notificationcenterui') {
+      options.push({ kind: 'notifications', ref: 'centre', label: 'Notification Centre', score: 1,
+        description: 'Open Notification Centre to see, read or open notifications (messages, reminders, alerts).' });
+    }
     options.push({ kind: 'status', ref: 'choose', label: 'a menu-bar icon', score: 1,
       description: 'Click an icon on the right of the menu bar (e.g. Wi‑Fi, Bluetooth, Battery, Control Centre, Focus, Spotlight, other apps’ icons).' });
     if (view.settingsPanes?.length && view.bundleId !== 'com.apple.systempreferences') {
@@ -642,9 +653,13 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       options.push({ kind: 'open_app', ref: `app:${name}`, label: name,
         description: `Switch to the app ${name} (already open).`, score: score(name) * 3 });
     }
-    if (this.#goal.app && !this.#openedApp && plain(view.app) !== named && !this.#goal.quit) {
+    // An app in front with no window open ("open Finder" with only its menu bar showing) still
+    // needs opening: that opens a new window, as clicking it in the Dock does.
+    const windowless = !!named && plain(view.app) === named && !!view.windows
+      && !view.windows.some(window => plain(window.app) === named && !window.minimized);
+    if (this.#goal.app && !this.#openedApp && (plain(view.app) !== named || windowless) && !this.#goal.quit) {
       options.push({ kind: 'open_app', ref: 'goal-app', label: this.#goal.app,
-        description: `Open the app ${this.#goal.app}.`, score: 10 });
+        description: windowless ? `Open a new ${this.#goal.app} window (it has none open).` : `Open the app ${this.#goal.app}.`, score: 10 });
     }
     if (view.pid) {
       // With a real tab list, tabs are switched and closed by name, never by blind cycling.
