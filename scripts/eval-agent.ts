@@ -28,6 +28,15 @@ const kindOf = (instructions: string) => /exact words|file or folder/u.test(inst
     : /contains the information/u.test(instructions) ? 'which text answers?'
       : /fully answered|already happened/u.test(instructions) ? 'is it done?'
         : /Settings pane/u.test(instructions) ? 'which pane?' : 'choose step';
+// COMPOSER=local: Stage C answers composed by the on-device answer model (as the ⚙ toggle does).
+const answers = process.env.COMPOSER === 'local'
+  ? new LocalUnderstanding(process.env.SYSTEMONE_LOCAL_MODEL_DIR ?? join(homedir(), 'Library/Application Support/SystemOne-Dev/local-model'), 'answers')
+  : undefined;
+if (answers) {
+  answers.prepare();
+  while (answers.status !== 'ready' && answers.status !== 'failed') await new Promise(resolve => setTimeout(resolve, 500));
+  if (answers.status === 'failed') throw new Error(`answer model failed: ${answers.problem}`);
+}
 const decide = (goal: string) => {
   const decision = createJevAgentDecision({ apiKey, goal, report: () => {}, judgment: event => {
     const request = event.request as { questions?: { next_action?: { instructions?: string } } };
@@ -49,7 +58,7 @@ const results: RunResult[] = [];
 const queue = [...chosen];
 await Promise.all(Array.from({ length: 4 }, async () => {
   for (let next = queue.shift(); next; next = queue.shift()) {
-    const result = await runScenario(next, decide)
+    const result = await runScenario(next, decide, answers ? { compose: (question, screen) => answers.answer(question, screen) } : {})
       .catch(error => ({ name: next!.name, goal: next!.goal, state: `crash: ${error}`, success: false, harmed: false,
         steps: [], ms: 0 }));
     results.push(result);
@@ -62,9 +71,12 @@ const passed = results.filter(result => result.success && !result.harmed).length
 console.log(`\n${passed}/${results.length} passed; median ${median(results.map(r => r.ms))} ms per task`
   + ` (words to type picked by ${local ? 'the on-device model' : 'Jev'}).`);
 local?.stop();
-const sum = (key: 'understandMs' | 'decideMs' | 'actMs' | 'verifyMs') => median(results.map(r => r.timing?.[key] ?? 0));
+answers?.stop();
+const sum = (key: 'understandMs' | 'decideMs' | 'actMs' | 'verifyMs' | 'composeMs') => median(results.map(r => r.timing?.[key] ?? 0));
 console.log(`median per task: understanding ${sum('understandMs')} ms, deciding ${sum('decideMs')} ms, acting ${sum('actMs')} ms, `
   + `settling/checking ${sum('verifyMs')} ms; median steps ${median(results.map(r => r.steps.length))}`);
+const composed = results.map(r => r.timing?.composeMs ?? 0).filter(ms => ms > 0);
+if (composed.length) console.log(`  composed answers: ${composed.length} tasks, median ${median(composed)} ms added per task, max ${Math.max(...composed)} ms`);
 for (const [kind, list] of [...calls].sort((a, b) => b[1].length - a[1].length)) {
   console.log(`  Jev “${kind}”: ${list.length} calls, median ${median(list)} ms, p90 ${[...list].sort((a, b) => a - b)[Math.floor(list.length * 0.9)]} ms`);
 }

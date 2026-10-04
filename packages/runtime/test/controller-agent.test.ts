@@ -160,7 +160,7 @@ test('a 👎 with a reason and a correction lands in the task trace and its data
   const files = readdirSync(join(root, 'datasets', 'tasks'));
   assert.equal(files.length, 1);
   const example = JSON.parse(readFileSync(join(root, 'datasets', 'tasks', files[0]!), 'utf8').trim().split('\n')[0]!);
-  assert.deepEqual(example.feedback, { value: 'bad', reason: 'stopped_early', note: 'it should have pressed play first' });
+  assert.deepEqual(example.feedback, { value: 'bad', reason: 'stopped_early', note: 'it should have pressed play first', attachments: [] });
   assert.equal(example.outcome, 'completed');
   assert.equal(example.question, 'Which step?');
   // An unknown reason is rejected, not recorded.

@@ -74,7 +74,7 @@ export interface AgentProposal {
   readonly step: number;
   readonly kind: 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste' | 'close' | 'quit_app'
     | 'focus_window' | 'window_action' | 'media' | 'open_file' | 'system' | 'answer' | 'open_settings' | 'menu' | 'status'
-  | 'notifications' | 'look' | 'finish';
+  | 'notifications' | 'look' | 'compose' | 'finish';
   readonly label: string;
   readonly destinationUrl: string | null;
   readonly pageUrl: string;
@@ -149,6 +149,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
   #waits = 0;
   #origin: string | undefined;
   readonly #say: ((text: string) => void) | undefined;
+  readonly #compose: ((question: string, screen: string) => Promise<{ readonly answer: string; readonly ms: number }>) | undefined;
+  readonly #question: string;
   /** The last step acted on the whole Mac, which the screen cannot confirm. */
   #lastOffScreen = false;
   /** Loop prevention, three general rules (no per-app special cases):
@@ -177,6 +179,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       readonly confirmation: AgentConfirmation; readonly trace?: (event: Record<string, JSONValue>) => void;
       /** Shows and speaks an answer to the user. */
       readonly say?: (text: string) => void;
+      /** Stage C (optional): composes a short answer from screen text with an on-device model. */
+      readonly compose?: (question: string, screen: string) => Promise<{ readonly answer: string; readonly ms: number }>;
       /** A screen read already taken while the request was being understood. */
       readonly initialView?: AgentSnapshot }): UniversalAgentTask {
     const typed = admission.parameters.find(item => item.parameterRef === 'typed-text');
@@ -198,9 +202,12 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
   private constructor(journal: AttemptJournal, admission: TaskAdmission, ax: AgentAXClient,
     options: { readonly goal: AgentGoal; readonly decision: AgentDecision; readonly confirmation: AgentConfirmation;
       readonly trace?: (event: Record<string, JSONValue>) => void; readonly initialView?: AgentSnapshot;
-      readonly say?: (text: string) => void }) {
+      readonly say?: (text: string) => void;
+      readonly compose?: (question: string, screen: string) => Promise<{ readonly answer: string; readonly ms: number }> }) {
     this.#trace = options.trace;
     this.#say = options.say;
+    this.#compose = options.compose;
+    this.#question = String(admission.goal ?? '');
     this.#nextView = options.initialView;
     this.taskId = admission.taskId; this.#journal = journal; this.#ax = ax; this.#goal = options.goal;
     this.#decision = options.decision; this.#confirmation = options.confirmation;
@@ -247,8 +254,10 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       ]);
       this.#active(generation);
       let { set, chosenId: proposedId, byId } = chosen0;
+      // Several texts together answer it: compose one answer when Stage C is on, else read them out.
       let answer = answerIndex === null ? undefined : answerIndex === -1
-        ? all.find(option => option.kind === 'answer' && option.ref === 'read-page') : answers[answerIndex];
+        ? all.find(option => option.kind === 'compose') ?? all.find(option => option.kind === 'answer' && option.ref === 'read-page')
+        : answers[answerIndex];
       if (answer) ({ set, byId } = this.#set(observationId, [answer], step));
       // "Open a Settings pane…", "use a menu command…", "click a menu-bar icon…" are resolved
       // to one concrete item from the Mac's own list before anything is proposed.
@@ -264,7 +273,9 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       const lastTold = this.#history.findLastIndex(item => item.startsWith('Told the user'));
       const lookedLong = lastTold >= 0 && this.#history.length - 1 - lastTold >= 2;
       // Only a clear "yes" overrides the chooser; it can still choose to finish itself.
-      const chosenId = answer ? 'c0' : doneProbability >= 0.8 || lookedLong ? 'finish' : proposedId;
+      // Once something has been told and the task is judged done, finish rather than say more.
+      const chosenId = told.size && doneProbability >= 0.8 ? 'finish'
+        : answer ? 'c0' : doneProbability >= 0.8 || lookedLong ? 'finish' : proposedId;
       const decideMs = Math.round(performance.now() - decideStarted);
       // After a step on the whole Mac (dark mode, volume, media) the screen cannot show the
       // result; with nothing confident to do next, that step was the task, so finish.
@@ -318,6 +329,32 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       }
       this.#journal.markDispatchBoundary(permit.executionId);
       let copied: string | null = null;
+      if (chosen.kind === 'compose') {
+        // Stage C: an on-device model writes the answer from screen text; it is spoken only if
+        // every number in it is on the screen, and never when the model says it can't see it.
+        const screen = view.elements.map(element => element.value ? `${element.label}: ${element.value}` : element.label)
+          .filter(Boolean).join('\n');
+        const composed = await this.#compose!(this.#question, screen).catch(() => undefined);
+        this.#active(generation);
+        const numbers = composed?.answer.match(/\d[\d.,:]*/gu) ?? [];
+        const compact = screen.replace(/[\s,]/gu, '');
+        const grounded = !!composed && numbers.every(number => compact.includes(number.replace(/[,.:]$/u, '').replace(/,/gu, '')));
+        const unseen = !composed || /can't see that|cannot see that|not on the screen/iu.test(composed.answer);
+        this.#journal.recordOutcome(permit.executionId, { deliveryStatus: 'dispatched', effectStatus: grounded && !unseen ? 'applied' : 'not_applied',
+          verification: grounded && !unseen ? 'matched' : 'not_matched', ...(grounded && !unseen ? { evidenceRef: `agent-compose-${permit.executionId}` } : {}) });
+        executionId = undefined;
+        this.#trace?.({ kind: 'compose', step, ms: composed?.ms ?? null, grounded, unseen, answer: composed?.answer.slice(0, 300) ?? null });
+        this.#takenFrom.set(content(view), (this.#takenFrom.get(content(view)) ?? new Set<string>()).add(actionKey));
+        if (composed && grounded && !unseen) {
+          this.#say?.(composed.answer);
+          this.#history.push(`Told the user: “${composed.answer.slice(0, 160)}”.`);
+        } else {
+          this.#history.push(unseen ? 'Tried to compose an answer, but it is not in the text on this screen.'
+            : 'Composed an answer that mentioned something not on screen, so it was not said.');
+        }
+        this.#trace?.({ kind: 'result', step, changed: !!composed && grounded && !unseen, actMs: composed?.ms ?? 0, verifyMs: 0, after: null });
+        return;
+      }
       if (chosen.kind === 'look') {
         // Not an action on the Mac: the next reads of this screen include its image text.
         this.#lookAt = `${view.bundleId}|${view.windowTitle}`;
@@ -485,8 +522,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
                           : option.kind === 'menu' ? { path: option.ref }
                 : { name: option.label };
     const op = option.kind === 'menu' ? 'menu_press' : option.kind === 'status' ? 'status_press'
-      : option.kind as Exclude<Option['kind'], 'finish' | 'answer' | 'menu' | 'status' | 'look'>;
-    return await this.#ax.call(this.taskId, op as Exclude<typeof op, 'look'>, params,
+      : option.kind as Exclude<Option['kind'], 'finish' | 'answer' | 'menu' | 'status' | 'look' | 'compose'>;
+    return await this.#ax.call(this.taskId, op as Exclude<typeof op, 'look' | 'compose'>, params,
       ['open_url', 'open_app', 'open_file', 'open_settings'].includes(option.kind) ? 20_000 : 10_000);
   }
 
@@ -612,6 +649,10 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         options.push({ kind: 'answer', ref: element.id, label: text, score: score(text) + 1,
           description: `Tell the user: “${text}”${element.context && element.context !== text ? ` (from “${element.context.slice(0, 60)}”)` : ''}.` });
       }
+    }
+    if (this.#goal.wantsAnswer && this.#compose && view.elements.length) {
+      options.push({ kind: 'compose', ref: 'compose-answer', label: 'compose an answer', score: 2,
+        description: `Compose a short spoken answer from the text on screen in ${view.app} (for summaries, or answers that combine several facts).` });
     }
     if (view.elements.some(element => element.role === 'AXStaticText')) {
       // Always available: reading out is never mistaken for an action on the Mac.
@@ -771,7 +812,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         verifier: { kind: 'content_changed' }, delivery: 'semantic', riskPolicyRef: AGENT_POLICY,
         replayPolicy: 'only_if_not_applied' };
       const candidate: Record<string, JSONValue> = ['focus_window', 'window_action', 'media', 'open_file', 'system', 'answer',
-        'open_settings', 'menu', 'status', 'notifications', 'look'].includes(option.kind)
+        'open_settings', 'menu', 'status', 'notifications', 'look', 'compose'].includes(option.kind)
         ? { ...base, operation: 'invoke', targetRef: `${option.kind}:${option.ref}`.replace(/[^A-Za-z0-9_.:-]/gu, '-').slice(0, 160),
           parameters: {}, effects: ['NAVIGATE', 'EXTERNAL_WRITE'] }
         : option.kind === 'quit_app'
@@ -930,6 +971,7 @@ function describeKind(option: Option): string {
     case 'status': return `clicked the menu-bar icon “${option.label}”`;
     case 'notifications': return 'opened Notification Centre';
     case 'look': return 'read the screen image';
+    case 'compose': return 'composed an answer';
     default: return 'finished';
   }
 }

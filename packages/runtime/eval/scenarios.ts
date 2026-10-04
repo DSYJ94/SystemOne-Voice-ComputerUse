@@ -701,6 +701,13 @@ const BASE: readonly Scenario[] = [
     mac => mac.exported === 'png'),
   scenario('vision-type', 'search the assets for tiger', mac => { mac.apps.push('Sketchy'); mac.front = 'Sketchy'; },
     mac => mac.assetSearch === 'tiger'),
+  // Stage C: summaries and answers that combine facts (composed on this Mac when on).
+  scenario('summarise-email', 'summarise this email', mac => { mac.openEmail = 'Acme Billing'; },
+    mac => mac.said.some(text => text.includes('120')),
+    [{ url: 'https://mail.google.com/mail/u/0/#inbox', title: 'Acme Billing - Gmail' }]),
+  scenario('combined-answer', 'what is the invoice number and how much do I owe', mac => { mac.openEmail = 'Acme Billing'; },
+    mac => mac.said.some(text => text.includes('4412')) && mac.said.some(text => text.includes('120')),
+    [{ url: 'https://mail.google.com/mail/u/0/#inbox', title: 'Acme Billing - Gmail' }]),
   scenario('dictate-reply', 'reply to Sam saying I will be late', () => {},
     mac => mac.openEmail === 'Sam Lee' && mac.replyBody === 'I will be late',
     [{ url: 'https://mail.google.com/mail/u/0/#inbox', title: 'Inbox (3) - Gmail' }]),

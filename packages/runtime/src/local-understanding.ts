@@ -10,7 +10,14 @@ import { fileURLToPath } from 'node:url';
  * support folder; until it is ready the caller falls back to Jev and says so. */
 export type LocalStatus = 'not_installed' | 'installing' | 'starting' | 'ready' | 'failed';
 
-const WORKER = join(dirname(fileURLToPath(import.meta.url)), '../../../scripts/local-model/worker.py');
+const SCRIPTS = join(dirname(fileURLToPath(import.meta.url)), '../../../scripts/local-model');
+/** Two on-device models share one Python environment: Qwen2.5-0.5B picks the words to type
+ * (worker.py); Llama-3.2-3B composes short spoken answers from screen text (answer_worker.py). */
+export type LocalKind = 'understanding' | 'answers';
+const KINDS: Readonly<Record<LocalKind, { readonly worker: string; readonly marker: string }>> = {
+  understanding: { worker: join(SCRIPTS, 'worker.py'), marker: 'installed' },
+  answers: { worker: join(SCRIPTS, 'answer_worker.py'), marker: 'installed-answers' },
+};
 const MLX_LM = 'mlx-lm==0.32.0';
 const PYTHONS = ['/opt/homebrew/bin/python3', '/usr/local/bin/python3', '/usr/bin/python3'];
 
@@ -23,10 +30,14 @@ export class LocalUnderstanding {
   #next = 0;
   readonly #pending = new Map<string, (answer: { answer?: string; ms?: number; error?: string }) => void>();
   #starting: Promise<void> | undefined;
+  readonly #worker_: string;
+  readonly #marker: string;
 
-  constructor(dir: string) {
+  constructor(dir: string, kind: LocalKind = 'understanding') {
     this.#dir = dir;
-    this.#status = existsSync(join(dir, 'installed')) ? 'starting' : 'not_installed';
+    this.#worker_ = KINDS[kind].worker;
+    this.#marker = KINDS[kind].marker;
+    this.#status = existsSync(join(dir, this.#marker)) ? 'starting' : 'not_installed';
   }
 
   get status(): LocalStatus { return this.#status; }
@@ -35,7 +46,7 @@ export class LocalUnderstanding {
   /** Starts installing (first time) or loading the model; never blocks a request. */
   prepare(): void {
     if (this.#starting || this.#status === 'ready' || this.#status === 'failed') return;
-    this.#starting = (existsSync(join(this.#dir, 'installed')) ? Promise.resolve() : this.#install())
+    this.#starting = (existsSync(join(this.#dir, this.#marker)) ? Promise.resolve() : this.#install())
       .then(() => this.#start())
       .catch(error => { this.#status = 'failed'; this.#problem = String(error).slice(0, 200); })
       .finally(() => { this.#starting = undefined; });
@@ -43,16 +54,27 @@ export class LocalUnderstanding {
 
   /** The words the local model says should be typed, or null for none. Throws when not ready. */
   async words(text: string, timeoutMs = 3_000): Promise<{ readonly answer: string | null; readonly ms: number }> {
+    const reply = await this.#ask({ text }, timeoutMs);
+    const answer = reply.answer.trim();
+    return { answer: !answer || answer.toUpperCase() === 'NONE' ? null : answer, ms: reply.ms };
+  }
+
+  /** A short spoken answer to `question` composed only from `screen` (answers model). */
+  async answer(question: string, screen: string, timeoutMs = 8_000): Promise<{ readonly answer: string; readonly ms: number }> {
+    const reply = await this.#ask({ question, text: screen.slice(0, 6_000) }, timeoutMs);
+    return { answer: reply.answer.trim(), ms: reply.ms };
+  }
+
+  async #ask(payload: Record<string, string>, timeoutMs: number): Promise<{ answer: string; ms: number }> {
     if (this.#status !== 'ready' || !this.#worker) { this.prepare(); throw new Error(`local model ${this.#status}`); }
     const id = `q${++this.#next}`;
     const reply = await new Promise<{ answer?: string; ms?: number; error?: string }>((resolve, reject) => {
       const timer = setTimeout(() => { this.#pending.delete(id); reject(new Error('local model timed out')); }, timeoutMs);
       this.#pending.set(id, value => { clearTimeout(timer); resolve(value); });
-      this.#worker!.stdin.write(`${JSON.stringify({ id, text })}\n`);
+      this.#worker!.stdin.write(`${JSON.stringify({ id, ...payload })}\n`);
     });
     if (reply.error || typeof reply.answer !== 'string') throw new Error(reply.error ?? 'no answer');
-    const answer = reply.answer.trim();
-    return { answer: !answer || answer.toUpperCase() === 'NONE' ? null : answer, ms: reply.ms ?? 0 };
+    return { answer: reply.answer, ms: reply.ms ?? 0 };
   }
 
   stop(): void { this.#worker?.kill(); this.#worker = undefined; }
@@ -71,17 +93,21 @@ export class LocalUnderstanding {
     const python = PYTHONS.find(path => existsSync(path));
     if (!python) throw new Error('no Python 3 found for the local model');
     const venv = join(this.#dir, 'venv');
-    await run(python, ['-m', 'venv', venv]);
-    await run(join(venv, 'bin/pip'), ['install', '--quiet', '--disable-pip-version-check', MLX_LM]);
-    // Loading once downloads the pinned model (~280 MB) into the support folder.
-    await run(join(venv, 'bin/python'), [WORKER, '--download'], { HF_HOME: join(this.#dir, 'hf') });
-    writeFileSync(join(this.#dir, 'installed'), `${MLX_LM}\n`, { mode: 0o600 });
+    // One shared environment: set up once by whichever model installs first.
+    if (!existsSync(join(venv, '.mlx-ready')) && !existsSync(join(this.#dir, 'installed'))) {
+      await run(python, ['-m', 'venv', venv]);
+      await run(join(venv, 'bin/pip'), ['install', '--quiet', '--disable-pip-version-check', MLX_LM]);
+      writeFileSync(join(venv, '.mlx-ready'), `${MLX_LM}\n`, { mode: 0o600 });
+    }
+    // Loading once downloads the pinned model into the support folder.
+    await run(join(venv, 'bin/python'), [this.#worker_, '--download'], { HF_HOME: join(this.#dir, 'hf') });
+    writeFileSync(join(this.#dir, this.#marker), `${MLX_LM}\n`, { mode: 0o600 });
   }
 
   #start(): Promise<void> {
     this.#status = 'starting';
     return new Promise((resolve, reject) => {
-      const worker = spawn(join(this.#dir, 'venv/bin/python'), [WORKER], {
+      const worker = spawn(join(this.#dir, 'venv/bin/python'), [this.#worker_], {
         env: { ...process.env, HF_HOME: join(this.#dir, 'hf'), HF_HUB_OFFLINE: '1', TOKENIZERS_PARALLELISM: 'false' },
         stdio: ['pipe', 'pipe', 'pipe'] });
       this.#worker = worker;

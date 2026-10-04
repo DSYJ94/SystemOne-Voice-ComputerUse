@@ -103,12 +103,13 @@ export interface RunResult {
   readonly ms: number;
   /** Where the time went: understanding before step 1, deciding, acting, settling/checking. */
   readonly timing?: { readonly understandMs: number; readonly decideMs: number; readonly actMs: number;
-    readonly verifyMs: number };
+    readonly verifyMs: number; readonly composeMs: number };
 }
 
 /** Runs one scenario through the real agent task, journal and decision. */
 export async function runScenario(scenario: Scenario, decision: (goal: string) => AgentDecision,
-  options: { readonly allowRisky?: boolean } = {}): Promise<RunResult> {
+  options: { readonly allowRisky?: boolean;
+    readonly compose?: (question: string, screen: string) => Promise<{ readonly answer: string; readonly ms: number }> } = {}): Promise<RunResult> {
   const world = scenario.world();
   const root = mkdtempSync(join(tmpdir(), 'systemone-eval-'));
   const journal = new AttemptJournal(join(root, 'attempts.sqlite'));
@@ -219,14 +220,16 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
     parameters: [...(goal.typedText ? [bindCommandSpan(command, 'typed-text', goal.typedText)] : []),
       ...(goal.fileName ? [bindCommandSpan(command, 'file-name', goal.fileName)] : [])] });
   let done = 0;
-  const timing = { understandMs: Math.round(performance.now() - started), decideMs: 0, actMs: 0, verifyMs: 0 };
+  const timing = { understandMs: Math.round(performance.now() - started), decideMs: 0, actMs: 0, verifyMs: 0, composeMs: 0 };
   const task = UniversalAgentTask.start(journal, registry, admission, client, { goal, decision: made,
     trace: event => {
       if (event.kind === 'step') { done = Number(event.done ?? 0); timing.decideMs += Number(event.decideMs ?? 0); }
       if (event.kind === 'result') { timing.actMs += Number(event.actMs ?? 0); timing.verifyMs += Number(event.verifyMs ?? 0); }
+      if (event.kind === 'compose') timing.composeMs += Number(event.ms ?? 0);
       if (event.kind === 'stopped') steps.push(`(stopped: ${String(event.reason).slice(0, 120)})`);
     },
     say: text => world.heard?.(text),
+    ...(options.compose ? { compose: options.compose } : {}),
     confirmation: { async confirm(proposal: AgentProposal) {
       steps.push(`${proposal.kind} “${proposal.label.slice(0, 60)}”${proposal.risky ? ' (risky)' : ''} [done ${done}]`);
       // Risky steps are declined unless the run allows them, like a user saying no.

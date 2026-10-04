@@ -10,6 +10,8 @@ export function taskExamples(events: readonly TraceEvent[], task: string): Recor
   const goal = events.find(event => event.kind === 'goal')?.goal ?? '';
   const outcome = events.findLast(event => event.kind === 'end')?.outcome ?? null;
   const verdict = events.findLast(event => event.kind === 'feedback');
+  // Screenshots from any feedback on this task (files in datasets/attachments).
+  const attachments = events.filter(event => event.kind === 'feedback').flatMap(event => event.attachments ?? []);
   const understanding = events.find(event => event.kind === 'understanding')?.by ?? null;
   const examples: Record<string, unknown>[] = [];
   events.forEach((event, index) => {
@@ -26,7 +28,8 @@ export function taskExamples(events: readonly TraceEvent[], task: string): Recor
       options: question.criteria ?? {}, probabilities, pick,
       executed: decided ? { step: next.step, kind: next.chosen, label: next.label } : null,
       changed: result ? result.changed : null, outcome, understanding,
-      feedback: verdict ? { value: verdict.value, reason: verdict.reason ?? null, note: verdict.note ?? null } : null,
+      feedback: verdict ? { value: verdict.value, reason: verdict.reason ?? events.findLast(event => event.kind === 'feedback' && event.reason)?.reason ?? null,
+        note: verdict.note ?? events.findLast(event => event.kind === 'feedback' && event.note)?.note ?? null, attachments } : null,
       ms: event.ms ?? null });
   });
   return examples;

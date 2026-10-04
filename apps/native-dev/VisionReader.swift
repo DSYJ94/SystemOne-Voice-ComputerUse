@@ -20,8 +20,8 @@ final class VisionReader {
     /// Shows the system prompt (once) and lists SystemOne under Screen Recording.
     static func requestPermission() { _ = CGRequestScreenCaptureAccess() }
 
-    /// Text in the front window of `pid`, read from the screen image.
-    func read(windowOf pid: pid_t) async throws -> [Found] {
+    /// The front window of `pid` as an image (for reading, or attached to a 👎 report).
+    func capture(windowOf pid: pid_t) async throws -> (image: CGImage, frame: CGRect) {
         guard Self.permitted else { throw VisionError.notPermitted }
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
         let windows = content.windows.filter { $0.owningApplication?.processID == pid && $0.windowLayer == 0 && $0.frame.width > 80 }
@@ -35,7 +35,12 @@ final class VisionReader {
         config.showsCursor = false
         let image = try await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(desktopIndependentWindow: window),
                                                                configuration: config)
-        let frame = window.frame
+        return (image, window.frame)
+    }
+
+    /// Text in the front window of `pid`, read from the screen image.
+    func read(windowOf pid: pid_t) async throws -> [Found] {
+        let (image, frame) = try await capture(windowOf: pid)
         return try await Task.detached(priority: .userInitiated) {
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate

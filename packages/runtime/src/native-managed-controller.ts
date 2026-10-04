@@ -122,6 +122,8 @@ interface StartAgent {
   readonly decisionProvider: 'jev';
   /** Who picks the words to type: Jev (default) or the on-device model. */
   readonly understanding: 'jev' | 'local';
+  /** Stage C: compose answers on this Mac ('local') or not ('off'). */
+  readonly composer: 'local' | 'off';
 }
 
 interface ContinueBrowse {
@@ -141,6 +143,8 @@ interface AgentFeedback {
   /** For 👎: what kind of wrong (one tap), and optionally what it should have done. */
   readonly reason?: string;
   readonly note?: string;
+  /** Screenshots saved beside the training data (file names only). */
+  readonly attachments?: readonly string[];
 }
 
 const FEEDBACK_REASONS = new Set(['wrong_place', 'wrong_words', 'wrong_steps', 'stopped_early', 'too_slow', 'other']);
@@ -149,6 +153,8 @@ const FEEDBACK_REASONS = new Set(['wrong_place', 'wrong_words', 'wrong_steps', '
 interface PrepareUnderstanding {
   readonly type: 'prepare_understanding';
   readonly requestId: string;
+  /** Which on-device models to load: words to type, composed answers. */
+  readonly models: readonly ('understanding' | 'answers')[];
 }
 
 interface ConfirmStep {
@@ -248,6 +254,13 @@ function decisionProviderValid(value: Record<string, JSONValue>): boolean {
 }
 
 let sharedLocal: LocalUnderstanding | undefined;
+let sharedAnswers: LocalUnderstanding | undefined;
+function localAnswers(): LocalUnderstanding {
+  sharedAnswers ??= new LocalUnderstanding(process.env.SYSTEMONE_LOCAL_MODEL_DIR
+    ?? join(process.env.HOME ?? '', 'Library/Application Support/SystemOne-Dev/local-model'), 'answers');
+  return sharedAnswers;
+}
+
 function localUnderstanding(): LocalUnderstanding {
   sharedLocal ??= new LocalUnderstanding(process.env.SYSTEMONE_LOCAL_MODEL_DIR
     ?? join(process.env.HOME ?? '', 'Library/Application Support/SystemOne-Dev/local-model'));
@@ -349,14 +362,16 @@ function requestFromLine(line: Uint8Array): NativeRequest {
       command: value.command, decisionProvider: 'jev' };
   }
   if (value.type === 'start_agent') {
-    const keys = Object.keys(value).sort().join(',');
-    if ((keys !== 'command,decisionProvider,requestId,type' && keys !== 'command,decisionProvider,requestId,type,understanding')
+    const keys = Object.keys(value);
+    const required = ['command', 'decisionProvider', 'requestId', 'type'];
+    if (!required.every(key => keys.includes(key)) || keys.some(key => !required.includes(key) && key !== 'understanding' && key !== 'composer')
       || value.decisionProvider !== 'jev' || value.command === undefined || !isRecord(value.command)
-      || (value.understanding !== undefined && value.understanding !== 'jev' && value.understanding !== 'local')) {
+      || (value.understanding !== undefined && value.understanding !== 'jev' && value.understanding !== 'local')
+      || (value.composer !== undefined && value.composer !== 'local' && value.composer !== 'off')) {
       throw new ContractError('invalid agent request');
     }
     return { type: 'start_agent', requestId: value.requestId as string, command: value.command, decisionProvider: 'jev',
-      understanding: value.understanding === 'local' ? 'local' : 'jev' };
+      understanding: value.understanding === 'local' ? 'local' : 'jev', composer: value.composer === 'local' ? 'local' : 'off' };
   }
   if (value.type === 'continue_browse') {
     if (Object.keys(value).sort().join(',') !== 'command,decisionProvider,requestId,targetRequestId,type'
@@ -368,12 +383,20 @@ function requestFromLine(line: Uint8Array): NativeRequest {
       targetRequestId: value.targetRequestId, command: value.command, decisionProvider: 'jev' };
   }
   if (value.type === 'prepare_understanding') {
-    if (Object.keys(value).sort().join(',') !== 'requestId,type') throw new ContractError('invalid prepare request');
-    return { type: 'prepare_understanding', requestId: value.requestId as string };
+    const models = value.models;
+    if (Object.keys(value).sort().join(',') !== 'models,requestId,type' || !Array.isArray(models)
+      || models.some(model => model !== 'understanding' && model !== 'answers')) {
+      throw new ContractError('invalid prepare request');
+    }
+    return { type: 'prepare_understanding', requestId: value.requestId as string,
+      models: models as ('understanding' | 'answers')[] };
   }
   if (value.type === 'agent_feedback') {
     const extra = Object.keys(value).filter(key => !['requestId', 'targetRequestId', 'type', 'value'].includes(key));
-    if (extra.some(key => key !== 'reason' && key !== 'note')
+    const attachments = value.attachments;
+    if (extra.some(key => key !== 'reason' && key !== 'note' && key !== 'attachments')
+      || (attachments !== undefined && (!Array.isArray(attachments) || attachments.length > 5
+        || attachments.some(name => typeof name !== 'string' || !/^[A-Za-z0-9._-]{1,120}\.png$/u.test(name))))
       || typeof value.targetRequestId !== 'string' || (value.value !== 'good' && value.value !== 'bad')
       || (value.reason !== undefined && (typeof value.reason !== 'string' || !FEEDBACK_REASONS.has(value.reason)))
       || (value.note !== undefined && (typeof value.note !== 'string' || value.note.length > 1_000))) {
@@ -381,7 +404,8 @@ function requestFromLine(line: Uint8Array): NativeRequest {
     }
     return { type: 'agent_feedback', requestId: value.requestId as string, targetRequestId: value.targetRequestId,
       value: value.value, ...(typeof value.reason === 'string' ? { reason: value.reason } : {}),
-      ...(typeof value.note === 'string' && value.note.trim() ? { note: value.note.trim() } : {}) };
+      ...(typeof value.note === 'string' && value.note.trim() ? { note: value.note.trim() } : {}),
+      ...(Array.isArray(attachments) ? { attachments: attachments as string[] } : {}) };
   }
   if (value.type === 'confirm_step') {
     if (Object.keys(value).sort().join(',') !== 'allow,proposalId,requestId,targetRequestId,type'
@@ -745,12 +769,16 @@ export class NativeManagedController {
     if (request.type === 'continue_browse') {
       this.#continueBrowse(request); return;
     }
-    if (request.type === 'prepare_understanding') { localUnderstanding().prepare(); return; }
+    if (request.type === 'prepare_understanding') {
+      if (request.models.includes('understanding')) localUnderstanding().prepare();
+      if (request.models.includes('answers')) localAnswers().prepare();
+      return;
+    }
     if (request.type === 'agent_feedback') {
       // Recorded only into that task's own private trace (and its dataset file); never acted on.
       const target = this.#traces.get(request.targetRequestId);
       target?.({ kind: 'feedback', value: request.value, ...(request.reason ? { reason: request.reason } : {}),
-        ...(request.note ? { note: request.note } : {}) });
+        ...(request.note ? { note: request.note } : {}), ...(request.attachments ? { attachments: [...request.attachments] } : {}) });
       if (target) refreshDataset(target.path);
       return;
     }
@@ -1371,13 +1399,28 @@ export class NativeManagedController {
         }
       }
       const goal = await refineGoal(route.input.text, parsed, pick, decision.asksForAnswer?.bind(decision));
+      // Stage C: compose answers on this Mac when asked for and loaded (a short wait if loading).
+      let composer: ((question: string, screen: string) => Promise<{ answer: string; ms: number }>) | undefined;
+      let composerState = 'off';
+      if (request.composer === 'local' && goal.wantsAnswer) {
+        const answers = localAnswers();
+        if (answers.status === 'starting') await answers.ready(6_000);
+        composerState = answers.status === 'ready' ? 'on' : answers.status === 'failed' ? 'failed' : answers.status === 'starting' ? 'loading' : 'installing';
+        if (answers.status === 'ready') {
+          composer = async (question, screen) => {
+            const result = await answers.answer(question, screen);
+            this.#chromeOutput?.({ type: 'agent_composed', requestId: request.requestId, ms: result.ms });
+            return result;
+          };
+        } else answers.prepare();
+      }
       // The bar shows who understood the request and what will be typed (Qwen on this Mac or Jev).
       this.#chromeOutput?.({ type: 'agent_understanding', requestId: request.requestId,
         by: understanding === 'local' ? 'local' : request.understanding === 'local'
           ? (localUnderstanding().status === 'failed' ? 'local_failed'
             : localUnderstanding().status === 'installing' || localUnderstanding().status === 'not_installed' ? 'local_installing'
               : 'local_loading') : 'jev',
-        typed: goal.typedText?.text ?? null, problem: localUnderstanding().problem.slice(0, 120) });
+        typed: goal.typedText?.text ?? null, problem: localUnderstanding().problem.slice(0, 120), composer: composerState });
       trace?.({ kind: 'understanding', by: understanding, answer: goal.wantsAnswer, typed: goal.typedText?.text ?? null,
         file: goal.fileName?.text ?? null });
       if (active.cancelled) return;
@@ -1393,6 +1436,7 @@ export class NativeManagedController {
       const initialView = await firstView;
       const task = UniversalAgentTask.start(this.#journal, registry, admission, this.#agentAX, { goal, decision,
         ...(initialView ? { initialView } : {}),
+        ...(composer ? { compose: composer } : {}),
         say: text => { this.#chromeOutput?.({ type: 'agent_answer', requestId: request.requestId, text: text.slice(0, 3_000) }); },
         ...(trace ? { trace } : {}),
         confirmation: { confirm: (proposal, signal) => this.#awaitConfirmation(request.requestId, proposal, signal) } });
@@ -1730,6 +1774,7 @@ async function main(): Promise<void> {
     // process running after its app has gone (found as an orphan sharing the journal).
     void controller.close().catch(() => { process.exitCode = 1; }).finally(() => {
       sharedLocal?.stop();
+      sharedAnswers?.stop();
       setTimeout(() => process.exit(process.exitCode ?? 0), 100);
     });
   };

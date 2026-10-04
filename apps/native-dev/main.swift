@@ -517,10 +517,14 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
             button.identifier = NSUserInterfaceItemIdentifier(reason)
             return button
         }
+        let paste = NSButton(title: "📎 Paste Image", target: self, action: #selector(attachClipboardImage))
+        paste.bezelStyle = .inline
+        paste.controlSize = .small
+        paste.toolTip = "Attach a screenshot from the clipboard (⌘⇧⌃4 copies one)"
         let skip = NSButton(title: "Skip", target: self, action: #selector(skipCorrection))
         skip.bezelStyle = .inline
         skip.controlSize = .small
-        let reasonStack = NSStackView(views: reasonButtons + [skip])
+        let reasonStack = NSStackView(views: reasonButtons + [paste, skip])
         reasonStack.orientation = .horizontal
         reasonStack.spacing = 4
         reasonStack.isHidden = true
@@ -688,6 +692,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
                     toggle(jevEnabled, #selector(toggleJev(_:)))),
                 row("Understand requests on this Mac", "A small on-device model picks the words to type. Installs once (about 700 MB).",
                     toggle(UserDefaults.standard.bool(forKey: "understandOnDevice"), #selector(toggleUnderstandOnDevice(_:)))),
+                row("Summaries and combined answers", "Composes short spoken answers from what's on screen, on this Mac (about 2 GB, installed once).",
+                    toggle(UserDefaults.standard.bool(forKey: "composeAnswers"), #selector(toggleComposeAnswers(_:)))),
                 row("Read the screen when apps can't be", "For apps that don't expose their buttons, reads the window's image on this Mac.",
                     toggle(UserDefaults.standard.object(forKey: "readScreenImage") as? Bool ?? true, #selector(toggleReadScreen(_:)))),
             ]),
@@ -853,8 +859,19 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
 
     /// Loads (or installs) the on-device model ahead of the first request.
     private func prepareUnderstanding() {
-        guard UserDefaults.standard.bool(forKey: "understandOnDevice"), let input = controllerInput else { return }
-        _ = send(["type": "prepare_understanding", "requestId": UUID().uuidString.lowercased()], through: input)
+        var models: [String] = []
+        if UserDefaults.standard.bool(forKey: "understandOnDevice") { models.append("understanding") }
+        if UserDefaults.standard.bool(forKey: "composeAnswers") { models.append("answers") }
+        guard !models.isEmpty, let input = controllerInput else { return }
+        _ = send(["type": "prepare_understanding", "requestId": UUID().uuidString.lowercased(), "models": models], through: input)
+    }
+
+    @objc private func toggleComposeAnswers(_ sender: NSSwitch) {
+        UserDefaults.standard.set(sender.state == .on, forKey: "composeAnswers")
+        prepareUnderstanding()
+        commandStatus?.stringValue = sender.state == .on
+            ? "Summaries on. The answer model installs once in the background (about 2 GB)."
+            : "Summaries off. Answers are read straight from the screen."
     }
 
     @objc private func toggleUnderstandOnDevice(_ sender: NSSwitch) {
@@ -1473,7 +1490,15 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
             if object["type"] as? String == "agent_understanding" {
                 guard let requestID = object["requestId"] as? String, requestID == activeRequestID else { continue }
                 showUnderstanding(by: object["by"] as? String ?? "jev", typed: object["typed"] as? String,
-                                  problem: object["problem"] as? String ?? "")
+                                  problem: object["problem"] as? String ?? "", composer: object["composer"] as? String ?? "off")
+                continue
+            }
+            if object["type"] as? String == "agent_composed" {
+                guard let requestID = object["requestId"] as? String, requestID == activeRequestID else { continue }
+                let seconds = Double(object["ms"] as? Int ?? 0) / 1000
+                let base = understandingLabel?.stringValue ?? ""
+                understandingLabel?.stringValue = (base.isEmpty ? "" : base + " · ") + String(format: "answer composed on this Mac in %.1f s", seconds)
+                understandingLabel?.isHidden = false
                 continue
             }
             if object["type"] as? String == "agent_answer" {
@@ -1746,7 +1771,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
     }
 
     /// Who understood the request and what will be typed, so a test shows whether Qwen ran.
-    private func showUnderstanding(by: String, typed: String?, problem: String) {
+    private func showUnderstanding(by: String, typed: String?, problem: String, composer: String = "off") {
         let words = typed.map { "will type “\($0)”" } ?? "nothing to type"
         let local = UserDefaults.standard.bool(forKey: "understandOnDevice")
         let text: String
@@ -1757,8 +1782,16 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
         case "local_failed": text = "Qwen unavailable\(problem.isEmpty ? "" : " (\(problem))") · Jev picked the words · \(words)"
         default: text = local ? "Jev · \(words)" : (typed == nil ? "" : "Will type “\(typed!)”")
         }
-        understandingLabel?.stringValue = text
-        understandingLabel?.isHidden = text.isEmpty
+        let composing = switch composer {
+        case "on": "answers composed on this Mac"
+        case "loading": "answer model still loading (reading text out instead)"
+        case "installing": "answer model installing (one time, about 2 GB)"
+        case "failed": "answer model unavailable"
+        default: ""
+        }
+        let full = [text, composing].filter { !$0.isEmpty }.joined(separator: " · ")
+        understandingLabel?.stringValue = full
+        understandingLabel?.isHidden = full.isEmpty
         understandingLabel?.textColor = by == "local" ? .controlAccentColor : .tertiaryLabelColor
     }
 
@@ -2505,6 +2538,14 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
         feedbackRow?.isHidden = true
         guard let target = feedbackTaskID else { return }
         sendFeedback(target, ["value": "bad"])
+        // What the screen looked like when it went wrong, kept with the training data (this Mac only).
+        if let pid = universalAX.targetPID {
+            Task { @MainActor [weak self] in
+                guard let self, let shot = try? await VisionReader().capture(windowOf: pid),
+                      let name = self.saveAttachment(shot.image, task: target) else { return }
+                self.sendFeedback(target, ["value": "bad", "attachments": [name]])
+            }
+        }
         reasonRow?.isHidden = false
         commandStatus?.stringValue = "What went wrong?"
     }
@@ -2514,13 +2555,38 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
         feedbackTaskID = nil
         sendFeedback(target, ["value": "bad", "reason": reason])
         correction = (target, reason)
-        reasonRow?.arrangedSubviews.forEach { $0.isHidden = ($0 as? NSButton)?.title != "Skip" }
+        reasonRow?.arrangedSubviews.forEach { $0.isHidden = !["Skip", "📎 Paste Image"].contains(($0 as? NSButton)?.title ?? "") }
         taskField?.stringValue = ""
         taskField?.placeholderString = "What should it have done? Say or type it, then Return (optional)"
         commandStatus?.stringValue = "If you like, say or type what it should have done. Or press Skip."
     }
 
     @objc private func skipCorrection() { endCorrection("Noted. Thanks.") }
+
+    /// Attaches the clipboard's image to the 👎 being given (saved on this Mac only).
+    @objc private func attachClipboardImage() {
+        guard let target = correction?.taskID ?? feedbackTaskID else { return }
+        guard let image = NSImage(pasteboard: .general),
+              let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            commandStatus?.stringValue = "No image on the clipboard. Control-Shift-Command-4 copies part of the screen."
+            return
+        }
+        guard let name = saveAttachment(cg, task: target) else { return }
+        sendFeedback(target, ["value": "bad", "attachments": [name], "reason": correction?.reason ?? "other"])
+        commandStatus?.stringValue = "Image attached."
+    }
+
+    /// Saves a PNG beside the training data and returns its file name.
+    private func saveAttachment(_ image: CGImage, task: String) -> String? {
+        let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("SystemOne-Dev/datasets/attachments", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let name = "\(task.prefix(8))-\(Int(Date().timeIntervalSince1970 * 1000)).png"
+        guard let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]),
+              FileManager.default.createFile(atPath: folder.appendingPathComponent(name).path, contents: data,
+                                             attributes: [.posixPermissions: 0o600]) else { return nil }
+        return name
+    }
 
     private func endCorrection(_ status: String) {
         correction = nil

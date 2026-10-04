@@ -101,6 +101,10 @@ examples automatically.
   wrong or extra steps, stopped too early, too slow, other). Then, if you like,
   say or type what it should have done and press Return, or press Skip. That
   correction is the most valuable label of all.
+- **Screenshots:** pressing 👎 also saves an image of the window Jev was
+  working in (when Screen Recording is allowed), and **📎 Paste Image** attaches
+  one from the clipboard. They are kept in
+  `~/Library/Application Support/SystemOne-Dev/datasets/attachments/`.
 - **Where it goes:** one file per task in
   `~/Library/Application Support/SystemOne-Dev/datasets/tasks/`, updated after
   each task and each 👍/👎. `npm run traces:export` is only needed to rebuild
