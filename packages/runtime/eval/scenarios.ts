@@ -64,6 +64,38 @@ class Mac implements SimWorld {
     if (name === 'darkmode') this.appearance = this.appearance === 'Dark' ? 'Light' : 'Dark';
     if (name === 'wifi_on' || name === 'wifi_off') this.wifi = name === 'wifi_on';
   }
+  chromeWindows = 1;
+  bookmarked: string[] = [];
+  notesFolders = false;
+  statusOpened = '';
+  menus(): string[] {
+    const common = ['File › Close Window', 'Edit › Undo', 'Edit › Copy', 'Edit › Paste', 'Window › Minimise', 'Window › Zoom'];
+    if (this.front === 'Google Chrome') return ['Google Chrome › Settings…', 'File › New Tab', 'File › New Window',
+      'File › New Incognito Window', 'File › Close Tab', 'View › Always Show Bookmarks Bar', 'View › Reload This Page',
+      'History › Show Full History', 'History › Back', 'Bookmarks › Bookmark This Tab…', 'Bookmarks › Bookmark Manager',
+      'Window › Downloads', 'Help › Google Chrome Help', ...common];
+    if (this.front === 'Notes') return ['File › New Note', 'File › New Folder', 'Format › Bold', 'Format › Checklist',
+      'View › Show Folders', 'View › Show Attachments', ...common];
+    return common;
+  }
+  chooseMenu(path: string): boolean {
+    if (!this.menus().includes(path)) return false;
+    if (path === 'File › New Window') this.chromeWindows++;
+    if (path === 'Bookmarks › Bookmark This Tab…' && this.tab) this.bookmarked.push(this.tab.url);
+    if (path === 'History › Show Full History') this.navigate('chrome://history/', 'History');
+    if (path === 'View › Show Folders') this.notesFolders = true;
+    if (path === 'File › New Note') { this.notes.push({ title: 'New Note', body: '' }); this.openNote = this.notes.length - 1; }
+    return true;
+  }
+  statusItems() {
+    return ['Wi‑Fi', 'Bluetooth', 'Battery', 'Focus', 'Control Centre', 'Spotlight', 'Clock']
+      .map((name, index) => ({ id: `s${index}`, name: `${name} (Control Centre)` }));
+  }
+  pressStatus(id: string): boolean {
+    const item = this.statusItems().find(entry => entry.id === id);
+    if (item) this.statusOpened = item.name;
+    return !!item;
+  }
   macState() { return { darkMode: this.appearance === 'Dark', wifiOn: this.wifi, volume: this.volume * 10, muted: this.volume === 0 }; }
   /** The real Mac's pane names (as the executor reads them), including the odd internal ones. */
   settingsPanes() {
@@ -578,6 +610,14 @@ const BASE: readonly Scenario[] = [
     mac => mac.front === 'System Settings' && /battery|power/iu.test(mac.settingsPane)),
   scenario('dark-mode-anywhere', 'switch to dark mode', () => {}, mac => mac.appearance === 'Dark'),
   scenario('brightness-up', 'make the screen brighter', () => {}, mac => mac.brightness > 5),
+  // Any app's menu commands and the menu-bar icons, read from the Mac rather than listed in code.
+  scenario('menu-bookmark', 'bookmark this page', () => {}, mac => mac.bookmarked.some(url => url.includes('wikipedia')),
+    [{ url: 'https://en.wikipedia.org/', title: 'Wikipedia' }]),
+  scenario('menu-history', 'show my browsing history', () => {}, mac => !!mac.tab?.url.startsWith('chrome://history')),
+  scenario('menu-new-window', 'open a new chrome window', () => {}, mac => mac.chromeWindows === 2),
+  scenario('menu-notes-folders', 'show the folders in notes', mac => { mac.front = 'Notes'; }, mac => mac.notesFolders),
+  scenario('status-control-centre', 'open control centre', () => {}, mac => mac.statusOpened.startsWith('Control Centre')),
+  scenario('status-focus', 'open the focus menu', mac => { mac.front = 'Code'; }, mac => mac.statusOpened.startsWith('Focus')),
   scenario('dictate-reply', 'reply to Sam saying I will be late', () => {},
     mac => mac.openEmail === 'Sam Lee' && mac.replyBody === 'I will be late',
     [{ url: 'https://mail.google.com/mail/u/0/#inbox', title: 'Inbox (3) - Gmail' }]),
@@ -615,6 +655,9 @@ const PARAPHRASES: Readonly<Record<string, readonly string[]>> = {
   'settings-pane-wifi': ['take me to the wi-fi settings', 'wifi preferences'],
   'settings-pane-battery': ['battery settings please'],
   'dark-mode-anywhere': ['make everything dark', 'turn on night mode'],
+  'menu-bookmark': ['save this page to my bookmarks', 'add a bookmark for this'],
+  'menu-history': ['open chrome history'],
+  'status-control-centre': ['bring up control center'],
   'answer-amount': ['whats the amount due on this invoice', 'tell me how much I owe Acme'],
   'answer-after-navigating': ['when is lunch with sam'],
   'window-this-monitor': ['come to this monitor', 'bring this window over to this screen'],

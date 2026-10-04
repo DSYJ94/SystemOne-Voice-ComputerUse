@@ -2091,6 +2091,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     reply(true, nil, nil)
                 case "media": try UniversalAX.media(object["name"] as? String ?? ""); reply(true, nil, nil)
                 case "system": try UniversalAX.system(object["name"] as? String ?? ""); reply(true, nil, nil)
+                case "menu_items": reply(true, try self.universalAX.menuCommands(), nil)
+                case "menu_press": try self.universalAX.pressMenu(object["path"] as? String ?? ""); reply(true, nil, nil)
+                case "status_items": reply(true, self.universalAX.statusItems(), nil)
+                case "status_press": try self.universalAX.pressStatusItem(object["id"] as? String ?? ""); reply(true, nil, nil)
                 case "open_settings":
                     try await self.universalAX.openSettings(object["id"] as? String ?? ""); reply(true, nil, nil)
                 case "open_file":

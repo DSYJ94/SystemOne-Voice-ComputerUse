@@ -72,6 +72,11 @@ export interface SimWorld {
   system?(name: string): void;
   settingsPanes?(): readonly { readonly id: string; readonly name: string }[];
   macState?(): { darkMode: boolean; wifiOn: boolean; volume: number; muted: boolean };
+  /** The front app's menu commands as paths, and what choosing one does. */
+  menus?(): readonly string[];
+  chooseMenu?(path: string): boolean;
+  statusItems?(): readonly { readonly id: string; readonly name: string }[];
+  pressStatus?(id: string): boolean;
   openSettings?(id: string): boolean;
   /** What SystemOne told the user (answers, read-outs). */
   heard?(text: string): void;
@@ -155,6 +160,10 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
       case 'media': world.media ? world.media(String(request.name)) : ok = false; break;
       case 'system': world.system ? world.system(String(request.name)) : ok = false; break;
       case 'open_settings': ok = world.openSettings?.(String(request.id)) ?? false; break;
+      case 'menu_items': value = [...(world.menus?.() ?? [])]; break;
+      case 'menu_press': ok = world.chooseMenu?.(String(request.path)) ?? false; break;
+      case 'status_items': value = [...(world.statusItems?.() ?? [])].map(item => ({ ...item })); break;
+      case 'status_press': ok = world.pressStatus?.(String(request.id)) ?? false; break;
       case 'window_action': {
         const listed = typeof request.window === 'string' && request.window ? windows[Number(request.window.slice(1))] : undefined;
         if (!world.windowAction || (request.window && !listed)) { ok = false; break; }

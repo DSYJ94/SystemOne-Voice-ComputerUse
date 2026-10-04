@@ -620,6 +620,77 @@ final class UniversalAX {
         }.sorted { ($0["name"] ?? "") < ($1["name"] ?? "") }
     }()
 
+    private var menuRefs: [String: AXUIElement] = [:]
+    private var statusRefs: [String: (pid: pid_t, item: AXUIElement)] = [:]
+
+    /// Every enabled command in the target app's menu bar, as paths ("File › Export › PDF…"),
+    /// read from the app itself, so any app's menus work without app-specific code.
+    func menuCommands() throws -> [String] {
+        guard let pid = targetPID else { throw AXError.noTarget }
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.3)
+        guard let bar: AXUIElement = attribute(app, kAXMenuBarAttribute),
+              let tops: [AXUIElement] = attribute(bar, kAXChildrenAttribute) else { throw AXError.noWindow }
+        menuRefs = [:]
+        var paths: [String] = []
+        func walk(_ element: AXUIElement, _ prefix: String, _ depth: Int) {
+            guard depth < 4, paths.count < 500, let children: [AXUIElement] = attribute(element, kAXChildrenAttribute) else { return }
+            for child in children {
+                let role: String = attribute(child, kAXRoleAttribute) ?? ""
+                if role == "AXMenu" { walk(child, prefix, depth + 1); continue }
+                guard role == "AXMenuItem" || role == "AXMenuBarItem" else { continue }
+                let title = ((attribute(child, kAXTitleAttribute) as String?) ?? "").trimmingCharacters(in: .whitespaces)
+                guard !title.isEmpty else { continue }
+                let path = prefix.isEmpty ? title : "\(prefix) › \(title)"
+                let submenu: [AXUIElement] = attribute(child, kAXChildrenAttribute) ?? []
+                if submenu.isEmpty {
+                    guard (attribute(child, kAXEnabledAttribute) as Bool?) ?? true, role == "AXMenuItem" else { continue }
+                    menuRefs[path] = child
+                    paths.append(path)
+                } else {
+                    walk(child, path, depth + 1)
+                }
+            }
+        }
+        for top in tops { walk(top, "", 0) }
+        return paths
+    }
+
+    func pressMenu(_ path: String) throws {
+        guard let item = menuRefs[path] else { throw AXError.stale }
+        if let pid = targetPID, let app = NSRunningApplication(processIdentifier: pid) { Self.bringToFront(app) }
+        guard AXUIElementPerformAction(item, kAXPressAction as CFString) == .success else { throw AXError.actionFailed }
+    }
+
+    /// The icons on the right of the menu bar (Wi‑Fi, Battery, Control Centre, Focus,
+    /// other apps' status items), from every running process's extras menu bar.
+    func statusItems() -> [[String: String]] {
+        statusRefs = [:]
+        var out: [[String: String]] = []
+        for app in NSWorkspace.shared.runningApplications where !app.isTerminated {
+            let element = AXUIElementCreateApplication(app.processIdentifier)
+            AXUIElementSetMessagingTimeout(element, 0.1)
+            guard let extras: AXUIElement = attribute(element, "AXExtrasMenuBar"),
+                  let items: [AXUIElement] = attribute(extras, kAXChildrenAttribute) else { continue }
+            for (index, item) in items.enumerated() {
+                let label = [attribute(item, kAXTitleAttribute) as String?, attribute(item, kAXDescriptionAttribute) as String?,
+                             attribute(item, kAXHelpAttribute) as String?].compactMap { $0 }.first { !$0.isEmpty }
+                    ?? app.localizedName ?? "menu bar icon"
+                let id = "s\(app.processIdentifier).\(index)"
+                statusRefs[id] = (app.processIdentifier, item)
+                out.append(["id": id, "name": "\(label) (\(app.localizedName ?? "system"))"])
+            }
+        }
+        return out
+    }
+
+    /// Clicks a menu-bar icon; its menu or panel belongs to that process, which becomes the target.
+    func pressStatusItem(_ id: String) throws {
+        guard let (pid, item) = statusRefs[id] else { throw AXError.stale }
+        guard AXUIElementPerformAction(item, kAXPressAction as CFString) == .success else { throw AXError.actionFailed }
+        targetPID = pid
+    }
+
     /// Opens one System Settings pane directly and makes Settings the target.
     func openSettings(_ id: String) async throws {
         guard Self.settingsPanes.contains(where: { $0["id"] == id }),

@@ -133,12 +133,25 @@ export function createJevAgentDecision(options: {
       return best && best[0] !== 'none' && best[1] >= 0.5 ? Number(best[0].slice(1)) : null;
     },
     async chooseOne(question, items, signal) {
-      const providerView = { projectionRevision: 'agent-choose-v1', stateText: `The user said: “${options.goal.slice(0, 600)}”`,
-        questionText: question, candidates: [...items.slice(0, 63).map((item, index) => ({ candidateId: `i${index}`,
-          description: `“${item.slice(0, 200)}”, the one that fits.` }))] };
-      const raw = await transport.send(encodeJevProviderView(providerView), signal);
-      const [best] = Object.entries(decodeJevChoice(raw, providerView).probabilities).sort((a, b) => b[1] - a[1]);
-      return best && best[1] >= 0.2 ? Number(best[0].slice(1)) : null;
+      // Long lists (an app's whole menu bar) are judged in parallel rounds, then a final.
+      const ask = async (ids: readonly number[]) => {
+        const providerView = { projectionRevision: 'agent-choose-v2', stateText: `The user said: “${options.goal.slice(0, 600)}”`,
+          questionText: question, candidates: [...ids.map(id => ({ candidateId: `i${id}`,
+            description: `“${items[id]!.slice(0, 200)}”, the one that fits.` })),
+          { candidateId: 'none', description: 'None of these fits what the user asked.' }] };
+        const raw = await transport.send(encodeJevProviderView(providerView), signal);
+        return Object.entries(decodeJevChoice(raw, providerView).probabilities).sort((a, b) => b[1] - a[1]);
+      };
+      let finalists = items.map((_, id) => id);
+      if (finalists.length > 60) {
+        const rounds: number[][] = [];
+        for (let i = 0; i < finalists.length; i += 60) rounds.push(finalists.slice(i, i + 60));
+        finalists = [...new Set((await Promise.all(rounds.map(async round => (await ask(round))
+          .filter(([id]) => id !== 'none').slice(0, 2).map(([id]) => Number(id.slice(1)))))).flat())];
+      }
+      if (!finalists.length) return null;
+      const [best] = await ask(finalists);
+      return best && best[0] !== 'none' && best[1] >= 0.2 ? Number(best[0].slice(1)) : null;
     },
     async asksForAnswer(request, signal) {
       const view = { projectionRevision: 'agent-intent-v1', stateText: `The user said: “${request.slice(0, 1_200)}”`,

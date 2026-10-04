@@ -73,7 +73,8 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 export interface AgentProposal {
   readonly step: number;
   readonly kind: 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste' | 'close' | 'quit_app'
-    | 'focus_window' | 'window_action' | 'media' | 'open_file' | 'system' | 'answer' | 'open_settings' | 'finish';
+    | 'focus_window' | 'window_action' | 'media' | 'open_file' | 'system' | 'answer' | 'open_settings' | 'menu' | 'status'
+  | 'finish';
   readonly label: string;
   readonly destinationUrl: string | null;
   readonly pageUrl: string;
@@ -244,18 +245,15 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       let { set, chosenId: proposedId, byId } = chosen0;
       let answer = answerIndex === null ? undefined : answers[answerIndex];
       if (answer) ({ set, byId } = this.#set(observationId, [answer], step));
-      // "Open a Settings pane…" is resolved to one concrete pane before anything is proposed.
+      // "Open a Settings pane…", "use a menu command…", "click a menu-bar icon…" are resolved
+      // to one concrete item from the Mac's own list before anything is proposed.
       const general = !answer && proposedId ? byId.get(proposedId) : undefined;
-      if (general?.kind === 'open_settings' && general.ref === 'choose' && this.#decision.chooseOne) {
-        const panes = view.settingsPanes ?? [];
-        const index = await this.#decision.chooseOne('Which System Settings pane does the user need?',
-          panes.map(pane => pane.name), this.#abort.signal).catch(() => null);
+      if (general && general.ref === 'choose' && this.#decision.chooseOne) {
+        const concrete = await this.#resolve(general, view);
         this.#active(generation);
-        const pane = index === null ? undefined : panes[index];
-        if (!pane) throw new ContractError('no Settings pane fits the request');
-        answer = { kind: 'open_settings', ref: pane.id, label: pane.name, score: 0,
-          description: `Open System Settings at the “${pane.name}” pane.` };
-        ({ set, byId } = this.#set(observationId, [answer], step));
+        if (!concrete) throw new ContractError(`nothing in the list fits: ${general.label}`);
+        answer = concrete;
+        ({ set, byId } = this.#set(observationId, [concrete], step));
       }
       // Once the user has been answered, a few more steps may look for the rest, not more.
       const lastTold = this.#history.findLastIndex(item => item.startsWith('Told the user'));
@@ -364,7 +362,9 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       const offScreen = chosen.kind === 'media' || chosen.kind === 'system';
       // Window moves are checked by the executor (it reads the frame back and fails if the
       // window did not land), and an app's contents do not change when its window moves.
-      const verified = offScreen || chosen.kind === 'window_action';
+      // Menu commands and menu-bar clicks are confirmed by macOS accepting the press; their effect
+      // (a bookmark saved, a window opened behind) need not show on the screen being read.
+      const verified = offScreen || ['window_action', 'menu', 'status'].includes(chosen.kind);
       const changed = copied !== null || verified || (!!after && content(after) !== content(view));
       this.#lastOffScreen = offScreen;
       const evidenceRef = `agent-${chosen.kind}-${permit.executionId}`;
@@ -436,9 +436,12 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
                   : option.kind === 'window_action' ? { action: option.ref.split('@')[0]!, window: option.ref.split('@')[1] ?? '' }
                     : option.kind === 'media' || option.kind === 'system' ? { name: option.ref }
                       : option.kind === 'open_file' ? { name: this.#goal.fileName!.text }
-                        : option.kind === 'open_settings' ? { id: option.ref }
+                        : option.kind === 'open_settings' || option.kind === 'status' ? { id: option.ref }
+                          : option.kind === 'menu' ? { path: option.ref }
                 : { name: option.label };
-    return await this.#ax.call(this.taskId, option.kind as Exclude<Option['kind'], 'finish' | 'answer'>, params,
+    const op = option.kind === 'menu' ? 'menu_press' : option.kind === 'status' ? 'status_press'
+      : option.kind as Exclude<Option['kind'], 'finish' | 'answer' | 'menu' | 'status'>;
+    return await this.#ax.call(this.taskId, op, params,
       ['open_url', 'open_app', 'open_file', 'open_settings'].includes(option.kind) ? 20_000 : 10_000);
   }
 
@@ -564,6 +567,12 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       options.push({ kind: 'system', ref: name, label: text, risky, score: score(text),
         description: `On the Mac: ${text}.` });
     }
+    if (view.pid) {
+      options.push({ kind: 'menu', ref: 'choose', label: `a menu command of ${view.app}`, score: 1,
+        description: `Use one of ${view.app}'s own menu commands (its File, Edit, View, Window or Help menus); only for things inside ${view.app} itself, not other apps or the Mac's System Settings.` });
+    }
+    options.push({ kind: 'status', ref: 'choose', label: 'a menu-bar icon', score: 1,
+      description: 'Click an icon on the right of the menu bar (e.g. Wi‑Fi, Bluetooth, Battery, Control Centre, Focus, Spotlight, other apps’ icons).' });
     if (view.settingsPanes?.length && view.bundleId !== 'com.apple.systempreferences') {
       const some = view.settingsPanes.map(pane => pane.name).filter(name => !/settings|extension|intents/iu.test(name)).slice(0, 14);
       options.push({ kind: 'open_settings', ref: 'choose', label: 'a System Settings pane', score: 1,
@@ -633,14 +642,44 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       options.push({ kind: 'scroll', ref: 'scroll-down', label: 'Scroll down', description: `In ${view.app}: scroll down to see more.`, score: 0 });
       options.push({ kind: 'scroll', ref: 'scroll-up', label: 'Scroll up', description: `In ${view.app}: scroll up.`, score: 0 });
     }
-    const takenHere = this.#takenFrom.get(content(view));
-    return options.filter(option => {
-      const key = `${option.kind}:${option.ref}`;
-      return !this.#noEffect.has(`${content(view)}|${key}`) && !this.#undo.has(key) && !takenHere?.has(key);
-    })
+    return options.filter(option => this.#allowed(view, `${option.kind}:${option.ref}`))
       .map((option, index) => ({ option, index }))
       .sort((a, b) => b.option.score - a.option.score || a.index - b.index)
       .slice(0, MAX_OPTIONS).map(item => item.option);
+  }
+
+  /** The three loop rules, for any option key on this screen. */
+  #allowed(view: AgentSnapshot, key: string): boolean {
+    return !this.#noEffect.has(`${content(view)}|${key}`) && !this.#undo.has(key)
+      && !this.#takenFrom.get(content(view))?.has(key);
+  }
+
+  /** Turns a general "pick from a list" option into one concrete item, chosen by Jev. */
+  async #resolve(general: Option, view: AgentSnapshot): Promise<Option | undefined> {
+    const choose = (question: string, items: readonly string[]) =>
+      this.#decision.chooseOne!(question, items, this.#abort.signal).catch(() => null);
+    if (general.kind === 'open_settings') {
+      const panes = (view.settingsPanes ?? []).filter(item => this.#allowed(view, `open_settings:${item.id}`));
+      const pane = panes[await choose('Which System Settings pane does the user need?', panes.map(item => item.name)) ?? -1];
+      return pane && { kind: 'open_settings', ref: pane.id, label: pane.name, score: 0,
+        description: `Open System Settings at the “${pane.name}” pane.` };
+    }
+    if (general.kind === 'menu') {
+      const listed = await this.#ax.call(this.taskId, 'menu_items').catch(() => []) as string[];
+      const paths = Array.isArray(listed) ? listed.filter(path => this.#allowed(view, `menu:${path}`)) : [];
+      const path = paths[await choose(`Which of ${view.app}'s own menu commands does the user need? Choose none if what they`
+        + ` want is not a command of ${view.app} itself (for example another app, or the Mac's System Settings).`, paths) ?? -1];
+      return path === undefined ? undefined : { kind: 'menu', ref: path, label: path, score: 0,
+        description: `In ${view.app}: choose the menu command ${path}.` };
+    }
+    if (general.kind === 'status') {
+      const listed = await this.#ax.call(this.taskId, 'status_items').catch(() => []) as { id: string; name: string }[];
+      const items = Array.isArray(listed) ? listed.filter(item => this.#allowed(view, `status:${item.id}`)) : [];
+      const item = Array.isArray(items) ? items[await choose('Which menu-bar icon does the user need?', items.map(entry => entry.name)) ?? -1] : undefined;
+      return item && { kind: 'status', ref: item.id, label: item.name, score: 0,
+        description: `Click the menu-bar icon “${item.name}”.` };
+    }
+    return undefined;
   }
 
   /** A new tab only when asked for one and the tab in front isn't already a blank new tab. */
@@ -657,7 +696,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       const base = { candidateId, description: option.description.slice(0, 1_200), preconditions: ['fresh_observation'],
         verifier: { kind: 'content_changed' }, delivery: 'semantic', riskPolicyRef: AGENT_POLICY,
         replayPolicy: 'only_if_not_applied' };
-      const candidate: Record<string, JSONValue> = ['focus_window', 'window_action', 'media', 'open_file', 'system', 'answer', 'open_settings'].includes(option.kind)
+      const candidate: Record<string, JSONValue> = ['focus_window', 'window_action', 'media', 'open_file', 'system', 'answer',
+        'open_settings', 'menu', 'status'].includes(option.kind)
         ? { ...base, operation: 'invoke', targetRef: `${option.kind}:${option.ref}`.replace(/[^A-Za-z0-9_.:-]/gu, '-').slice(0, 160),
           parameters: {}, effects: ['NAVIGATE', 'EXTERNAL_WRITE'] }
         : option.kind === 'quit_app'
@@ -797,7 +837,8 @@ function describeKind(option: Option): string {
     case 'type': return `typed the user's text into “${option.label}”`;
     case 'key': return option.label.split(' (')[0]!.toLowerCase();
     case 'scroll': return option.label.toLowerCase();
-    case 'open_url': return `opened ${option.label}`;
+    case 'open_url': return `opened ${option.label}${option.description.includes('new browser tab') ? ' in a new tab'
+      : option.description.includes('this browser tab') ? ' in the same tab' : ''}`;
     case 'open_app': return `opened the app ${option.label}`;
     case 'copy': return `copied “${option.label.slice(0, 60)}”`;
     case 'paste': return `pasted the copied text into “${option.label}”`;
@@ -810,6 +851,8 @@ function describeKind(option: Option): string {
     case 'system': return option.label;
     case 'answer': return `told the user “${option.label.slice(0, 80)}”`;
     case 'open_settings': return `opened System Settings at “${option.label}”`;
+    case 'menu': return `chose the menu command ${option.label}`;
+    case 'status': return `clicked the menu-bar icon “${option.label}”`;
     default: return 'finished';
   }
 }

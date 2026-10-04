@@ -62,7 +62,8 @@ export interface AgentSnapshot {
 }
 
 export type AgentOperation = 'snapshot' | 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste' | 'close' | 'quit_app'
-  | 'focus_window' | 'window_action' | 'media' | 'open_file' | 'system' | 'open_settings';
+  | 'focus_window' | 'window_action' | 'media' | 'open_file' | 'system' | 'open_settings'
+  | 'menu_items' | 'menu_press' | 'status_items' | 'status_press';
 
 /** Host-side end of the private pipe to the app's Accessibility executor. The
  * app accepts a request only for the active, host-admitted agent task. */
