@@ -74,7 +74,7 @@ export interface AgentProposal {
   readonly step: number;
   readonly kind: 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste' | 'close' | 'quit_app'
     | 'focus_window' | 'window_action' | 'media' | 'open_file' | 'system' | 'answer' | 'open_settings' | 'menu' | 'status'
-  | 'finish';
+  | 'notifications' | 'finish';
   readonly label: string;
   readonly destinationUrl: string | null;
   readonly pageUrl: string;
@@ -257,7 +257,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       }
       // Once the user has been answered, a few more steps may look for the rest, not more.
       const lastTold = this.#history.findLastIndex(item => item.startsWith('Told the user'));
-      const lookedLong = lastTold >= 0 && this.#history.length - 1 - lastTold >= 3;
+      const lookedLong = lastTold >= 0 && this.#history.length - 1 - lastTold >= 2;
       // Only a clear "yes" overrides the chooser; it can still choose to finish itself.
       const chosenId = answer ? 'c0' : doneProbability >= 0.8 || lookedLong ? 'finish' : proposedId;
       const decideMs = Math.round(performance.now() - decideStarted);
@@ -345,14 +345,26 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         return;
       }
       const actMs = Math.round(performance.now() - actStarted);
-      // Adaptive settle: look soon, and wait longer only if nothing changed yet.
+      // Settle by watching, not by fixed pauses: read about every 120 ms until the screen has
+      // changed and its layout held for one read (a loading page keeps changing), or until a
+      // deadline when nothing changes. Steps whose effect is elsewhere get one quick look.
       const verifyStarted = performance.now();
-      const opening = ['open_url', 'open_app', 'focus_window', 'open_file', 'open_settings'].includes(chosen.kind);
-      await sleep(opening ? 400 : 250);
-      let after: AgentSnapshot | undefined = await this.#observe().catch(() => undefined);
-      if (after && content(after) === content(view) && chosen.kind !== 'copy') {
-        await sleep(opening ? 900 : 450);
+      const opening = ['open_url', 'open_app', 'focus_window', 'open_file', 'open_settings', 'notifications'].includes(chosen.kind);
+      const elsewhere = chosen.kind === 'copy' || ['media', 'system', 'window_action', 'menu', 'status'].includes(chosen.kind);
+      const quiet = elsewhere ? 150 : opening ? 1_500 : 700;
+      const deadline = verifyStarted + (opening ? 3_000 : elsewhere ? 600 : 1_500);
+      await sleep(elsewhere ? 100 : 80);
+      let after: AgentSnapshot | undefined;
+      let previous: AgentSnapshot | undefined;
+      for (;;) {
         after = await this.#observe().catch(() => undefined);
+        const moved = !!after && content(after) !== content(view);
+        if (moved && previous && previous.signature === after!.signature) break;
+        if (elsewhere && after) break;
+        const now = performance.now();
+        if ((!moved && now - verifyStarted >= quiet) || now >= deadline) break;
+        previous = moved ? after : undefined;
+        await sleep(120);
       }
       const verifyMs = Math.round(performance.now() - verifyStarted);
       this.#nextView = after;
@@ -531,7 +543,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       withWindows.add(plain(window.app));
       if (isFrontWindow(window) && view.frontmost !== false) continue;
       options.push({ kind: 'focus_window', ref: window.id, label: `${window.app}: ${window.title || 'untitled window'}`,
-        description: `Bring ${window.app}'s window “${(window.title || 'untitled').slice(0, 100)}” to the front${
+        description: `Bring ${window.app}'s window “${(window.title || 'untitled').slice(0, 100)}”${
+          (view.displays?.length ?? 0) > 1 && window.display ? ` (on “${window.display}”)` : ''} to the front${
           window.minimized ? ' (it is minimised)' : ''}${window.hidden ? ' (the app is hidden)' : ''}.`,
         score: score(`${window.app} ${window.title}`) * 2 });
     }
@@ -571,6 +584,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       options.push({ kind: 'menu', ref: 'choose', label: `a menu command of ${view.app}`, score: 1,
         description: `Use one of ${view.app}'s own menu commands (its File, Edit, View, Window or Help menus); only for things inside ${view.app} itself, not other apps or the Mac's System Settings.` });
     }
+    options.push({ kind: 'notifications', ref: 'centre', label: 'Notification Centre', score: 1,
+      description: 'Open Notification Centre to see, read or open notifications (messages, reminders, alerts).' });
     options.push({ kind: 'status', ref: 'choose', label: 'a menu-bar icon', score: 1,
       description: 'Click an icon on the right of the menu bar (e.g. Wi‑Fi, Bluetooth, Battery, Control Centre, Focus, Spotlight, other apps’ icons).' });
     if (view.settingsPanes?.length && view.bundleId !== 'com.apple.systempreferences') {
@@ -594,7 +609,10 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         ['right_half', 'to the right half of its screen'], ['top_half', 'to the top half of its screen'],
         ['bottom_half', 'to the bottom half of its screen'], ['maximize', 'to fill its screen (not full-screen mode)'],
         ['center', 'to the centre of its screen'], ['next_display', 'to the other display (monitor), if there is one'],
-        ['mouse_display', 'to the display where the pointer is ("this monitor")']];
+        ['mouse_display', 'to the display where the pointer is ("this monitor")'],
+        // With several displays, each can be named ("move it to the LG").
+        ...((view.displays?.length ?? 0) > 1 ? view.displays!.map(display => [`display_${display.index}`,
+          `to the display “${display.name}”${display.pointer ? ' (where the pointer is)' : ''}`] as [string, string]) : [])];
       if (view.pid) {
         // The front window is named too, so it reads like the other windows' options.
         const front = `the front window${view.windowTitle ? ` (${view.app}'s “${view.windowTitle.slice(0, 60)}”)` : ''}`;
@@ -697,7 +715,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         verifier: { kind: 'content_changed' }, delivery: 'semantic', riskPolicyRef: AGENT_POLICY,
         replayPolicy: 'only_if_not_applied' };
       const candidate: Record<string, JSONValue> = ['focus_window', 'window_action', 'media', 'open_file', 'system', 'answer',
-        'open_settings', 'menu', 'status'].includes(option.kind)
+        'open_settings', 'menu', 'status', 'notifications'].includes(option.kind)
         ? { ...base, operation: 'invoke', targetRef: `${option.kind}:${option.ref}`.replace(/[^A-Za-z0-9_.:-]/gu, '-').slice(0, 160),
           parameters: {}, effects: ['NAVIGATE', 'EXTERNAL_WRITE'] }
         : option.kind === 'quit_app'
@@ -853,6 +871,7 @@ function describeKind(option: Option): string {
     case 'open_settings': return `opened System Settings at “${option.label}”`;
     case 'menu': return `chose the menu command ${option.label}`;
     case 'status': return `clicked the menu-bar icon “${option.label}”`;
+    case 'notifications': return 'opened Notification Centre';
     default: return 'finished';
   }
 }

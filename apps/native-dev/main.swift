@@ -122,6 +122,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var approvalRow: NSStackView?
     /// 👍/👎 after a task: the label that makes its private trace useful for training.
     private var feedbackRow: NSStackView?
+    /// Outline around the window Jev is acting on, on whichever display it is.
+    private let highlight = ActivityHighlight()
+    /// "Chrome on LG UltraFine": where the agent is working, for the status line.
+    private var workingWhere = ""
     private var feedbackTaskID: String?
     /// After 👎: one tap for the kind of wrong, then optionally what it should have done.
     private var reasonRow: NSStackView?
@@ -617,10 +621,16 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         localSwitch.state = UserDefaults.standard.bool(forKey: "understandOnDevice") ? .on : .off
         localSwitch.target = self
         localSwitch.action = #selector(toggleUnderstandOnDevice(_:))
+        let glowSwitch = NSSwitch()
+        glowSwitch.state = highlight.enabled ? .on : .off
+        glowSwitch.target = self
+        glowSwitch.action = #selector(toggleHighlight(_:))
+        let glowRow = row("Show where Jev is working", nil)
+        glowRow.insertArrangedSubview(glowSwitch, at: 0)
         let localRow = row("Understand requests on this Mac", nil)
         localRow.insertArrangedSubview(localSwitch, at: 0)
         let localNote = caption("On: a small on-device model (Qwen2.5 0.5B, about 700 MB with its runtime, installed once in the background) picks the words to type. Off: Jev picks them. Jev still chooses every step either way.")
-        let stack = NSStackView(views: [heading, jevRow, jevNote, autoRow, autoNote, riskyRow, speakRow, localRow, localNote, voiceRow, axRow,
+        let stack = NSStackView(views: [heading, jevRow, jevNote, autoRow, autoNote, riskyRow, speakRow, glowRow, localRow, localNote, voiceRow, axRow,
                                         advanced, tools])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -633,6 +643,12 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         popover.contentViewController = controller
         settingsPopover = popover
         popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+    }
+
+    @objc private func toggleHighlight(_ sender: NSSwitch) {
+        highlight.enabled = sender.state == .on
+        UserDefaults.standard.set(highlight.enabled, forKey: "showActivityHighlight")
+        if !highlight.enabled { highlight.hide() }
     }
 
     @objc private func toggleUnderstandOnDevice(_ sender: NSSwitch) {
@@ -1413,7 +1429,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "stopping": statusField?.stringValue = nativeActionActive
             ? "Fencing the native worker; a dispatched edit may already have happened…"
             : "Stopping browser and fencing future actions…"
-        case "stopped": statusField?.stringValue = "Stopped. An already-sent action may have taken effect."
+        case "stopped":
+            highlight.hide()
+            statusField?.stringValue = "Stopped. An already-sent action may have taken effect."
         case "busy": statusField?.stringValue = "A task is already active."
         case "error": statusField?.stringValue = "The request was rejected or failed. No success is claimed."
         case "browsing":
@@ -1421,7 +1439,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "local_model_preparing":
             statusField?.stringValue = "Installing the on-device model (one time, about 700 MB). Jev is used for this request."
         case "agent_working":
-            statusField?.stringValue = "Jev is looking at the screen…"
+            statusField?.stringValue = workingWhere.isEmpty ? "Jev is looking at the screen…" : "Jev is working in \(workingWhere)…"
         case "agent_done":
             pendingProposal = nil
             approvalRow?.isHidden = true
@@ -1449,6 +1467,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
             approvalRow?.isHidden = true
             statusField?.stringValue = "Paused: Jev wasn't confident, or a step was declined. Nothing else will run."
         case "ready":
+            highlight.hide()
+            workingWhere = ""
             if requestID == activeRequestID { stopRequestID = nil }
             taskIntake.releaseIfReady(requestID: requestID)
             if activeRequestID == nil { runningRequestText = nil }
@@ -2044,7 +2064,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                                      "elements": [] as [Any], "truncated": false, "signature": "none",
                                      "runningApps": UniversalAX.runningApps(), "windows": self.universalAX.windows(),
                                      "installedApps": UniversalAX.installedApps(), "settingsPanes": UniversalAX.settingsPanes,
-                                     "mac": UniversalAX.macState()], nil)
+                                     "mac": UniversalAX.macState(), "displays": UniversalAX.displays()], nil)
                         return
                     }
                     var elements = snap.elements
@@ -2058,7 +2078,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                                  "scrollY": snap.scrollY as Any? ?? NSNull(), "runningApps": UniversalAX.runningApps(),
                                  "frontmost": UniversalAX.isFront(snap.pid), "windows": windows,
                                  "installedApps": UniversalAX.installedApps(), "settingsPanes": UniversalAX.settingsPanes,
-                                 "mac": UniversalAX.macState(),
+                                 "mac": UniversalAX.macState(), "displays": UniversalAX.displays(),
                                  "readMs": self.universalAX.lastReadMs, "visited": snap.visited, "via": snap.via]
                         if let hint = snap.hint, hint != self.lastBrowserHint {
                             // Once per distinct problem: how to enable the faster page read.
@@ -2069,6 +2089,11 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                         if size < 56_000 { break }
                         elements.removeLast(min(20, elements.count))
                     } while !elements.isEmpty
+                    if let target = self.universalAX.targetWindow() {
+                        self.highlight.show(around: target.frame, app: snap.app)
+                        self.workingWhere = NSScreen.screens.count > 1 && !target.display.isEmpty
+                            ? "\(snap.app) on \(target.display)" : snap.app
+                    }
                     reply(true, value, nil)
                 case "press": try self.universalAX.press(object["id"] as? String ?? ""); reply(true, nil, nil)
                 case "copy": reply(true, try self.universalAX.copy(object["id"] as? String ?? ""), nil)
@@ -2094,6 +2119,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 case "menu_items": reply(true, try self.universalAX.menuCommands(), nil)
                 case "menu_press": try self.universalAX.pressMenu(object["path"] as? String ?? ""); reply(true, nil, nil)
                 case "status_items": reply(true, self.universalAX.statusItems(), nil)
+                case "notifications": try self.universalAX.openNotificationCentre(); reply(true, nil, nil)
                 case "status_press": try self.universalAX.pressStatusItem(object["id"] as? String ?? ""); reply(true, nil, nil)
                 case "open_settings":
                     try await self.universalAX.openSettings(object["id"] as? String ?? ""); reply(true, nil, nil)

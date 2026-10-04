@@ -64,6 +64,12 @@ class Mac implements SimWorld {
     if (name === 'darkmode') this.appearance = this.appearance === 'Dark' ? 'Light' : 'Dark';
     if (name === 'wifi_on' || name === 'wifi_off') this.wifi = name === 'wifi_on';
   }
+  windowDisplay: Record<string, string> = {};
+  /** Two displays; the pointer is on the LG. */
+  displays() { return [{ name: 'Built-in Retina Display', index: 0, pointer: false }, { name: 'LG UltraFine', index: 1, pointer: true }]; }
+  notifications = [{ app: 'WhatsApp', text: 'Mum: Are you coming for dinner?' }, { app: 'Calendar', text: 'Standup in 10 minutes' },
+    { app: 'Mail', text: 'Acme Billing: Your invoice #4412 is ready' }];
+  openNotifications(): boolean { this.front = 'Notification Centre'; return true; }
   chromeWindows = 1;
   bookmarked: string[] = [];
   notesFolders = false;
@@ -155,8 +161,9 @@ class Mac implements SimWorld {
       Finder: this.finderFolder, Notes: 'Notes', 'System Settings': this.settingsPane, Slack: `#${this.slackChannel}`,
       Calendar: 'Calendar', Music: 'Music', Mail: 'Inbox', WhatsApp: 'WhatsApp', Code: 'README.md — SystemOne' };
     const order = [this.front, ...this.apps.filter(app => app !== this.front)].filter(app => this.apps.includes(app));
-    return order.flatMap(app => (app === 'Code' ? this.codeWindows : [titles[app] ?? app])
-      .map(title => ({ app, title, minimized: this.minimized.includes(app) })));
+    return order.filter(app => app !== 'Notification Centre').flatMap(app => (app === 'Code' ? this.codeWindows : [titles[app] ?? app])
+      .map(title => ({ app, title, minimized: this.minimized.includes(app),
+        display: this.windowDisplay[title] ?? (app === 'Code' || app === 'Slack' ? 'Built-in Retina Display' : 'LG UltraFine') })));
   }
 
   focusWindow(app: string) { this.minimized = this.minimized.filter(item => item !== app); this.front = app; }
@@ -176,8 +183,15 @@ class Mac implements SimWorld {
   windowAction(action: string, window?: string) {
     const PLACES = ['left_half', 'right_half', 'top_half', 'bottom_half', 'maximize', 'center', 'next_display', 'mouse_display'];
     if (PLACES.includes(action)) {
-      const title = window ?? this.windows()[0]?.title ?? '';
+      const listed = this.windows().find(item => item.title === (window ?? this.windows()[0]?.title));
+      const title = listed?.title ?? '';
       this.placements[title] = action;
+      // Where the window ends up, as the executor would put it.
+      const [built, lg] = this.displays();
+      const target = action === 'next_display' ? (listed?.display === lg!.name ? built! : lg!)
+        : action === 'mouse_display' ? this.displays().find(item => item.pointer)!
+          : action.startsWith('display_') ? this.displays()[Number(action.slice(8))] : undefined;
+      if (target) this.windowDisplay[title] = target.name;
       if (!window) this.placement = action;
       return;
     }
@@ -342,6 +356,13 @@ class Mac implements SimWorld {
         { role: 'AXTextArea', label: 'Type a message', context: 'compose', editable: true, value: this.whatsAppDraft },
         { role: 'AXButton', label: 'Send', context: 'compose', press: () => {
           if (this.whatsAppDraft) { this.sent.push(`whatsapp:${this.whatsAppChat}:${this.whatsAppDraft}`); this.whatsAppDraft = ''; } } }] };
+      case 'Notification Centre': return { app: 'Notification Centre', bundleId: 'com.apple.notificationcenterui',
+        windowTitle: 'Notification Centre', elements: this.notifications.flatMap(item => [
+          { role: 'AXStaticText', label: item.text, context: item.app },
+          { role: 'AXButton', label: `Open ${item.app} notification`, context: item.text, press: () => {
+            this.openApp(item.app);
+            if (item.app === 'WhatsApp') { this.whatsAppChat = 'Mum'; }
+          } }]) };
       case 'Music': return { app: 'Music', bundleId: 'com.apple.Music', windowTitle: 'Music', elements: [
         { role: 'AXButton', label: 'Previous', context: 'player', press: () => { this.track = Math.max(0, this.track - 1); } },
         { role: 'AXButton', label: this.musicPlaying ? 'Pause' : 'Play', context: 'player',
@@ -590,7 +611,7 @@ const BASE: readonly Scenario[] = [
     mac => { const places = mac.codeWindows.map(title => mac.placements[title]).sort();
       return places[0] === 'left_half' && places[1] === 'right_half'; }),
   scenario('window-this-monitor', 'move this window to this monitor', mac => { mac.front = 'Code'; },
-    mac => mac.placement === 'mouse_display'),
+    mac => mac.windowDisplay[mac.codeWindows[0]!] === 'LG UltraFine'),
   // Stage C: answers read from the screen (never made up), including after navigating there.
   scenario('answer-amount', 'how much is the Acme invoice?', mac => { mac.openEmail = 'Acme Billing'; },
     mac => mac.said.some(text => text.includes('£120.00')),
@@ -618,6 +639,13 @@ const BASE: readonly Scenario[] = [
   scenario('menu-notes-folders', 'show the folders in notes', mac => { mac.front = 'Notes'; }, mac => mac.notesFolders),
   scenario('status-control-centre', 'open control centre', () => {}, mac => mac.statusOpened.startsWith('Control Centre')),
   scenario('status-focus', 'open the focus menu', mac => { mac.front = 'Code'; }, mac => mac.statusOpened.startsWith('Focus')),
+  // Multi-monitor and notifications.
+  scenario('move-to-named-display', 'move this window to the LG monitor', mac => { mac.front = 'Code'; },
+    mac => mac.windowDisplay[mac.codeWindows[0]!] === 'LG UltraFine'),
+  scenario('notifications-read', 'what notifications do I have?', () => {},
+    mac => mac.said.some(text => /dinner|Standup|invoice/u.test(text))),
+  scenario('notifications-open', 'open the message from mum in my notifications', mac => { mac.front = 'Code'; },
+    mac => mac.front === 'WhatsApp' && mac.whatsAppChat === 'Mum'),
   scenario('dictate-reply', 'reply to Sam saying I will be late', () => {},
     mac => mac.openEmail === 'Sam Lee' && mac.replyBody === 'I will be late',
     [{ url: 'https://mail.google.com/mail/u/0/#inbox', title: 'Inbox (3) - Gmail' }]),
@@ -658,6 +686,8 @@ const PARAPHRASES: Readonly<Record<string, readonly string[]>> = {
   'menu-bookmark': ['save this page to my bookmarks', 'add a bookmark for this'],
   'menu-history': ['open chrome history'],
   'status-control-centre': ['bring up control center'],
+  'move-to-named-display': ['put this window on the LG screen'],
+  'notifications-read': ['any new notifications', 'read me my notifications'],
   'answer-amount': ['whats the amount due on this invoice', 'tell me how much I owe Acme'],
   'answer-after-navigating': ['when is lunch with sam'],
   'window-this-monitor': ['come to this monitor', 'bring this window over to this screen'],

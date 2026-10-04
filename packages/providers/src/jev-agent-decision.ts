@@ -53,6 +53,8 @@ export function createJevAgentDecision(options: {
       + (view.mac ? ` The Mac: ${[view.mac.darkMode === undefined ? '' : `dark mode ${view.mac.darkMode ? 'on' : 'off'}`,
         view.mac.wifiOn === undefined ? '' : `Wi‑Fi ${view.mac.wifiOn ? 'on' : 'off'}`,
         view.mac.volume === undefined ? '' : `volume ${view.mac.volume}%${view.mac.muted ? ' (muted)' : ''}`].filter(Boolean).join(', ')}.` : '')
+      + ((view.displays?.length ?? 0) > 1 ? ` Displays: ${view.displays!.map(display => `“${display.name}”${
+        display.pointer ? ' (the pointer is here)' : ''}`).join(', ')}.` : '')
       + (tabs.length ? ` Open browser tabs: ${tabs.map(tab => `“${tab.label.slice(0, 50)}”${tab.selected ? ' (current)' : ''}`)
         .join(', ')}.` : '')
       + (view.runningApps?.length ? ` Other open apps: ${view.runningApps.slice(0, 20).join(', ')}.` : '');

@@ -689,6 +689,36 @@ final class UniversalAX {
         guard let (pid, item) = statusRefs[id] else { throw AXError.stale }
         guard AXUIElementPerformAction(item, kAXPressAction as CFString) == .success else { throw AXError.actionFailed }
         targetPID = pid
+        followPanel(owner: pid)
+    }
+
+    /// A menu-bar click can open a panel that belongs to another process (the clock opens
+    /// Notification Centre): read whichever of them now shows a window.
+    private func followPanel(owner: pid_t) {
+        usleep(350_000)
+        let centre = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").first
+        for candidate in [centre?.processIdentifier, owner].compactMap({ $0 }) {
+            let element = AXUIElementCreateApplication(candidate)
+            AXUIElementSetMessagingTimeout(element, 0.2)
+            if let windows: [AXUIElement] = attribute(element, kAXWindowsAttribute), !windows.isEmpty {
+                targetPID = candidate
+                return
+            }
+        }
+    }
+
+    /// Opens Notification Centre (the clock in the menu bar) so notifications can be read
+    /// and opened like any window.
+    func openNotificationCentre() throws {
+        _ = statusItems()
+        guard let control = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.controlcenter").first,
+              let (id, _) = statusRefs.first(where: { entry in
+                  entry.value.pid == control.processIdentifier
+                      && ((attribute(entry.value.item, kAXDescriptionAttribute) as String?) ?? "").localizedCaseInsensitiveContains("clock")
+              }) else { throw AXError.actionFailed }
+        try pressStatusItem(id)
+        guard let centre = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").first,
+              targetPID == centre.processIdentifier else { throw AXError.actionFailed }
     }
 
     /// Opens one System Settings pane directly and makes Settings the target.
@@ -787,13 +817,51 @@ final class UniversalAX {
                 let id = "w\(app.processIdentifier).\(index)"
                 windowRefs[id] = (app.processIdentifier, window)
                 let minimized: Bool = attribute(window, kAXMinimizedAttribute) ?? false
-                out.append(["id": id, "app": app.localizedName ?? "app", "title": (attribute(window, kAXTitleAttribute) as String?) ?? "",
-                            "minimized": minimized, "hidden": app.isHidden,
-                            "front": app.processIdentifier == front && index == 0])
+                var entry: [String: Any] = ["id": id, "app": app.localizedName ?? "app",
+                                            "title": (attribute(window, kAXTitleAttribute) as String?) ?? "",
+                                            "minimized": minimized, "hidden": app.isHidden,
+                                            "front": app.processIdentifier == front && index == 0]
+                if !minimized, let box = frame(of: window), let screen = Self.screen(containing: box) {
+                    entry["display"] = screen.localizedName
+                }
+                out.append(entry)
                 if out.count >= 60 { return out }
             }
         }
         return out
+    }
+
+    /// The display holding most of an Accessibility (top-left based) frame.
+    static func screen(containing box: CGRect) -> NSScreen? {
+        guard let primary = NSScreen.screens.first else { return nil }
+        let cocoa = CGRect(x: box.minX, y: primary.frame.height - box.maxY, width: box.width, height: box.height)
+        func overlap(_ screen: NSScreen) -> CGFloat {
+            let shared = screen.frame.intersection(cocoa)
+            return shared.isNull ? 0 : shared.width * shared.height
+        }
+        return NSScreen.screens.max { overlap($0) < overlap($1) }
+    }
+
+    /// Connected displays by name, and which one the pointer is on ("this monitor").
+    static func displays() -> [[String: Any]] {
+        let mouse = NSEvent.mouseLocation
+        return NSScreen.screens.enumerated().map { index, screen in
+            ["name": screen.localizedName, "index": index, "pointer": NSMouseInRect(mouse, screen.frame, false),
+             "main": index == 0]
+        }
+    }
+
+    /// The front window of the target app in screen (bottom-left) coordinates, for the
+    /// "Jev is working here" highlight, plus the name of its display.
+    func targetWindow() -> (frame: CGRect, display: String)? {
+        guard let pid = targetPID, let primary = NSScreen.screens.first else { return nil }
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.2)
+        guard let window: AXUIElement = attribute(app, kAXFocusedWindowAttribute)
+                ?? (attribute(app, kAXWindowsAttribute) as [AXUIElement]?)?.first,
+              let box = frame(of: window) else { return nil }
+        let cocoa = CGRect(x: box.minX, y: primary.frame.height - box.maxY, width: box.width, height: box.height)
+        return (cocoa, Self.screen(containing: box)?.localizedName ?? "")
     }
 
     /// Brings one listed window (and its app) to the front, restoring it if minimised.
@@ -843,7 +911,8 @@ final class UniversalAX {
                   AXUIElementPerformAction(button, kAXPressAction as CFString) == .success else { throw AXError.actionFailed }
         case "hide_app":
             guard app.hide() else { throw AXError.actionFailed }
-        case "left_half", "right_half", "top_half", "bottom_half", "maximize", "center", "next_display", "mouse_display":
+        case "left_half", "right_half", "top_half", "bottom_half", "maximize", "center", "next_display", "mouse_display",
+             _ where action.hasPrefix("display_"):
             try place(window, action)
         default: throw AXError.actionFailed
         }
@@ -870,6 +939,7 @@ final class UniversalAX {
         var screen = here
         if action == "next_display", let index = screens.firstIndex(of: here) { screen = screens[(index + 1) % screens.count] }
         if action == "mouse_display" { screen = screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? here }
+        if action.hasPrefix("display_"), let index = Int(action.dropFirst(8)), screens.indices.contains(index) { screen = screens[index] }
         let area = screen.visibleFrame
         var target = area
         switch action {
@@ -877,7 +947,7 @@ final class UniversalAX {
         case "right_half": target.size.width = area.width / 2; target.origin.x = area.midX
         case "top_half": target.size.height = area.height / 2; target.origin.y = area.midY
         case "bottom_half": target.size.height = area.height / 2
-        case "center", "next_display", "mouse_display":
+        case "center", "next_display", "mouse_display", _ where action.hasPrefix("display_"):
             let size = CGSize(width: min(box.width, area.width), height: min(box.height, area.height))
             target = CGRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2, width: size.width, height: size.height)
         default: break

@@ -63,7 +63,7 @@ export interface SimWorld {
   openApp?(name: string): void;
   quitApp?(name: string): void;
   /** Open windows (one per app is fine), front first. */
-  windows?(): readonly { readonly app: string; readonly title: string; readonly minimized?: boolean }[];
+  windows?(): readonly { readonly app: string; readonly title: string; readonly minimized?: boolean; readonly display?: string }[];
   focusWindow?(app: string): void;
   media?(name: string): void;
   /** `window` is the listed window's title when a specific window was chosen. */
@@ -76,6 +76,8 @@ export interface SimWorld {
   menus?(): readonly string[];
   chooseMenu?(path: string): boolean;
   statusItems?(): readonly { readonly id: string; readonly name: string }[];
+  displays?(): readonly { readonly name: string; readonly index: number; readonly pointer?: boolean }[];
+  openNotifications?(): boolean;
   pressStatus?(id: string): boolean;
   openSettings?(id: string): boolean;
   /** What SystemOne told the user (answers, read-outs). */
@@ -138,8 +140,10 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
           frontmost: true, installedApps: [...(world.installed?.() ?? scenario.apps)],
           settingsPanes: [...(world.settingsPanes?.() ?? [])].map(pane => ({ ...pane })),
           ...(world.macState ? { mac: world.macState() } : {}),
+          ...(world.displays ? { displays: world.displays().map(display => ({ ...display })) } : {}),
           windows: (windows = [...(world.windows?.() ?? [])]).map((item, index) => ({ id: `w${index}`, app: item.app,
-            title: item.title, ...(item.minimized ? { minimized: true } : {}), front: index === 0 && item.app === screen?.app })),
+            title: item.title, ...(item.minimized ? { minimized: true } : {}), ...(item.display ? { display: item.display } : {}),
+            front: index === 0 && item.app === screen?.app })),
           runningApps: (world.running?.() ?? scenario.apps).filter(name => name !== screen?.app) };
         break;
       }
@@ -164,6 +168,7 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
       case 'menu_press': ok = world.chooseMenu?.(String(request.path)) ?? false; break;
       case 'status_items': value = [...(world.statusItems?.() ?? [])].map(item => ({ ...item })); break;
       case 'status_press': ok = world.pressStatus?.(String(request.id)) ?? false; break;
+      case 'notifications': ok = world.openNotifications?.() ?? false; break;
       case 'window_action': {
         const listed = typeof request.window === 'string' && request.window ? windows[Number(request.window.slice(1))] : undefined;
         if (!world.windowAction || (request.window && !listed)) { ok = false; break; }

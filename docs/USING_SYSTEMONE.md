@@ -62,6 +62,15 @@ When something goes wrong, run `npm run traces` and paste the output into
 the chat. It shows each recent request's steps, as recorded locally on your
 Mac.
 
+### Seeing where Jev works
+
+The bar stays where you are. While Jev acts, an accent outline with a
+"Jev · App" tag surrounds the window it is working in, on whichever display
+that is, and fades when it finishes; the status line names the app (and the
+display, with more than one). Turn the outline off with ⚙ "Show where Jev is
+working". With several displays you can say "move this to the LG" or "put it on
+this monitor".
+
 ### Collecting training data
 
 Nothing to run: every request is recorded on this Mac and turned into training

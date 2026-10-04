@@ -26,6 +26,8 @@ export interface AgentWindow {
   readonly hidden?: boolean;
   /** The front window of the front app. */
   readonly front?: boolean;
+  /** Name of the display the window is on. */
+  readonly display?: string;
 }
 
 export interface AgentSnapshot {
@@ -53,6 +55,9 @@ export interface AgentSnapshot {
   readonly installedApps?: readonly string[];
   /** Whole-Mac state no window shows: appearance, Wi‑Fi power, output volume. */
   readonly mac?: { readonly darkMode?: boolean; readonly wifiOn?: boolean; readonly volume?: number; readonly muted?: boolean };
+  /** Connected displays (index order is the executor's), and which has the pointer. */
+  readonly displays?: readonly { readonly name: string; readonly index: number; readonly pointer?: boolean;
+    readonly main?: boolean }[];
   /** System Settings panes on this Mac (from the system's own pane list). */
   readonly settingsPanes?: readonly { readonly id: string; readonly name: string }[];
   /** Every open window on the Mac (front app first). */
@@ -63,7 +68,7 @@ export interface AgentSnapshot {
 
 export type AgentOperation = 'snapshot' | 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste' | 'close' | 'quit_app'
   | 'focus_window' | 'window_action' | 'media' | 'open_file' | 'system' | 'open_settings'
-  | 'menu_items' | 'menu_press' | 'status_items' | 'status_press';
+  | 'menu_items' | 'menu_press' | 'status_items' | 'status_press' | 'notifications';
 
 /** Host-side end of the private pipe to the app's Accessibility executor. The
  * app accepts a request only for the active, host-admitted agent task. */
