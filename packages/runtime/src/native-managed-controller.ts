@@ -145,6 +145,12 @@ interface AgentFeedback {
 
 const FEEDBACK_REASONS = new Set(['wrong_place', 'wrong_words', 'wrong_steps', 'stopped_early', 'too_slow', 'other']);
 
+/** The bar's ⚙ toggle is on: load the on-device model now, so the first request uses it. */
+interface PrepareUnderstanding {
+  readonly type: 'prepare_understanding';
+  readonly requestId: string;
+}
+
 interface ConfirmStep {
   readonly type: 'confirm_step';
   readonly requestId: string;
@@ -196,7 +202,7 @@ interface NativeRecoveryControl {
 
 type NativeRequest = ReplaceNativeField | ReplaceNativeFixture | NativeRecoveryControl | StartFill | StartNavigate | StartNativeFill | StartNativePress
   | StartNativeLocate | StartNativeOpen
-  | StartChromeFill | StartPortalWorkflow | StartBrowse | ContinueBrowse | StartAgent | ConfirmStep | AgentFeedback | Stop;
+  | StartChromeFill | StartPortalWorkflow | StartBrowse | ContinueBrowse | StartAgent | ConfirmStep | AgentFeedback | PrepareUnderstanding | Stop;
 interface AgentProposalView {
   readonly step: number; readonly kind: string; readonly label: string; readonly destinationUrl: string | null;
   readonly pageUrl: string; readonly app: string; readonly risky: boolean;
@@ -360,6 +366,10 @@ function requestFromLine(line: Uint8Array): NativeRequest {
     }
     return { type: 'continue_browse', requestId: value.requestId as string,
       targetRequestId: value.targetRequestId, command: value.command, decisionProvider: 'jev' };
+  }
+  if (value.type === 'prepare_understanding') {
+    if (Object.keys(value).sort().join(',') !== 'requestId,type') throw new ContractError('invalid prepare request');
+    return { type: 'prepare_understanding', requestId: value.requestId as string };
   }
   if (value.type === 'agent_feedback') {
     const extra = Object.keys(value).filter(key => !['requestId', 'targetRequestId', 'type', 'value'].includes(key));
@@ -735,6 +745,7 @@ export class NativeManagedController {
     if (request.type === 'continue_browse') {
       this.#continueBrowse(request); return;
     }
+    if (request.type === 'prepare_understanding') { localUnderstanding().prepare(); return; }
     if (request.type === 'agent_feedback') {
       // Recorded only into that task's own private trace (and its dataset file); never acted on.
       const target = this.#traces.get(request.targetRequestId);
@@ -1348,6 +1359,8 @@ export class NativeManagedController {
       let pick = jevPick;
       if (request.understanding === 'local' && jevPick) {
         const local = localUnderstanding();
+        // Installed but still loading (just after a restart): worth a short wait.
+        if (local.status === 'starting') await local.ready(4_000);
         if (local.status === 'ready') {
           understanding = 'local';
           pick = (text, role, spans) => role === 'file' ? jevPick(text, role, spans) : pickLocally(local, text, spans, trace);
@@ -1361,7 +1374,9 @@ export class NativeManagedController {
       // The bar shows who understood the request and what will be typed (Qwen on this Mac or Jev).
       this.#chromeOutput?.({ type: 'agent_understanding', requestId: request.requestId,
         by: understanding === 'local' ? 'local' : request.understanding === 'local'
-          ? (localUnderstanding().status === 'failed' ? 'local_failed' : 'local_installing') : 'jev',
+          ? (localUnderstanding().status === 'failed' ? 'local_failed'
+            : localUnderstanding().status === 'installing' || localUnderstanding().status === 'not_installed' ? 'local_installing'
+              : 'local_loading') : 'jev',
         typed: goal.typedText?.text ?? null, problem: localUnderstanding().problem.slice(0, 120) });
       trace?.({ kind: 'understanding', by: understanding, answer: goal.wantsAnswer, typed: goal.typedText?.text ?? null,
         file: goal.fileName?.text ?? null });
@@ -1711,7 +1726,12 @@ async function main(): Promise<void> {
   const close = () => {
     if (closing) return;
     closing = true;
-    void controller.close().catch(() => { process.exitCode = 1; });
+    // Kept-alive Jev connections and the on-device model worker would otherwise keep this
+    // process running after its app has gone (found as an orphan sharing the journal).
+    void controller.close().catch(() => { process.exitCode = 1; }).finally(() => {
+      sharedLocal?.stop();
+      setTimeout(() => process.exit(process.exitCode ?? 0), 100);
+    });
   };
   process.stdin.on('end', close);
   process.stdin.on('close', close);

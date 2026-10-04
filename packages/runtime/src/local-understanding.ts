@@ -57,6 +57,14 @@ export class LocalUnderstanding {
 
   stop(): void { this.#worker?.kill(); this.#worker = undefined; }
 
+  /** Waits (up to `ms`) for an installed model that is still loading. */
+  async ready(ms: number): Promise<boolean> {
+    this.prepare();
+    const until = Date.now() + ms;
+    while (this.#status === 'starting' && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 100));
+    return this.#status === 'ready';
+  }
+
   async #install(): Promise<void> {
     this.#status = 'installing';
     mkdirSync(this.#dir, { recursive: true, mode: 0o700 });

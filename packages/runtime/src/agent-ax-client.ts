@@ -51,6 +51,8 @@ export interface AgentSnapshot {
   readonly visited?: number;
   /** False when the app being read is open but behind another app. */
   readonly frontmost?: boolean;
+  /** Reading the screen image is allowed (Screen Recording granted and the setting on). */
+  readonly vision?: boolean;
   /** Apps installed on this Mac (open or not), so any of them can be opened. */
   readonly installedApps?: readonly string[];
   /** Whole-Mac state no window shows: appearance, Wi‑Fi power, output volume. */
@@ -68,7 +70,7 @@ export interface AgentSnapshot {
 
 export type AgentOperation = 'snapshot' | 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste' | 'close' | 'quit_app'
   | 'focus_window' | 'window_action' | 'media' | 'open_file' | 'system' | 'open_settings'
-  | 'menu_items' | 'menu_press' | 'status_items' | 'status_press' | 'notifications';
+  | 'menu_items' | 'menu_press' | 'status_items' | 'status_press' | 'notifications' | 'vision_read';
 
 /** Host-side end of the private pipe to the app's Accessibility executor. The
  * app accepts a request only for the active, host-admitted agent task. */

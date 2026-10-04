@@ -71,6 +71,20 @@ class Mac implements SimWorld {
     { app: 'Mail', text: 'Acme Billing: Your invoice #4412 is ready' }];
   openNotifications(): boolean { this.front = 'Notification Centre'; return true; }
   outlookFolder = 'Inbox';
+  exported = '';
+  assetSearch = '';
+  screenImage(): SimElement[] {
+    if (this.front !== 'Sketchy') return [];
+    return [{ role: 'AXImageText', label: 'File' }, { role: 'AXImageText', label: 'New Drawing' },
+      { role: 'AXImageText', label: 'Export as PNG', press: () => { this.exported = 'png'; } },
+      { role: 'AXImageText', label: 'Export as SVG', press: () => { this.exported = 'svg'; } },
+      { role: 'AXImageText', label: 'Brush' }, { role: 'AXImageText', label: 'Eraser' },
+      { role: 'AXImageText', label: 'Search assets', press: () => { this.focusedAsset = true; } },
+      // What a real canvas app then shows: a confirmation, or the matching assets.
+      ...(this.exported ? [{ role: 'AXImageText', label: `Exported Untitled drawing.${this.exported}` }] : []),
+      ...(this.assetSearch ? [{ role: 'AXImageText', label: `3 assets for “${this.assetSearch}”` }] : [])];
+  }
+  focusedAsset = false;
   chromeWindows = 1;
   bookmarked: string[] = [];
   notesFolders = false;
@@ -273,6 +287,7 @@ class Mac implements SimWorld {
 
   type(element: SimElement, text: string) {
     const label = element.label;
+    if (label === 'Search assets' && this.front === 'Sketchy') { this.assetSearch = text; return; }
     if (label === 'Search' && this.front === 'Google Chrome' && this.tab?.url.includes('youtube')) { this.ytQuery = text; this.#focusedSearch = 'yt'; }
     else if (label === 'Search Wikipedia') { this.wikiQuery = text; this.#focusedSearch = 'wiki'; }
     else if (label === 'Search mail') { this.mailQuery = text; this.#focusedSearch = 'mail'; }
@@ -372,6 +387,8 @@ class Mac implements SimWorld {
             this.openApp(item.app);
             if (item.app === 'WhatsApp') { this.whatsAppChat = 'Mum'; }
           } }]) };
+      // A canvas app that exposes nothing to Accessibility: readable only from its pixels.
+      case 'Sketchy': return { app: 'Sketchy', bundleId: 'com.example.sketchy', windowTitle: 'Untitled drawing', elements: [] };
       case 'Music': return { app: 'Music', bundleId: 'com.apple.Music', windowTitle: 'Music', elements: [
         { role: 'AXButton', label: 'Previous', context: 'player', press: () => { this.track = Math.max(0, this.track - 1); } },
         { role: 'AXButton', label: this.musicPlaying ? 'Pause' : 'Play', context: 'player',
@@ -679,6 +696,11 @@ const BASE: readonly Scenario[] = [
     [{ url: 'https://outlook.live.com/mail/inbox', title: 'Mail - Outlook' }]),
   scenario('gmail-latest', 'open the latest email', () => {}, mac => mac.openEmail === 'Acme Billing',
     [{ url: 'https://mail.google.com/mail/u/0/#inbox', title: 'Inbox (3) - Gmail' }]),
+  // Stage D: an app readable only from its screen image.
+  scenario('vision-export', 'export the drawing as a png', mac => { mac.apps.push('Sketchy'); mac.front = 'Sketchy'; },
+    mac => mac.exported === 'png'),
+  scenario('vision-type', 'search the assets for tiger', mac => { mac.apps.push('Sketchy'); mac.front = 'Sketchy'; },
+    mac => mac.assetSearch === 'tiger'),
   scenario('dictate-reply', 'reply to Sam saying I will be late', () => {},
     mac => mac.openEmail === 'Sam Lee' && mac.replyBody === 'I will be late',
     [{ url: 'https://mail.google.com/mail/u/0/#inbox', title: 'Inbox (3) - Gmail' }]),
@@ -725,6 +747,7 @@ const PARAPHRASES: Readonly<Record<string, readonly string[]>> = {
   'open-finder-no-window': ['open a finder window'],
   'outlook-junk': ['open my junk folder in outlook', 'show the junk mail'],
   'gmail-latest': ['on this current tab go to gmail and go to the latest email', 'open my most recent email'],
+  'vision-export': ['save this drawing as png'],
   'answer-amount': ['whats the amount due on this invoice', 'tell me how much I owe Acme'],
   'answer-after-navigating': ['when is lunch with sam'],
   'window-this-monitor': ['come to this monitor', 'bring this window over to this screen'],

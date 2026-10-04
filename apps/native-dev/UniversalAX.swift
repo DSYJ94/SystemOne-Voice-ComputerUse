@@ -336,6 +336,13 @@ final class UniversalAX {
     // MARK: act
 
     func press(_ id: String) async throws {
+        if id.hasPrefix("v") {
+            // Text read from the screen image: a real click at its place.
+            guard let box = visionRefs[id] else { throw AXError.stale }
+            try activateTarget()
+            click(at: CGPoint(x: box.midX, y: box.midY))
+            return
+        }
         if id.hasPrefix("t"), let bundle = domBundle, let index = Int(id.dropFirst()) {
             try dom.activateTab(bundle, index); return
         }
@@ -361,6 +368,15 @@ final class UniversalAX {
     }
 
     func type(_ id: String, text: String) throws {
+        if id.hasPrefix("v") {
+            // A field found in the screen image: click into it, then type.
+            guard let box = visionRefs[id] else { throw AXError.stale }
+            try activateTarget()
+            click(at: CGPoint(x: box.midX, y: box.midY))
+            usleep(120_000)
+            try typeKeys(text)
+            return
+        }
         if id.hasPrefix("d"), let bundle = domBundle {
             _ = try dom.run(bundle, ["op": "type", "id": id, "text": text]); return
         }
@@ -645,6 +661,21 @@ final class UniversalAX {
     }()
 
     private var menuRefs: [String: AXUIElement] = [:]
+    private let vision = VisionReader()
+    private var visionRefs: [String: CGRect] = [:]
+
+    /// The target window's text read from its pixels, as pressable elements ("v0", "v1", …).
+    func readScreenImage() async throws -> [[String: Any]] {
+        guard let pid = targetPID else { throw AXError.noTarget }
+        let found = try await vision.read(windowOf: pid)
+        visionRefs = [:]
+        return found.prefix(150).enumerated().map { index, item in
+            let id = "v\(index)"
+            visionRefs[id] = item.box
+            return ["id": id, "role": "AXImageText", "label": item.text, "context": "read from the screen image",
+                    "editable": false, "pressable": true]
+        }
+    }
     private var statusRefs: [String: (pid: pid_t, item: AXUIElement)] = [:]
 
     /// Every enabled command in the target app's menu bar, as paths ("File › Export › PDF…"),

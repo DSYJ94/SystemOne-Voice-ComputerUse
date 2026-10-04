@@ -74,7 +74,7 @@ export interface AgentProposal {
   readonly step: number;
   readonly kind: 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste' | 'close' | 'quit_app'
     | 'focus_window' | 'window_action' | 'media' | 'open_file' | 'system' | 'answer' | 'open_settings' | 'menu' | 'status'
-  | 'notifications' | 'finish';
+  | 'notifications' | 'look' | 'finish';
   readonly label: string;
   readonly destinationUrl: string | null;
   readonly pageUrl: string;
@@ -318,7 +318,18 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       }
       this.#journal.markDispatchBoundary(permit.executionId);
       let copied: string | null = null;
-      if (chosen.kind === 'answer') {
+      if (chosen.kind === 'look') {
+        // Not an action on the Mac: the next reads of this screen include its image text.
+        this.#lookAt = `${view.bundleId}|${view.windowTitle}`;
+        this.#nextView = undefined;
+        this.#journal.recordOutcome(permit.executionId, { deliveryStatus: 'dispatched', effectStatus: 'applied',
+          verification: 'matched', evidenceRef: `agent-look-${permit.executionId}` });
+        executionId = undefined;
+        this.#history.push(`Read ${view.app}'s window from its screen image.`);
+        this.#trace?.({ kind: 'result', step, changed: true, actMs: 0, verifyMs: 0, after: null });
+        return;
+      }
+            if (chosen.kind === 'answer') {
         // Telling the user is not an action on the Mac: shown and spoken, then recorded.
         this.#say?.(chosen.ref === 'read-page' ? readable(view) : chosen.label);
         this.#journal.recordOutcome(permit.executionId, { deliveryStatus: 'dispatched', effectStatus: 'applied',
@@ -437,9 +448,25 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
   }
 
   async #observe(): Promise<AgentSnapshot> {
-    try { return await this.#ax.snapshot(this.taskId); }
-    catch { return EMPTY_SNAPSHOT; }
+    let view: AgentSnapshot;
+    try { view = await this.#ax.snapshot(this.taskId); } catch { return EMPTY_SNAPSHOT; }
+    // Stage D: a window that exposes almost nothing (a canvas, some Electron apps, a remote
+    // desktop) is also read from its pixels; "look" asks for the same on any screen.
+    const readable = view.elements.filter(element => element.role !== 'AXStaticText' && element.label.trim()).length;
+    const where = `${view.bundleId}|${view.windowTitle}`;
+    if (view.vision && view.pid && (readable < 5 || this.#lookAt === where)) {
+      const found = await this.#ax.call(this.taskId, 'vision_read', {}, 8_000).catch(() => []) as AgentElement[];
+      if (Array.isArray(found) && found.length) {
+        const labels = found.map(element => element.label).join('|');
+        return { ...view, elements: [...view.elements, ...found],
+          contentSignature: `${content(view)}|vision:${labels}` };
+      }
+    }
+    return view;
   }
+
+  /** The screen ("app|window") whose image should be read on the next looks. */
+  #lookAt: string | undefined;
 
   async #act(option: Option): Promise<unknown> {
     const params: Record<string, JSONValue> = option.kind === 'press' || option.kind === 'copy' || option.kind === 'paste'
@@ -458,8 +485,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
                           : option.kind === 'menu' ? { path: option.ref }
                 : { name: option.label };
     const op = option.kind === 'menu' ? 'menu_press' : option.kind === 'status' ? 'status_press'
-      : option.kind as Exclude<Option['kind'], 'finish' | 'answer' | 'menu' | 'status'>;
-    return await this.#ax.call(this.taskId, op, params,
+      : option.kind as Exclude<Option['kind'], 'finish' | 'answer' | 'menu' | 'status' | 'look'>;
+    return await this.#ax.call(this.taskId, op as Exclude<typeof op, 'look'>, params,
       ['open_url', 'open_app', 'open_file', 'open_settings'].includes(option.kind) ? 20_000 : 10_000);
   }
 
@@ -499,6 +526,16 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         continue;
       }
       if (!this.#goal.quit && ENDS_APP.test(element.label.replace(/^\u200e/u, ''))) continue;
+      if (element.role === 'AXImageText') {
+        // Read from the screen image: clicked (or clicked then typed into) at its place.
+        options.push({ kind: 'press', ref: element.id, element, label: element.label, score: score(element.label),
+          description: `In ${view.app}: click the text “${element.label}” (read from the screen image).` });
+        if (this.#goal.typedText) {
+          options.push({ kind: 'type', ref: element.id, element, label: element.label, score: score(element.label) + 1,
+            description: `In ${view.app}: click on “${element.label}” (read from the screen image) and type “${this.#goal.typedText.text}” there.` });
+        }
+        continue;
+      }
       if (element.role !== 'AXStaticText' && (element.pressable || !element.editable)) {
         options.push({ kind: 'press', ref: element.id, element, label: element.label,
           description: `In ${view.app}: ${['AXRow', 'AXCell', 'AXLink'].includes(element.role) ? 'open' : 'click'} the ${
@@ -593,7 +630,11 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       options.push({ kind: 'menu', ref: 'choose', label: `a menu command of ${view.app}`, score: 1,
         description: `Use one of ${view.app}'s own menu commands (its File, Edit, View, Window or Help menus); only for things inside ${view.app} itself, not other apps or the Mac's System Settings.` });
     }
-    if (view.bundleId !== 'com.apple.notificationcenterui') {
+    if (view.vision && view.pid && this.#lookAt !== `${view.bundleId}|${view.windowTitle}`) {
+      options.push({ kind: 'look', ref: 'screen-image', label: 'read the screen image', score: 0,
+        description: `Read ${view.app}'s window from its screen image, to find buttons and text the app does not expose (slower).` });
+    }
+        if (view.bundleId !== 'com.apple.notificationcenterui') {
       options.push({ kind: 'notifications', ref: 'centre', label: 'Notification Centre', score: 1,
         description: 'Open Notification Centre to see, read or open notifications (messages, reminders, alerts).' });
     }
@@ -730,7 +771,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         verifier: { kind: 'content_changed' }, delivery: 'semantic', riskPolicyRef: AGENT_POLICY,
         replayPolicy: 'only_if_not_applied' };
       const candidate: Record<string, JSONValue> = ['focus_window', 'window_action', 'media', 'open_file', 'system', 'answer',
-        'open_settings', 'menu', 'status', 'notifications'].includes(option.kind)
+        'open_settings', 'menu', 'status', 'notifications', 'look'].includes(option.kind)
         ? { ...base, operation: 'invoke', targetRef: `${option.kind}:${option.ref}`.replace(/[^A-Za-z0-9_.:-]/gu, '-').slice(0, 160),
           parameters: {}, effects: ['NAVIGATE', 'EXTERNAL_WRITE'] }
         : option.kind === 'quit_app'
@@ -840,7 +881,8 @@ function role(axRole: string): string {
   return ({ AXButton: 'button', AXLink: 'link', AXTextField: 'text field', AXTextArea: 'text area',
     AXSearchField: 'search field', AXComboBox: 'combo box', AXCheckBox: 'checkbox', AXRadioButton: 'option',
     AXPopUpButton: 'pop-up menu', AXMenuButton: 'menu button', AXMenuItem: 'menu item', AXMenuBarItem: 'menu',
-    AXTab: 'tab', AXCell: 'item', AXDisclosureTriangle: 'disclosure', AXSlider: 'slider' } as Record<string, string>)[axRole]
+    AXTab: 'tab', AXCell: 'item', AXDisclosureTriangle: 'disclosure', AXSlider: 'slider',
+    AXImageText: 'text on screen' } as Record<string, string>)[axRole]
     ?? axRole.replace(/^AX/u, '').toLowerCase();
 }
 
@@ -887,6 +929,7 @@ function describeKind(option: Option): string {
     case 'menu': return `chose the menu command ${option.label}`;
     case 'status': return `clicked the menu-bar icon “${option.label}”`;
     case 'notifications': return 'opened Notification Centre';
+    case 'look': return 'read the screen image';
     default: return 'finished';
   }
 }

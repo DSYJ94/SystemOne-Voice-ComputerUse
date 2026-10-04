@@ -44,7 +44,7 @@ private func systemOneHotkeyHandler(_ event: EventHandlerCallRef?,
 }
 
 @MainActor
-final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverDelegate {
+final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverDelegate, NSMenuDelegate {
     private let taskIntake = DevTaskIntake()
     private var activeRequestID: String? { taskIntake.activeRequestID }
     private var activeSurface: DevTaskIntake.Surface? { taskIntake.activeSurface }
@@ -52,6 +52,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
         activeSurface?.usesNativeWorker == true
     }
     private var statusItem: NSStatusItem?
+    /// When the controller was restarted after exiting, for the backoff.
+    private var controllerRestarts: [Date] = []
+    private var recentMenu = NSMenu(title: "Recent Requests")
     private var panel: NSPanel?
     private var commandPanel: NSPanel?
     private var taskField: NSTextField?
@@ -135,6 +138,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
     /// 👍/👎 after a task: the label that makes its private trace useful for training.
     private var feedbackRow: NSStackView?
     private weak var runButton: NSButton?
+    private weak var settingsButton: NSButton?
     private var understandingLabel: NSTextField?
     private weak var stopButton: NSButton?
     /// Outline around the window Jev is acting on, on whichever display it is.
@@ -277,17 +281,15 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
         // the Dock. Release packaging will use the agent-app lifecycle.
         NSApp.setActivationPolicy(.regular)
         installMainMenu()
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "S1 Dev"
+        Diagnostics.log("app started")
+        if UserDefaults.standard.object(forKey: "showInDock") as? Bool == false { NSApp.setActivationPolicy(.accessory) }
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        item.button?.image = NSImage(systemSymbolName: "waveform.circle", accessibilityDescription: "SystemOne")
+        item.button?.image?.isTemplate = true
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Open Command Panel", action: #selector(openPanel), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Open Developer Tools", action: #selector(openDeveloperPanel), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Stop", action: #selector(stop), keyEquivalent: ""))
-        menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit SystemOne Dev", action: #selector(quit), keyEquivalent: ""))
-        for entry in menu.items { entry.target = self }
-        item.menu = menu
+        menu.delegate = self
         statusItem = item
+        item.menu = menu
         makePanel()
         makeCommandPanel()
         registerGlobalHotkeys()
@@ -437,6 +439,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
         let more = OrbButton(symbol: "slider.horizontal.3", label: "Settings", style: .glass, diameter: 30)
         more.target = self
         more.action = #selector(showSettings(_:))
+        settingsButton = more
         let run = OrbButton(symbol: "arrow.up", label: "Run", style: .accent, diameter: 32)
         run.target = self
         run.action = #selector(runTaskRequest)
@@ -685,6 +688,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
                     toggle(jevEnabled, #selector(toggleJev(_:)))),
                 row("Understand requests on this Mac", "A small on-device model picks the words to type. Installs once (about 700 MB).",
                     toggle(UserDefaults.standard.bool(forKey: "understandOnDevice"), #selector(toggleUnderstandOnDevice(_:)))),
+                row("Read the screen when apps can't be", "For apps that don't expose their buttons, reads the window's image on this Mac.",
+                    toggle(UserDefaults.standard.object(forKey: "readScreenImage") as? Bool ?? true, #selector(toggleReadScreen(_:)))),
             ]),
             section("Approvals", [
                 row("Act without asking", "Every step is still checked. Press Esc to stop at any time.",
@@ -710,10 +715,14 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
             section("Display", [
                 row("Show where Jev is working", "Outlines the window Jev is using, on any display.",
                     toggle(highlight.enabled, #selector(toggleHighlight(_:)))),
+                row("Show in Dock", "Off: SystemOne lives in the menu bar only.",
+                    toggle(UserDefaults.standard.object(forKey: "showInDock") as? Bool ?? true, #selector(toggleDock(_:)))),
             ]),
             section("Permissions", [
                 row("Accessibility", axGranted ? "Lets SystemOne see and use other apps." : "Needed to see and use other apps.",
                     status(axGranted, "Allowed", fix: "Fix…", #selector(openAccessibilityRecovery))),
+                row("Screen Recording", "Only for reading apps that can't be read otherwise. Images stay on this Mac.",
+                    status(VisionReader.permitted, "Allowed", fix: "Allow…", #selector(allowScreenRecording))),
             ]),
         ]
         let version = text("Jev 1.13.0 · SystemOne", size: 10, color: .tertiaryLabelColor)
@@ -743,6 +752,94 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
         popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
     }
 
+    /// The menu-bar menu, rebuilt each time it opens so it shows the current shortcut,
+    /// whether a task is running, and recent requests.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === statusItem?.menu else { return }
+        menu.removeAllItems()
+        func add(_ title: String, _ action: Selector, enabled: Bool = true) {
+            let entry = NSMenuItem(title: title, action: enabled ? action : nil, keyEquivalent: "")
+            entry.target = self
+            menu.addItem(entry)
+        }
+        add("Open SystemOne  \(talkShortcut.display)", #selector(openPanel))
+        add("Settings…", #selector(openSettingsFromMenu))
+        add("Stop", #selector(stop), enabled: activeRequestID != nil)
+        menu.addItem(.separator())
+        let recent = UserDefaults.standard.stringArray(forKey: "recentRequests") ?? []
+        let recentItem = NSMenuItem(title: "Recent Requests", action: nil, keyEquivalent: "")
+        recentMenu.removeAllItems()
+        for text in recent {
+            let entry = NSMenuItem(title: String(text.prefix(60)), action: #selector(runRecent(_:)), keyEquivalent: "")
+            entry.representedObject = text
+            entry.target = self
+            recentMenu.addItem(entry)
+        }
+        recentItem.submenu = recent.isEmpty ? nil : recentMenu
+        recentItem.isEnabled = !recent.isEmpty
+        menu.addItem(recentItem)
+        menu.addItem(.separator())
+        add("Report a Problem…", #selector(reportProblem))
+        add("Developer Tools", #selector(openDeveloperPanel))
+        menu.addItem(.separator())
+        add("Quit SystemOne", #selector(quit))
+    }
+
+    @objc private func openSettingsFromMenu() {
+        openPanel()
+        if let gear = settingsButton { showSettings(gear) }
+    }
+
+    @objc private func runRecent(_ sender: NSMenuItem) {
+        guard let text = sender.representedObject as? String else { return }
+        openPanel()
+        taskField?.stringValue = text
+        runTaskRequest()
+    }
+
+    private func rememberRequest(_ text: String) {
+        var recent = UserDefaults.standard.stringArray(forKey: "recentRequests") ?? []
+        recent.removeAll { $0 == text }
+        recent.insert(text, at: 0)
+        UserDefaults.standard.set(Array(recent.prefix(8)), forKey: "recentRequests")
+    }
+
+    /// Writes a local problem report (nothing is sent) and shows it in Finder.
+    @objc private func reportProblem() {
+        let permissions = [("Accessibility", hasAccessibilityAccess()), ("Screen Recording", VisionReader.permitted),
+                           ("Speech recognition", speech.isAuthorized)]
+        let settings = [("Jev chooses steps", "\(jevEnabled)"), ("Act without asking", "\(autoAllowSession)"),
+                        ("Confirm send/buy/delete", "\(askBeforeRisky)"), ("Replies", voice.mode.rawValue),
+                        ("On-device understanding", "\(UserDefaults.standard.bool(forKey: "understandOnDevice"))"),
+                        ("Push to talk", talkShortcut.display)]
+        guard let url = Diagnostics.writeReport(permissions: permissions, settings: settings) else {
+            commandStatus?.stringValue = "Couldn't write the report."
+            return
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+        commandStatus?.stringValue = "Saved a problem report in Logs (nothing was sent). Attach it when you report the issue."
+    }
+
+    @objc private func toggleReadScreen(_ sender: NSSwitch) {
+        UserDefaults.standard.set(sender.state == .on, forKey: "readScreenImage")
+    }
+
+    @objc private func toggleDock(_ sender: NSSwitch) {
+        UserDefaults.standard.set(sender.state == .on, forKey: "showInDock")
+        NSApp.setActivationPolicy(sender.state == .on ? .regular : .accessory)
+        commandPanel?.makeKeyAndOrderFront(nil)
+    }
+
+    /// macOS asks once; after that the switch lives in Privacy & Security › Screen Recording.
+    @objc private func allowScreenRecording() {
+        settingsPopover?.close()
+        VisionReader.requestPermission()
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            NSWorkspace.shared.open(url)
+        }
+        commandStatus?.stringValue = "Turn on SystemOne Dev under Screen Recording, then quit and reopen SystemOne."
+    }
+
     /// Closing Settings mid-recording keeps the current shortcut.
     func popoverWillClose(_ notification: Notification) {
         if shortcutRecorder != nil { endRecording() }
@@ -754,8 +851,15 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
         if !highlight.enabled { highlight.hide() }
     }
 
+    /// Loads (or installs) the on-device model ahead of the first request.
+    private func prepareUnderstanding() {
+        guard UserDefaults.standard.bool(forKey: "understandOnDevice"), let input = controllerInput else { return }
+        _ = send(["type": "prepare_understanding", "requestId": UUID().uuidString.lowercased()], through: input)
+    }
+
     @objc private func toggleUnderstandOnDevice(_ sender: NSSwitch) {
         UserDefaults.standard.set(sender.state == .on, forKey: "understandOnDevice")
+        prepareUnderstanding()
         commandStatus?.stringValue = sender.state == .on
             ? "On-device understanding on. The first request installs it (about 700 MB, under a minute); until then Jev is used."
             : "Jev picks the words to type."
@@ -1159,7 +1263,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
             process.environment = environment
             process.standardInput = input
             process.standardOutput = output
-            process.standardError = FileHandle.nullDevice
+            // Controller errors go to a local, size-capped log for problem reports.
+            process.standardError = Diagnostics.logFile("controller.log") ?? FileHandle.nullDevice
             try process.run()
             do {
                 if let requirement {
@@ -1185,7 +1290,10 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
                 Task { @MainActor [weak self] in self?.controllerExited(code) }
             }
             publishHostLifecycle()
+            Diagnostics.log("controller started (pid \(process.processIdentifier))")
+            prepareUnderstanding()
         } catch {
+            Diagnostics.log("controller failed to start: \(error)")
             statusField?.stringValue = "Controller identity or launch failed. Rebuild and retry."
         }
     }
@@ -1644,7 +1752,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
         let text: String
         switch by {
         case "local": text = "Qwen on this Mac · \(words)"
-        case "local_installing": text = "Qwen is still installing · Jev picked the words · \(words)"
+        case "local_installing": text = "Qwen is installing (one time, about a minute) · Jev picked the words · \(words)"
+        case "local_loading": text = "Qwen was still loading · Jev picked the words · \(words)"
         case "local_failed": text = "Qwen unavailable\(problem.isEmpty ? "" : " (\(problem))") · Jev picked the words · \(words)"
         default: text = local ? "Jev · \(words)" : (typed == nil ? "" : "Will type “\(typed!)”")
         }
@@ -1680,12 +1789,32 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
         controllerInput = nil
         controllerOutput?.fileHandleForReading.readabilityHandler = nil
         controllerOutput = nil
-        if activeRequestID != nil {
-            statusField?.stringValue = "Controller exited (\(code)); task outcome uncertain."
-        } else {
-            statusField?.stringValue = "Controller exited (\(code)); relaunch the development app."
+        Diagnostics.log("controller exited with code \(code)\(activeRequestID != nil ? " during a task" : "")")
+        if quitPending { quitPending = false; NSApp.reply(toApplicationShouldTerminate: true); return } // the user asked to quit; any uncertainty stays journaled
+        // Recover on its own: release the interrupted request and restart (at most 3 times a minute).
+        let interrupted = activeRequestID != nil
+        if let activeRequestID { taskIntake.releaseIfReady(requestID: activeRequestID) }
+        pendingProposal = nil
+        approvalRow?.isHidden = true
+        highlight.hide()
+        updateRunState()
+        controllerRestarts = controllerRestarts.filter { Date().timeIntervalSince($0) < 60 }
+        guard controllerRestarts.count < 3 else {
+            statusField?.stringValue = "The assistant keeps stopping. Use Report a Problem… in the menu bar."
+            commandStatus?.stringValue = statusField?.stringValue ?? ""
+            return
         }
-        if quitPending { quitPending = false; NSApp.reply(toApplicationShouldTerminate: true) } // the user asked to quit; any uncertainty stays journaled
+        controllerRestarts.append(Date())
+        let delay = Double(controllerRestarts.count)
+        statusField?.stringValue = interrupted
+            ? "Something went wrong and I restarted. The last step may or may not have happened."
+            : "Restarting the assistant…"
+        commandStatus?.stringValue = statusField?.stringValue ?? ""
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, self.controller == nil, !self.quitPending else { return }
+            self.startController()
+            self.startChromeListener()
+        }
     }
 
     @objc private func openPanel() {
@@ -2251,6 +2380,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
         if let target { universalAX.setTarget(target.processIdentifier) }
         taskField?.stringValue = text
         if spoken { finalSpeechText = text }
+        rememberRequest(text)
         guard taskIntake.submit(.agent(text: text), originalText: text, voice: spoken,
             send: { [weak self] in self?.send($0, through: input) == true }) else {
             if hostActionsAvailable { commandStatus?.stringValue = "Could not send the request to the controller." }
@@ -2302,6 +2432,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
                                  "frontmost": UniversalAX.isFront(snap.pid), "windows": windows,
                                  "installedApps": UniversalAX.installedApps(), "settingsPanes": UniversalAX.settingsPanes,
                                  "mac": UniversalAX.macState(), "displays": UniversalAX.displays(),
+                                 "vision": VisionReader.permitted && UserDefaults.standard.object(forKey: "readScreenImage") as? Bool ?? true,
                                  "readMs": self.universalAX.lastReadMs, "visited": snap.visited, "via": snap.via]
                         if let hint = snap.hint, hint != self.lastBrowserHint {
                             // Once per distinct problem: how to enable the faster page read.
@@ -2342,6 +2473,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
                 case "menu_items": reply(true, try self.universalAX.menuCommands(), nil)
                 case "menu_press": try self.universalAX.pressMenu(object["path"] as? String ?? ""); reply(true, nil, nil)
                 case "status_items": reply(true, self.universalAX.statusItems(), nil)
+                case "vision_read": reply(true, try await self.universalAX.readScreenImage(), nil)
                 case "notifications": try self.universalAX.openNotificationCentre(); reply(true, nil, nil)
                 case "status_press": try self.universalAX.pressStatusItem(object["id"] as? String ?? ""); reply(true, nil, nil)
                 case "open_settings":

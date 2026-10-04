@@ -78,6 +78,8 @@ export interface SimWorld {
   statusItems?(): readonly { readonly id: string; readonly name: string }[];
   displays?(): readonly { readonly name: string; readonly index: number; readonly pointer?: boolean }[];
   openNotifications?(): boolean;
+  /** Text the front window shows only as pixels (read by the vision fallback). */
+  screenImage?(): readonly SimElement[];
   pressStatus?(id: string): boolean;
   openSettings?(id: string): boolean;
   /** What SystemOne told the user (answers, read-outs). */
@@ -113,12 +115,14 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
   const started = performance.now();
   const steps: string[] = [];
   let elements: SimElement[] = [];
+  let imageText: SimElement[] = [];
   let windows: { app: string; title: string }[] = [];
   let client!: AgentAXClient;
   client = new AgentAXClient(request => queueMicrotask(() => {
     let value: JSONValue = null;
     let ok = true;
-    const element = typeof request.id === 'string' ? elements[Number(request.id.slice(1))] : undefined;
+    const element = typeof request.id === 'string'
+      ? (request.id.startsWith('v') ? imageText : elements)[Number(request.id.slice(1))] : undefined;
     switch (request.op) {
       case 'snapshot': {
         const screen = world.screen();
@@ -137,7 +141,7 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
           contentSignature: JSON.stringify([screen?.app, screen?.windowTitle, screen?.url, screen?.scrollY ?? 0,
             elements.map(item => [item.role, item.label, item.value, item.selected])]),
           ...(screen?.scrollY !== undefined ? { scrollY: screen.scrollY } : {}),
-          frontmost: true, installedApps: [...(world.installed?.() ?? scenario.apps)],
+          frontmost: true, vision: !!world.screenImage, installedApps: [...(world.installed?.() ?? scenario.apps)],
           settingsPanes: [...(world.settingsPanes?.() ?? [])].map(pane => ({ ...pane })),
           ...(world.macState ? { mac: world.macState() } : {}),
           ...(world.displays ? { displays: world.displays().map(display => ({ ...display })) } : {}),
@@ -169,6 +173,11 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
       case 'status_items': value = [...(world.statusItems?.() ?? [])].map(item => ({ ...item })); break;
       case 'status_press': ok = world.pressStatus?.(String(request.id)) ?? false; break;
       case 'notifications': ok = world.openNotifications?.() ?? false; break;
+      case 'vision_read':
+        imageText = [...(world.screenImage?.() ?? [])];
+        value = imageText.map((item, index) => ({ id: `v${index}`, role: 'AXImageText', label: item.label,
+          context: 'read from the screen image', editable: false, pressable: true }));
+        break;
       case 'window_action': {
         const listed = typeof request.window === 'string' && request.window ? windows[Number(request.window.slice(1))] : undefined;
         if (!world.windowAction || (request.window && !listed)) { ok = false; break; }
