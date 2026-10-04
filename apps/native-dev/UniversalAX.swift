@@ -1,5 +1,8 @@
 import AppKit
 import ApplicationServices
+import AudioToolbox
+import CoreAudio
+import CoreWLAN
 import Foundation
 
 /// General Accessibility observer/actuator for the universal agent. It reads
@@ -539,8 +542,94 @@ final class UniversalAX {
             process.arguments = [action == "sleep" ? "sleepnow" : "displaysleepnow"]
             try process.run()
         case "lock": postKey(12, [.maskControl, .maskCommand])          // Control-Command-Q
+        case "darkmode":
+            // Asks macOS once for permission to control System Events.
+            var error: NSDictionary?
+            NSAppleScript(source: "tell application \"System Events\" to tell appearance preferences to set dark mode to not dark mode")?
+                .executeAndReturnError(&error)
+            if error != nil { throw AXError.actionFailed }
+        case "wifi_on", "wifi_off":
+            guard let device = wifiDevice() else { throw AXError.actionFailed }
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/sbin/networksetup")
+            process.arguments = ["-setairportpower", device, action == "wifi_on" ? "on" : "off"]
+            try process.run()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { throw AXError.actionFailed }
         case "screenshot": postKey(20, [.maskCommand, .maskShift])     // Command-Shift-3
         default: throw AXError.actionFailed
+        }
+    }
+
+    /// Whole-Mac state the agent cannot see in any window, so it can check what it changed.
+    static func macState() -> [String: Any] {
+        var state: [String: Any] = [:]
+        let global = UserDefaults.standard.persistentDomain(forName: UserDefaults.globalDomain)
+        state["darkMode"] = (global?["AppleInterfaceStyle"] as? String) == "Dark"
+        if let wifi = CWWiFiClient.shared().interface() { state["wifiOn"] = wifi.powerOn() }
+        var device = AudioObjectID(kAudioObjectUnknown)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+                                                 mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        if AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device) == noErr {
+            var volume = Float32(0)
+            size = UInt32(MemoryLayout<Float32>.size)
+            address = AudioObjectPropertyAddress(mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
+                                                 mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+            if AudioObjectGetPropertyData(device, &address, 0, nil, &size, &volume) == noErr { state["volume"] = Int(volume * 100) }
+            var muted = UInt32(0)
+            size = UInt32(MemoryLayout<UInt32>.size)
+            address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute,
+                                                 mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+            if AudioObjectGetPropertyData(device, &address, 0, nil, &size, &muted) == noErr { state["muted"] = muted != 0 }
+        }
+        return state
+    }
+
+    private static func wifiDevice() -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/networksetup")
+        process.arguments = ["-listallhardwareports"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        guard (try? process.run()) != nil else { return nil }
+        let text = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        process.waitUntilExit()
+        let lines = text.components(separatedBy: "\n")
+        guard let index = lines.firstIndex(where: { $0.contains("Wi-Fi") || $0.contains("AirPort") }),
+              index + 1 < lines.count else { return nil }
+        return lines[index + 1].replacingOccurrences(of: "Device: ", with: "").trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Every System Settings pane on this Mac, named as in the Settings sidebar, read
+    /// from the system's own pane extensions (so new panes appear without code changes).
+    static let settingsPanes: [[String: String]] = {
+        let root = URL(fileURLWithPath: "/System/Library/ExtensionKit/Extensions")
+        let language = Locale.preferredLanguages.first.map { String($0.prefix(2)) } ?? "en"
+        let items = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
+        return items.compactMap { url -> [String: String]? in
+            guard url.pathExtension == "appex",
+                  let info = NSDictionary(contentsOf: url.appendingPathComponent("Contents/Info.plist")) as? [String: Any],
+                  let attributes = info["EXAppExtensionAttributes"] as? [String: Any],
+                  attributes["EXExtensionPointIdentifier"] as? String == "com.apple.Settings.extension.ui",
+                  let id = info["CFBundleIdentifier"] as? String else { return nil }
+            let table = NSDictionary(contentsOf: url.appendingPathComponent("Contents/Resources/InfoPlist.loctable")) as? [String: Any]
+            let strings = (table?[language] ?? table?["en"]) as? [String: Any]
+            let name = (strings?["CFBundleDisplayName"] as? String) ?? (info["CFBundleDisplayName"] as? String) ?? ""
+            return name.isEmpty ? nil : ["id": id, "name": name]
+        }.sorted { ($0["name"] ?? "") < ($1["name"] ?? "") }
+    }()
+
+    /// Opens one System Settings pane directly and makes Settings the target.
+    func openSettings(_ id: String) async throws {
+        guard Self.settingsPanes.contains(where: { $0["id"] == id }),
+              let url = URL(string: "x-apple.systempreferences:\(id)"), NSWorkspace.shared.open(url) else {
+            throw AXError.actionFailed
+        }
+        try await Task.sleep(for: .milliseconds(900))
+        if let settings = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.systempreferences").first {
+            targetPID = settings.processIdentifier
+            Self.bringToFront(settings)
         }
     }
 
@@ -650,11 +739,24 @@ final class UniversalAX {
     }
 
     /// Acts on the front window of the target app: minimise, full screen, zoom or close.
-    func window(action: String) throws {
-        guard let pid = targetPID, let app = NSRunningApplication(processIdentifier: pid) else { throw AXError.noTarget }
-        let element = AXUIElementCreateApplication(pid)
-        guard let window: AXUIElement = attribute(element, kAXFocusedWindowAttribute)
-                ?? (attribute(element, kAXWindowsAttribute) as [AXUIElement]?)?.first else { throw AXError.noWindow }
+    /// Acts on one listed window (`id`), or on the front window of the target app.
+    func window(action: String, id: String? = nil) throws {
+        let window: AXUIElement
+        let app: NSRunningApplication
+        if let id, !id.isEmpty {
+            guard let (pid, listed) = windowRefs[id], let owner = NSRunningApplication(processIdentifier: pid) else {
+                throw AXError.stale
+            }
+            window = listed
+            app = owner
+        } else {
+            guard let pid = targetPID, let owner = NSRunningApplication(processIdentifier: pid) else { throw AXError.noTarget }
+            let element = AXUIElementCreateApplication(pid)
+            guard let front: AXUIElement = attribute(element, kAXFocusedWindowAttribute)
+                    ?? (attribute(element, kAXWindowsAttribute) as [AXUIElement]?)?.first else { throw AXError.noWindow }
+            window = front
+            app = owner
+        }
         switch action {
         case "minimize":
             guard AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, kCFBooleanTrue) == .success
@@ -670,37 +772,66 @@ final class UniversalAX {
                   AXUIElementPerformAction(button, kAXPressAction as CFString) == .success else { throw AXError.actionFailed }
         case "hide_app":
             guard app.hide() else { throw AXError.actionFailed }
-        case "left_half", "right_half", "maximize", "center":
-            // Accessibility positions are top-left based on the primary screen.
-            guard let box = frame(of: window), let primary = NSScreen.screens.first else { throw AXError.actionFailed }
-            let flipped = CGRect(x: box.minX, y: primary.frame.height - box.maxY, width: box.width, height: box.height)
-            let screen = NSScreen.screens.first { $0.frame.intersects(flipped) } ?? primary
-            let area = screen.visibleFrame
-            var target = area
-            switch action {
-            case "left_half": target.size.width = area.width / 2
-            case "right_half": target.size.width = area.width / 2; target.origin.x = area.midX
-            case "center":
-                target = CGRect(x: area.midX - box.width / 2, y: area.midY - box.height / 2, width: box.width, height: box.height)
-            default: break
-            }
-            var origin = CGPoint(x: target.minX, y: primary.frame.height - target.maxY)
-            var size = target.size
-            guard let position = AXValueCreate(.cgPoint, &origin), let extent = AXValueCreate(.cgSize, &size) else {
-                throw AXError.actionFailed
-            }
-            AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, position)
-            guard AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, extent) == .success else {
-                throw AXError.actionFailed
-            }
+        case "left_half", "right_half", "top_half", "bottom_half", "maximize", "center", "next_display", "mouse_display":
+            try place(window, action)
         default: throw AXError.actionFailed
         }
+    }
+
+    /// Moves and sizes a window on its display, another display, or the display under the
+    /// pointer ("this monitor"), then reads it back: a window that refused (minimum size,
+    /// full screen) is reported as not done instead of silently claimed.
+    private func place(_ window: AXUIElement, _ action: String) throws {
+        if (attribute(window, "AXFullScreen") as Bool?) == true {
+            AXUIElementSetAttributeValue(window, "AXFullScreen" as CFString, kCFBooleanFalse)
+            usleep(800_000)
+        }
+        let screens = NSScreen.screens
+        guard let box = frame(of: window), let primary = screens.first else { throw AXError.actionFailed }
+        // Accessibility frames are top-left based on the primary display; NSScreen's are bottom-left.
+        let height = primary.frame.height
+        let current = CGRect(x: box.minX, y: height - box.maxY, width: box.width, height: box.height)
+        func overlap(_ screen: NSScreen) -> CGFloat {
+            let shared = screen.frame.intersection(current)
+            return shared.isNull ? 0 : shared.width * shared.height
+        }
+        let here = screens.max { overlap($0) < overlap($1) } ?? primary
+        var screen = here
+        if action == "next_display", let index = screens.firstIndex(of: here) { screen = screens[(index + 1) % screens.count] }
+        if action == "mouse_display" { screen = screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? here }
+        let area = screen.visibleFrame
+        var target = area
+        switch action {
+        case "left_half": target.size.width = area.width / 2
+        case "right_half": target.size.width = area.width / 2; target.origin.x = area.midX
+        case "top_half": target.size.height = area.height / 2; target.origin.y = area.midY
+        case "bottom_half": target.size.height = area.height / 2
+        case "center", "next_display", "mouse_display":
+            let size = CGSize(width: min(box.width, area.width), height: min(box.height, area.height))
+            target = CGRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2, width: size.width, height: size.height)
+        default: break
+        }
+        var origin = CGPoint(x: target.minX, y: height - target.maxY)
+        var size = target.size
+        guard let position = AXValueCreate(.cgPoint, &origin), let extent = AXValueCreate(.cgSize, &size) else {
+            throw AXError.actionFailed
+        }
+        // Size, position, size: a large window moved first can be clamped by the screen edge.
+        AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, extent)
+        AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, position)
+        AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, extent)
+        usleep(120_000)
+        guard let after = frame(of: window) else { throw AXError.actionFailed }
+        let landed = abs(after.minX - origin.x) < 40 && abs(after.minY - origin.y) < 40
+            && abs(after.width - size.width) < 60 && abs(after.height - size.height) < 60
+        if !landed { throw AXError.placementRefused }
     }
 
     /// System media and volume keys: they go to whatever is playing, wherever it is.
     static func media(_ name: String) throws {
         let codes: [String: Int32] = ["playpause": 16, "next": 17, "previous": 18,
-                                      "volumeup": 0, "volumedown": 1, "mute": 7]
+                                      "volumeup": 0, "volumedown": 1, "mute": 7,
+                                      "brightnessup": 2, "brightnessdown": 3]
         guard let code = codes[name] else { throw AXError.actionFailed }
         for down in [true, false] {
             let flags = NSEvent.ModifierFlags(rawValue: down ? 0xa00 : 0xb00)
@@ -811,7 +942,7 @@ final class UniversalAX {
     }
 
     enum AXError: Error, CustomStringConvertible {
-        case noTarget, noWindow, stale, actionFailed, notFront
+        case noTarget, noWindow, stale, actionFailed, notFront, placementRefused
         var description: String {
             switch self {
             case .noTarget: "no app to act on"
@@ -819,6 +950,7 @@ final class UniversalAX {
             case .stale: "that control is gone"
             case .actionFailed: "the action could not be performed"
             case .notFront: "macOS did not bring the app to the front"
+            case .placementRefused: "the window did not end up there (it may have a minimum size)"
             }
         }
     }

@@ -1221,6 +1221,15 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 handleAgentRequest(object)
                 continue
             }
+            if object["type"] as? String == "agent_answer" {
+                // An answer read from the screen: shown in full and spoken.
+                guard let requestID = object["requestId"] as? String, requestID == activeRequestID,
+                      let text = object["text"] as? String else { continue }
+                commandStatus?.maximumNumberOfLines = 6
+                commandStatus?.stringValue = text
+                voice.say(text)
+                continue
+            }
             if object["type"] as? String == "browse_proposal" {
                 guard let requestID = object["requestId"] as? String, requestID == activeRequestID,
                       let proposalID = object["proposalId"] as? String, let kind = object["kind"] as? String,
@@ -1990,6 +1999,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
         accessibilityRecoveryButton?.isHidden = true
         feedbackRow?.isHidden = true
         feedbackTaskID = nil
+        commandStatus?.maximumNumberOfLines = 2
         if correction != nil { endCorrection("") }
         let me = ProcessInfo.processInfo.processIdentifier
         let target = capturedApp.flatMap { app in
@@ -2033,7 +2043,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                         reply(true, ["app": "no app", "bundleId": "", "pid": 0, "windowTitle": "", "url": "",
                                      "elements": [] as [Any], "truncated": false, "signature": "none",
                                      "runningApps": UniversalAX.runningApps(), "windows": self.universalAX.windows(),
-                                     "installedApps": UniversalAX.installedApps()], nil)
+                                     "installedApps": UniversalAX.installedApps(), "settingsPanes": UniversalAX.settingsPanes,
+                                     "mac": UniversalAX.macState()], nil)
                         return
                     }
                     var elements = snap.elements
@@ -2046,7 +2057,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                                  "signature": snap.signature, "contentSignature": snap.contentSignature,
                                  "scrollY": snap.scrollY as Any? ?? NSNull(), "runningApps": UniversalAX.runningApps(),
                                  "frontmost": UniversalAX.isFront(snap.pid), "windows": windows,
-                                 "installedApps": UniversalAX.installedApps(),
+                                 "installedApps": UniversalAX.installedApps(), "settingsPanes": UniversalAX.settingsPanes,
+                                 "mac": UniversalAX.macState(),
                                  "readMs": self.universalAX.lastReadMs, "visited": snap.visited, "via": snap.via]
                         if let hint = snap.hint, hint != self.lastBrowserHint {
                             // Once per distinct problem: how to enable the faster page read.
@@ -2074,9 +2086,13 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 case "open_app":
                     try await self.universalAX.open(app: object["name"] as? String ?? ""); reply(true, nil, nil)
                 case "focus_window": try self.universalAX.focus(window: object["id"] as? String ?? ""); reply(true, nil, nil)
-                case "window_action": try self.universalAX.window(action: object["action"] as? String ?? ""); reply(true, nil, nil)
+                case "window_action":
+                    try self.universalAX.window(action: object["action"] as? String ?? "", id: object["window"] as? String)
+                    reply(true, nil, nil)
                 case "media": try UniversalAX.media(object["name"] as? String ?? ""); reply(true, nil, nil)
                 case "system": try UniversalAX.system(object["name"] as? String ?? ""); reply(true, nil, nil)
+                case "open_settings":
+                    try await self.universalAX.openSettings(object["id"] as? String ?? ""); reply(true, nil, nil)
                 case "open_file":
                     try await self.universalAX.openFile(named: object["name"] as? String ?? ""); reply(true, nil, nil)
                 case "quit_app":

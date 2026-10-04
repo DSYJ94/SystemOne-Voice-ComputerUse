@@ -30,7 +30,7 @@ fi
 
 mkdir -p "$contents/MacOS" "$repository_root/.build/native-dev/module-cache"
 swiftc -swift-version 6 -parse-as-library -framework AppKit -framework Carbon \
-  -framework AVFoundation -framework Speech \
+  -framework AVFoundation -framework Speech -framework CoreAudio -framework AudioToolbox -framework CoreWLAN \
   -framework Security -lbsm -lsqlite3 \
   -module-cache-path "$repository_root/.build/native-dev/module-cache" \
   "${native_dev_sources[@]}" \

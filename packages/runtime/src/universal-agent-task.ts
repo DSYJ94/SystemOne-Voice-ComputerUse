@@ -3,7 +3,7 @@ import { validateCandidate } from '../../protocol/src/contract.ts';
 import { ContractError, digest } from '../../protocol/src/json.ts';
 import type { JSONValue } from '../../protocol/src/json.ts';
 import type { BuiltCandidateSet, ResolvedCandidate } from './action-candidates.ts';
-import type { AgentAXClient, AgentElement, AgentSnapshot } from './agent-ax-client.ts';
+import type { AgentAXClient, AgentElement, AgentSnapshot, AgentWindow } from './agent-ax-client.ts';
 import type { AgentGoal } from './agent-goal.ts';
 import { AttemptJournal } from './attempt-journal.ts';
 import type { PreparedAttempt } from './attempt-journal.ts';
@@ -45,6 +45,8 @@ const INVERSE: Readonly<Record<string, readonly string[]>> = {
   'key:undo': ['key:undo'], 'media:playpause': ['media:playpause'], 'media:mute': ['media:mute'],
   'media:volumeup': ['media:volumedown'], 'media:volumedown': ['media:volumeup'],
   'media:next': ['media:previous'], 'media:previous': ['media:next'],
+  'media:brightnessup': ['media:brightnessdown'], 'media:brightnessdown': ['media:brightnessup'],
+  'system:darkmode': ['system:darkmode'], 'system:wifi_on': ['system:wifi_off'], 'system:wifi_off': ['system:wifi_on'],
   'window_action:fullscreen': ['window_action:fullscreen'], 'window_action:zoom': ['window_action:zoom'],
 };
 const MEDIA: readonly [string, string][] = [
@@ -53,6 +55,7 @@ const MEDIA: readonly [string, string][] = [
   ['previous', 'go back to the previous track in whatever is playing'],
   ['volumeup', 'turn the Mac\'s volume up'], ['volumedown', 'turn the Mac\'s volume down'],
   ['mute', 'mute or unmute the Mac\'s sound'],
+  ['brightnessup', 'make the screen brighter'], ['brightnessdown', 'make the screen dimmer'],
 ];
 /** Steps that end an app or the user's session; offered only when the request asks to quit or close. */
 const ENDS_APP = /^(?:quit|force quit|close window|close all|hide|log ?out|sign ?out|shut down|restart)\b/iu;
@@ -70,7 +73,7 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 export interface AgentProposal {
   readonly step: number;
   readonly kind: 'press' | 'type' | 'key' | 'scroll' | 'open_url' | 'open_app' | 'copy' | 'paste' | 'close' | 'quit_app'
-    | 'focus_window' | 'window_action' | 'media' | 'open_file' | 'system' | 'finish';
+    | 'focus_window' | 'window_action' | 'media' | 'open_file' | 'system' | 'answer' | 'open_settings' | 'finish';
   readonly label: string;
   readonly destinationUrl: string | null;
   readonly pageUrl: string;
@@ -88,6 +91,13 @@ export interface AgentDecision {
     history: readonly string[], origin?: string): Promise<readonly string[]>;
   /** Picks which candidate piece of the request answers `question` (index), or null for none. */
   pickSpan?(request: string, role: 'typed' | 'file', spans: readonly string[], signal?: AbortSignal): Promise<number | null>;
+  /** Which of `texts` (visible on screen) answers the user's question, or null when none does. */
+  findAnswer?(view: AgentSnapshot, texts: readonly string[], signal: AbortSignal, history: readonly string[],
+    origin?: string): Promise<number | null>;
+  /** Picks one of `items` for the user's request (e.g. which Settings pane), or null. */
+  chooseOne?(question: string, items: readonly string[], signal: AbortSignal): Promise<number | null>;
+  /** Whether the user wants to be told something rather than have something done. */
+  asksForAnswer?(request: string, signal?: AbortSignal): Promise<boolean>;
   /** Probability (0–1) that the whole goal is already achieved. */
   done?(view: AgentSnapshot, signal: AbortSignal, history: readonly string[], origin?: string): Promise<number>;
 }
@@ -133,6 +143,9 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
   #typedAt = new Set<string>();
   #waits = 0;
   #origin: string | undefined;
+  readonly #say: ((text: string) => void) | undefined;
+  /** The last step acted on the whole Mac, which the screen cannot confirm. */
+  #lastOffScreen = false;
   /** Loop prevention, three general rules (no per-app special cases):
    * 1. never undo the previous step (its inverse, or re-pressing a control it flipped);
    * 2. on a screen seen before, don't repeat a step already taken from it (that led round a cycle);
@@ -157,6 +170,8 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
   static start(journal: AttemptJournal, registry: TaskAdmissionRegistry, admission: TaskAdmission,
     ax: AgentAXClient, options: { readonly goal: AgentGoal; readonly decision: AgentDecision;
       readonly confirmation: AgentConfirmation; readonly trace?: (event: Record<string, JSONValue>) => void;
+      /** Shows and speaks an answer to the user. */
+      readonly say?: (text: string) => void;
       /** A screen read already taken while the request was being understood. */
       readonly initialView?: AgentSnapshot }): UniversalAgentTask {
     const typed = admission.parameters.find(item => item.parameterRef === 'typed-text');
@@ -177,8 +192,10 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
 
   private constructor(journal: AttemptJournal, admission: TaskAdmission, ax: AgentAXClient,
     options: { readonly goal: AgentGoal; readonly decision: AgentDecision; readonly confirmation: AgentConfirmation;
-      readonly trace?: (event: Record<string, JSONValue>) => void; readonly initialView?: AgentSnapshot }) {
+      readonly trace?: (event: Record<string, JSONValue>) => void; readonly initialView?: AgentSnapshot;
+      readonly say?: (text: string) => void }) {
     this.#trace = options.trace;
+    this.#say = options.say;
     this.#nextView = options.initialView;
     this.taskId = admission.taskId; this.#journal = journal; this.#ax = ax; this.#goal = options.goal;
     this.#decision = options.decision; this.#confirmation = options.confirmation;
@@ -207,20 +224,53 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         stateDigest: digest({ app: view.bundleId, title: view.windowTitle, url: view.url, signature: view.signature }) });
       this.#journal.consumeTaskDecision(this.taskId, observationId);
       const step = ++this.#step;
-      const options = this.#options(view);
+      const all = this.#options(view);
+      // Answers are judged by their own question ("which text answers it?"), not mixed with actions.
+      const told = new Set(this.#history.flatMap(item => /^Told the user: “(.*)”\.$/u.exec(item)?.[1] ?? []));
+      const answers = all.filter(option => option.kind === 'answer' && option.ref !== 'read-page'
+        && !told.has(option.label.slice(0, 160))).slice(0, 60);
+      const options = all.filter(option => !answers.includes(option));
       const decideStarted = performance.now();
-      // "Is it done?" is asked separately, in parallel, once something has been done.
-      const [{ set, chosenId: proposedId, byId }, doneProbability] = await Promise.all([
+      // "Is it done?" and "is the answer on screen?" are asked separately, in parallel.
+      const [chosen0, doneProbability, answerIndex] = await Promise.all([
         this.#choose(observationId, view, options, step, generation),
         this.#history.length && this.#decision.done
           ? this.#decision.done(view, this.#abort.signal, [...this.#history], this.#origin).catch(() => 0) : Promise.resolve(0),
+        answers.length && this.#decision.findAnswer
+          ? this.#decision.findAnswer(view, answers.map(option => option.label), this.#abort.signal, [...this.#history],
+            this.#origin).catch(() => null) : Promise.resolve(null),
       ]);
       this.#active(generation);
+      let { set, chosenId: proposedId, byId } = chosen0;
+      let answer = answerIndex === null ? undefined : answers[answerIndex];
+      if (answer) ({ set, byId } = this.#set(observationId, [answer], step));
+      // "Open a Settings pane…" is resolved to one concrete pane before anything is proposed.
+      const general = !answer && proposedId ? byId.get(proposedId) : undefined;
+      if (general?.kind === 'open_settings' && general.ref === 'choose' && this.#decision.chooseOne) {
+        const panes = view.settingsPanes ?? [];
+        const index = await this.#decision.chooseOne('Which System Settings pane does the user need?',
+          panes.map(pane => pane.name), this.#abort.signal).catch(() => null);
+        this.#active(generation);
+        const pane = index === null ? undefined : panes[index];
+        if (!pane) throw new ContractError('no Settings pane fits the request');
+        answer = { kind: 'open_settings', ref: pane.id, label: pane.name, score: 0,
+          description: `Open System Settings at the “${pane.name}” pane.` };
+        ({ set, byId } = this.#set(observationId, [answer], step));
+      }
+      // Once the user has been answered, a few more steps may look for the rest, not more.
+      const lastTold = this.#history.findLastIndex(item => item.startsWith('Told the user'));
+      const lookedLong = lastTold >= 0 && this.#history.length - 1 - lastTold >= 3;
       // Only a clear "yes" overrides the chooser; it can still choose to finish itself.
-      const chosenId = doneProbability >= 0.8 ? 'finish' : proposedId;
+      const chosenId = answer ? 'c0' : doneProbability >= 0.8 || lookedLong ? 'finish' : proposedId;
       const decideMs = Math.round(performance.now() - decideStarted);
-      const candidate = chosenId ? set.candidates.find(item => item.candidateId === chosenId) : undefined;
+      // After a step on the whole Mac (dark mode, volume, media) the screen cannot show the
+      // result; with nothing confident to do next, that step was the task, so finish.
+      const finishing = set.candidates.find(item => item.operation === 'finish');
+      let candidate = (chosenId ? set.candidates.find(item => item.candidateId === chosenId) : undefined)
+        ?? (this.#lastOffScreen ? finishing : undefined);
       if (!candidate) throw new ContractError('no confident agent step');
+      // Waiting cannot show a whole-Mac change either; once the waits are used up, it was done.
+      if (candidate.operation === 'wait' && this.#waits >= 3 && this.#lastOffScreen && finishing) candidate = finishing;
       if (candidate.operation === 'wait' && this.#waits < 3) {
         // Waiting is a real step: let the screen settle, then look again.
         this.#waits++;
@@ -228,7 +278,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         await new Promise(resolve => setTimeout(resolve, 1_000));
         return;
       }
-      const option = byId.get(chosenId!);
+      const option = chosenId ? byId.get(chosenId) : undefined;
       const finish = candidate.operation === 'finish';
       if (!finish && !option) throw new ContractError('agent choice does not resolve');
       const proposal: AgentProposal = Object.freeze({ step, kind: finish ? 'finish' : option!.kind,
@@ -265,6 +315,19 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       }
       this.#journal.markDispatchBoundary(permit.executionId);
       let copied: string | null = null;
+      if (chosen.kind === 'answer') {
+        // Telling the user is not an action on the Mac: shown and spoken, then recorded.
+        this.#say?.(chosen.ref === 'read-page' ? readable(view) : chosen.label);
+        this.#journal.recordOutcome(permit.executionId, { deliveryStatus: 'dispatched', effectStatus: 'applied',
+          verification: 'matched', evidenceRef: `agent-answer-${permit.executionId}` });
+        executionId = undefined;
+        // Told once per screen: never repeated from the same screen.
+        this.#takenFrom.set(content(view), (this.#takenFrom.get(content(view)) ?? new Set<string>()).add(actionKey));
+        this.#history.push(chosen.ref === 'read-page' ? `Read the page aloud to the user.`
+          : `Told the user: “${chosen.label.slice(0, 160)}”.`);
+        this.#trace?.({ kind: 'result', step, changed: true, actMs: 0, verifyMs: 0, after: null });
+        return;
+      }
       const actStarted = performance.now();
       try {
         const result = await this.#act(chosen);
@@ -286,7 +349,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       const actMs = Math.round(performance.now() - actStarted);
       // Adaptive settle: look soon, and wait longer only if nothing changed yet.
       const verifyStarted = performance.now();
-      const opening = ['open_url', 'open_app', 'focus_window', 'open_file'].includes(chosen.kind);
+      const opening = ['open_url', 'open_app', 'focus_window', 'open_file', 'open_settings'].includes(chosen.kind);
       await sleep(opening ? 400 : 250);
       let after: AgentSnapshot | undefined = await this.#observe().catch(() => undefined);
       if (after && content(after) === content(view) && chosen.kind !== 'copy') {
@@ -297,8 +360,13 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       this.#nextView = after;
       // Copying changes the clipboard and media keys act on whichever app plays sound, so
       // neither shows on this screen; they count as done rather than "nothing changed".
-      const offScreen = chosen.kind === 'media';
-      const changed = copied !== null || offScreen || (!!after && content(after) !== content(view));
+      // Media keys and whole-Mac settings (dark mode, Wi‑Fi, brightness) act outside the app on screen.
+      const offScreen = chosen.kind === 'media' || chosen.kind === 'system';
+      // Window moves are checked by the executor (it reads the frame back and fails if the
+      // window did not land), and an app's contents do not change when its window moves.
+      const verified = offScreen || chosen.kind === 'window_action';
+      const changed = copied !== null || verified || (!!after && content(after) !== content(view));
+      this.#lastOffScreen = offScreen;
       const evidenceRef = `agent-${chosen.kind}-${permit.executionId}`;
       this.#journal.recordOutcome(permit.executionId, changed
         ? { deliveryStatus: 'dispatched', effectStatus: 'applied', verification: 'matched', evidenceRef }
@@ -324,7 +392,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
         && item.role === chosen.element!.role && item.label !== chosen.element!.label);
       this.#trace?.({ kind: 'result', step, changed, actMs, verifyMs, after: after ? { app: after.app,
         window: after.windowTitle, url: after.url } : null });
-      this.#history.push(`${capitalize(describeKind(chosen))}${offScreen ? ' (its effect is in whichever app is playing, so it may not show on screen)' : ` in ${view.app}`}${!changed ? '; nothing visibly changed'
+      this.#history.push(`${capitalize(describeKind(chosen))}${offScreen ? ` (it acts on the whole Mac or whichever app is playing, so it may not show on screen${macChange(view, after)})` : ` in ${view.app}`}${!changed ? '; nothing visibly changed'
         : relabelled ? `; it now reads “${relabelled.label}”` : ''}${
         after?.frontmost === false ? `; ${after.app} is open but behind other windows` : ''}.`);
       if (chosen.kind === 'open_file') this.#openedFile = true;
@@ -365,12 +433,13 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
             : option.kind === 'open_url' ? { url: this.#goal.url!, newTab: this.#newTab(this.#lastView) }
               : option.kind === 'quit_app' ? { name: option.label.replace(/[\u200e\u200f]/gu, '').trim() }
                 : option.kind === 'focus_window' ? { id: option.ref }
-                  : option.kind === 'window_action' ? { action: option.ref }
+                  : option.kind === 'window_action' ? { action: option.ref.split('@')[0]!, window: option.ref.split('@')[1] ?? '' }
                     : option.kind === 'media' || option.kind === 'system' ? { name: option.ref }
                       : option.kind === 'open_file' ? { name: this.#goal.fileName!.text }
+                        : option.kind === 'open_settings' ? { id: option.ref }
                 : { name: option.label };
-    return await this.#ax.call(this.taskId, option.kind as Exclude<Option['kind'], 'finish'>, params,
-      ['open_url', 'open_app', 'open_file'].includes(option.kind) ? 20_000 : 10_000);
+    return await this.#ax.call(this.taskId, option.kind as Exclude<Option['kind'], 'finish' | 'answer'>, params,
+      ['open_url', 'open_app', 'open_file', 'open_settings'].includes(option.kind) ? 20_000 : 10_000);
   }
 
   #options(view: AgentSnapshot): Option[] {
@@ -451,10 +520,13 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       }
     }
     // The whole Mac, not just the app in front: any open window can be brought forward.
+    // The front window is the one whose title is the window being read (list order is not reliable).
+    const isFrontWindow = (window: AgentWindow) => plain(window.app) === plain(view.app)
+      && (view.windowTitle ? window.title === view.windowTitle : window.front === true);
     const withWindows = new Set<string>();
     for (const window of (view.windows ?? []).slice(0, 60)) {
       withWindows.add(plain(window.app));
-      if (window.front && view.frontmost !== false && plain(window.app) === plain(view.app)) continue;
+      if (isFrontWindow(window) && view.frontmost !== false) continue;
       options.push({ kind: 'focus_window', ref: window.id, label: `${window.app}: ${window.title || 'untitled window'}`,
         description: `Bring ${window.app}'s window “${(window.title || 'untitled').slice(0, 100)}” to the front${
           window.minimized ? ' (it is minimised)' : ''}${window.hidden ? ' (the app is hidden)' : ''}.`,
@@ -468,11 +540,34 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       options.push({ kind: 'open_file', ref: 'goal-file', label: this.#goal.fileName.text, score: 10,
         description: `Find the file or folder named “${this.#goal.fileName.text}” on this Mac and open it.` });
     }
+    if (this.#goal.wantsAnswer) {
+      // The answer is read from the screen: any visible text can be told to the user, and
+      // Jev may first navigate to where the answer is. Nothing is made up.
+      for (const element of view.elements) {
+        const text = element.role === 'AXStaticText' ? element.label
+          : element.value && !element.secure ? `${element.label}: ${element.value}` : '';
+        if (!text || text.length > 300) continue;
+        options.push({ kind: 'answer', ref: element.id, label: text, score: score(text) + 1,
+          description: `Tell the user: “${text}”${element.context && element.context !== text ? ` (from “${element.context.slice(0, 60)}”)` : ''}.` });
+      }
+    }
+    if (view.elements.some(element => element.role === 'AXStaticText')) {
+      // Always available: reading out is never mistaken for an action on the Mac.
+      options.push({ kind: 'answer', ref: 'read-page', label: 'read the page aloud', score: 1,
+        description: `Read the text on screen in ${view.app} aloud to the user.` });
+    }
     // Whole-Mac actions; the ones that interrupt everything ask first.
     for (const [name, text, risky] of [['sleep', 'put the Mac to sleep', true], ['lock', 'lock the screen', true],
-      ['displaysleep', 'turn the display off', true], ['screenshot', 'take a screenshot of the whole screen (saved to the Desktop)', false]] as const) {
+      ['displaysleep', 'turn the display off', true], ['screenshot', 'take a screenshot of the whole screen (saved to the Desktop)', false],
+      ['darkmode', 'switch the Mac between light and dark mode', false], ['wifi_on', 'turn Wi‑Fi on', false],
+      ['wifi_off', 'turn Wi‑Fi off (this also cuts SystemOne off from Jev)', true]] as const) {
       options.push({ kind: 'system', ref: name, label: text, risky, score: score(text),
         description: `On the Mac: ${text}.` });
+    }
+    if (view.settingsPanes?.length && view.bundleId !== 'com.apple.systempreferences') {
+      const some = view.settingsPanes.map(pane => pane.name).filter(name => !/settings|extension|intents/iu.test(name)).slice(0, 14);
+      options.push({ kind: 'open_settings', ref: 'choose', label: 'a System Settings pane', score: 1,
+        description: `Open a specific System Settings pane (there are ${view.settingsPanes.length}, e.g. ${some.join(', ')}).` });
     }
     // Apps that are installed but not open: the closest name matches, plus the system's own.
     const running = new Set([...(view.runningApps ?? []), view.app].map(plain));
@@ -483,18 +578,35 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       options.push({ kind: 'open_app', ref: `app:${name}`, label: name, score: score(name) * 3,
         description: `Open the app ${name} (installed, not open yet).` });
     }
-    if (view.pid && this.#goal.windows) {
-      const actions: [string, string][] = [['minimize', 'minimise the front window to the Dock'],
-        ['left_half', 'move the front window to the left half of the screen'],
-        ['right_half', 'move the front window to the right half of the screen'],
-        ['maximize', 'make the front window fill the screen (not full-screen mode)'],
-        ['center', 'move the front window to the centre of the screen'],
-        ['fullscreen', 'make the front window full screen (or leave full screen)'],
-        ['zoom', 'zoom the front window to fill the screen'],
-        ...(this.#goal.quit ? [['close', 'close the front window (the app keeps running)'] as [string, string]] : []),
-        ['hide_app', `hide the app ${view.app}`]];
-      for (const [action, text] of actions) {
-        options.push({ kind: 'window_action', ref: action, label: text, description: `In ${view.app}: ${text}.`, score: score(text) });
+    if (this.#goal.windows) {
+      // Placement for the front window and for other windows of the same app or named in the
+      // request ("both VS Code windows side by side"); each is checked after it moves.
+      const PLACES: [string, string][] = [['left_half', 'to the left half of its screen'],
+        ['right_half', 'to the right half of its screen'], ['top_half', 'to the top half of its screen'],
+        ['bottom_half', 'to the bottom half of its screen'], ['maximize', 'to fill its screen (not full-screen mode)'],
+        ['center', 'to the centre of its screen'], ['next_display', 'to the other display (monitor), if there is one'],
+        ['mouse_display', 'to the display where the pointer is ("this monitor")']];
+      if (view.pid) {
+        // The front window is named too, so it reads like the other windows' options.
+        const front = `the front window${view.windowTitle ? ` (${view.app}'s “${view.windowTitle.slice(0, 60)}”)` : ''}`;
+        const actions: [string, string][] = [['minimize', `minimise ${front} to the Dock`],
+          ...PLACES.map(([action, where]) => [action, `move ${front} ${where}`] as [string, string]),
+          ['fullscreen', 'make the front window full screen (or leave full screen)'],
+          ['zoom', 'zoom the front window'],
+          ...(this.#goal.quit ? [['close', 'close the front window (the app keeps running)'] as [string, string]] : []),
+          ['hide_app', `hide the app ${view.app}`]];
+        for (const [action, text] of actions) {
+          options.push({ kind: 'window_action', ref: action, label: text, description: `In ${view.app}: ${text}.`, score: score(text) });
+        }
+      }
+      const others = (view.windows ?? []).filter(window => !isFrontWindow(window)
+        && (plain(window.app) === plain(view.app) || score(`${window.app} ${window.title}`) > 0)).slice(0, 6);
+      for (const window of others) {
+        const name = `${window.app}'s window “${(window.title || 'untitled').slice(0, 60)}”`;
+        for (const [action, where] of [...PLACES, ['minimize', 'to the Dock (minimise)'] as [string, string]]) {
+          options.push({ kind: 'window_action', ref: `${action}@${window.id}`, label: `move ${name} ${where}`,
+            description: `Move ${name} ${where}.`, score: score(`${window.app} ${window.title} ${where}`) });
+        }
       }
     }
     for (const name of (view.runningApps ?? []).slice(0, 20)) {
@@ -545,7 +657,7 @@ export class UniversalAgentTask implements PersistentTaskWorkflow {
       const base = { candidateId, description: option.description.slice(0, 1_200), preconditions: ['fresh_observation'],
         verifier: { kind: 'content_changed' }, delivery: 'semantic', riskPolicyRef: AGENT_POLICY,
         replayPolicy: 'only_if_not_applied' };
-      const candidate: Record<string, JSONValue> = ['focus_window', 'window_action', 'media', 'open_file', 'system'].includes(option.kind)
+      const candidate: Record<string, JSONValue> = ['focus_window', 'window_action', 'media', 'open_file', 'system', 'answer', 'open_settings'].includes(option.kind)
         ? { ...base, operation: 'invoke', targetRef: `${option.kind}:${option.ref}`.replace(/[^A-Za-z0-9_.:-]/gu, '-').slice(0, 160),
           parameters: {}, effects: ['NAVIGATE', 'EXTERNAL_WRITE'] }
         : option.kind === 'quit_app'
@@ -659,10 +771,29 @@ function role(axRole: string): string {
     ?? axRole.replace(/^AX/u, '').toLowerCase();
 }
 
+/** What a whole-Mac step changed, e.g. "; volume 50% → 60%". */
+function macChange(before: AgentSnapshot, after: AgentSnapshot | undefined): string {
+  const a = before.mac;
+  const b = after?.mac;
+  if (!a || !b) return '';
+  const parts = [a.darkMode !== b.darkMode ? `dark mode ${b.darkMode ? 'now on' : 'now off'}` : '',
+    a.wifiOn !== b.wifiOn ? `Wi‑Fi ${b.wifiOn ? 'now on' : 'now off'}` : '',
+    a.volume !== b.volume ? `volume ${a.volume}% → ${b.volume}%` : '',
+    a.muted !== b.muted ? (b.muted ? 'now muted' : 'now unmuted') : ''].filter(Boolean);
+  return parts.length ? `; ${parts.join(', ')}` : '';
+}
+
+/** The visible text of a screen, in reading order, for "read this to me". */
+function readable(view: AgentSnapshot): string {
+  return view.elements.filter(element => element.role === 'AXStaticText').map(element => element.label)
+    .join('. ').replace(/\.\s*\./gu, '.').slice(0, 3_000);
+}
+
 function describeKind(option: Option): string {
   switch (option.kind) {
     case 'press': return option.element?.role === 'AXTab' ? `switched to the tab “${option.label.slice(0, 60)}”`
-      : `clicked “${option.label}”`;
+      : `clicked “${option.label}”${option.element?.context && option.element.context !== option.label
+        ? ` (in “${option.element.context.slice(0, 80)}”)` : ''}`;
     case 'type': return `typed the user's text into “${option.label}”`;
     case 'key': return option.label.split(' (')[0]!.toLowerCase();
     case 'scroll': return option.label.toLowerCase();
@@ -677,6 +808,8 @@ function describeKind(option: Option): string {
     case 'media': return `pressed the media key to ${option.label}`;
     case 'open_file': return `opened the file or folder “${option.label}”`;
     case 'system': return option.label;
+    case 'answer': return `told the user “${option.label.slice(0, 80)}”`;
+    case 'open_settings': return `opened System Settings at “${option.label}”`;
     default: return 'finished';
   }
 }

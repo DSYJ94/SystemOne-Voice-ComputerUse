@@ -50,8 +50,36 @@ class Mac implements SimWorld {
   asleep = false;
   locked = false;
   placement = '';
+  said: string[] = [];
+  heard(text: string) { this.said.push(text); }
+  /** Where each window was put, by title (the front window when none is named). */
+  placements: Record<string, string> = {};
+  codeWindows = ['README.md — SystemOne'];
   installed() { return [...APPS, 'Calculator', 'Photos', 'Maps', 'TextEdit', 'Preview']; }
-  system(name: string) { if (name === 'sleep') this.asleep = true; if (name === 'lock') this.locked = true; }
+  brightness = 5;
+  wifi = true;
+  system(name: string) {
+    if (name === 'sleep') this.asleep = true;
+    if (name === 'lock') this.locked = true;
+    if (name === 'darkmode') this.appearance = this.appearance === 'Dark' ? 'Light' : 'Dark';
+    if (name === 'wifi_on' || name === 'wifi_off') this.wifi = name === 'wifi_on';
+  }
+  macState() { return { darkMode: this.appearance === 'Dark', wifiOn: this.wifi, volume: this.volume * 10, muted: this.volume === 0 }; }
+  /** The real Mac's pane names (as the executor reads them), including the odd internal ones. */
+  settingsPanes() {
+    return ['About', 'Appearance', 'Bluetooth', 'Control Centre', 'Desktop', 'Displays', 'Family', 'Keyboard', 'Language & Region',
+      'Lock Screen', 'Network', 'Notifications', 'PowerPreferences', 'Printers & Scanners', 'Privacy', 'Sharing', 'Siri',
+      'Sound', 'Spotlight', 'Storage', 'Touch ID & Password', 'TrackpadExtension', 'Wallpaper', 'Wi‑Fi', 'Battery']
+      .map(name => ({ id: `pane.${name.replace(/[^A-Za-z]/gu, '')}`, name }));
+  }
+  openSettings(id: string): boolean {
+    const pane = this.settingsPanes().find(item => item.id === id);
+    if (!pane) return false;
+    if (!this.apps.includes('System Settings')) this.apps.push('System Settings');
+    this.front = 'System Settings';
+    this.settingsPane = pane.name;
+    return true;
+  }
   /** The app the media keys control: whichever last played sound. */
   nowPlaying: 'Music' | 'Google Chrome' = 'Music';
 
@@ -95,12 +123,15 @@ class Mac implements SimWorld {
       Finder: this.finderFolder, Notes: 'Notes', 'System Settings': this.settingsPane, Slack: `#${this.slackChannel}`,
       Calendar: 'Calendar', Music: 'Music', Mail: 'Inbox', WhatsApp: 'WhatsApp', Code: 'README.md — SystemOne' };
     const order = [this.front, ...this.apps.filter(app => app !== this.front)].filter(app => this.apps.includes(app));
-    return order.map(app => ({ app, title: titles[app] ?? app, minimized: this.minimized.includes(app) }));
+    return order.flatMap(app => (app === 'Code' ? this.codeWindows : [titles[app] ?? app])
+      .map(title => ({ app, title, minimized: this.minimized.includes(app) })));
   }
 
   focusWindow(app: string) { this.minimized = this.minimized.filter(item => item !== app); this.front = app; }
 
   media(name: string) {
+    if (name === 'brightnessup') this.brightness = Math.min(10, this.brightness + 1);
+    if (name === 'brightnessdown') this.brightness = Math.max(0, this.brightness - 1);
     if (name === 'volumeup') this.volume = Math.min(10, this.volume + 1);
     if (name === 'volumedown') this.volume = Math.max(0, this.volume - 1);
     if (name === 'mute') this.volume = this.volume ? 0 : 5;
@@ -110,10 +141,16 @@ class Mac implements SimWorld {
     if (name === 'previous' && music) this.track = Math.max(0, this.track - 1);
   }
 
-  windowAction(action: string) {
+  windowAction(action: string, window?: string) {
+    const PLACES = ['left_half', 'right_half', 'top_half', 'bottom_half', 'maximize', 'center', 'next_display', 'mouse_display'];
+    if (PLACES.includes(action)) {
+      const title = window ?? this.windows()[0]?.title ?? '';
+      this.placements[title] = action;
+      if (!window) this.placement = action;
+      return;
+    }
     if (action === 'minimize' && this.front) { this.minimized.push(this.front); this.front = this.apps.find(app => app !== this.front && !this.minimized.includes(app)) ?? ''; }
     if (action === 'fullscreen') this.fullScreenWindow = !this.fullScreenWindow;
-    if (['left_half', 'right_half', 'maximize', 'center'].includes(action)) this.placement = action;
     if (action === 'hide_app' && this.front) this.front = this.apps.find(app => app !== this.front) ?? '';
   }
 
@@ -252,7 +289,7 @@ class Mac implements SimWorld {
       case 'Calendar': return { app: 'Calendar', bundleId: 'com.apple.iCal', windowTitle: `Calendar — ${this.calendarView}`,
         elements: ['Day', 'Week', 'Month', 'Year'].map(view => ({ role: 'AXRadioButton', label: view, context: 'view switcher',
           selected: this.calendarView === view, press: () => { this.calendarView = view; } })) };
-      case 'Code': return { app: 'Code', bundleId: 'com.microsoft.VSCode', windowTitle: 'README.md — SystemOne', elements: [
+      case 'Code': return { app: 'Code', bundleId: 'com.microsoft.VSCode', windowTitle: this.codeWindows[0]!, elements: [
         { role: 'AXMenuBarItem', label: 'Code', context: 'menu bar' },
         { role: 'AXMenuBarItem', label: 'File', context: 'menu bar' },
         { role: 'AXTab', label: 'README.md', context: 'editor tabs', selected: true },
@@ -513,6 +550,34 @@ const BASE: readonly Scenario[] = [
     mac => { mac.apps = mac.apps.filter(app => app !== 'System Settings'); }, mac => mac.front === 'System Settings'),
   scenario('window-left-half', 'move this window to the left half of the screen', mac => { mac.front = 'Notes'; },
     mac => mac.placement === 'left_half'),
+  // Owner feedback, 4 Oct: window halves that did not land, two windows side by side, "this monitor".
+  scenario('window-right-half', 'half this window to the right', mac => { mac.front = 'Code'; },
+    mac => mac.placement === 'right_half'),
+  scenario('two-windows-side-by-side', 'Take both vscode windows side by side with each occupying half of the monitor screen',
+    mac => { mac.front = 'Code'; mac.codeWindows = ['parity.py — duplex-live', 'README.md — SystemOne']; },
+    mac => { const places = mac.codeWindows.map(title => mac.placements[title]).sort();
+      return places[0] === 'left_half' && places[1] === 'right_half'; }),
+  scenario('window-this-monitor', 'move this window to this monitor', mac => { mac.front = 'Code'; },
+    mac => mac.placement === 'mouse_display'),
+  // Stage C: answers read from the screen (never made up), including after navigating there.
+  scenario('answer-amount', 'how much is the Acme invoice?', mac => { mac.openEmail = 'Acme Billing'; },
+    mac => mac.said.some(text => text.includes('£120.00')),
+    [{ url: 'https://mail.google.com/mail/u/0/#inbox', title: 'Acme Billing - Gmail' }]),
+  scenario('answer-after-navigating', 'what time does Sam want to have lunch?', () => {},
+    mac => mac.said.some(text => text.includes('12')),
+    [{ url: 'https://mail.google.com/mail/u/0/#inbox', title: 'Inbox (3) - Gmail' }]),
+  scenario('answer-other-app', 'what song is playing in Music?', mac => { mac.musicPlaying = true; mac.track = 2; },
+    mac => mac.said.some(text => text.includes('Track 3'))),
+  scenario('read-aloud', 'read this email to me', mac => { mac.openEmail = 'Sam Lee'; },
+    mac => mac.said.some(text => text.includes('lunch')),
+    [{ url: 'https://mail.google.com/mail/u/0/#inbox', title: 'Sam Lee - Gmail' }]),
+  // Whole Mac: any Settings pane by name (from the system's list), dark mode, brightness.
+  scenario('settings-pane-wifi', 'open wifi settings', () => {},
+    mac => mac.front === 'System Settings' && mac.settingsPane.startsWith('Wi')),
+  scenario('settings-pane-battery', 'show me my battery settings', mac => { mac.front = 'Code'; },
+    mac => mac.front === 'System Settings' && /battery|power/iu.test(mac.settingsPane)),
+  scenario('dark-mode-anywhere', 'switch to dark mode', () => {}, mac => mac.appearance === 'Dark'),
+  scenario('brightness-up', 'make the screen brighter', () => {}, mac => mac.brightness > 5),
   scenario('dictate-reply', 'reply to Sam saying I will be late', () => {},
     mac => mac.openEmail === 'Sam Lee' && mac.replyBody === 'I will be late',
     [{ url: 'https://mail.google.com/mail/u/0/#inbox', title: 'Inbox (3) - Gmail' }]),
@@ -545,6 +610,14 @@ const PARAPHRASES: Readonly<Record<string, readonly string[]>> = {
   'sleep-mac': ['sleep the computer', 'make my mac go to sleep'],
   'open-settings-not-running': ['go to settings', 'I need the system settings app'],
   'window-left-half': ['snap this window to the left', 'put this on the left half'],
+  'window-right-half': ['move this window to the right half', 'put this on the right side of the screen'],
+  'two-windows-side-by-side': ['put my two vscode windows side by side'],
+  'settings-pane-wifi': ['take me to the wi-fi settings', 'wifi preferences'],
+  'settings-pane-battery': ['battery settings please'],
+  'dark-mode-anywhere': ['make everything dark', 'turn on night mode'],
+  'answer-amount': ['whats the amount due on this invoice', 'tell me how much I owe Acme'],
+  'answer-after-navigating': ['when is lunch with sam'],
+  'window-this-monitor': ['come to this monitor', 'bring this window over to this screen'],
 };
 
 export const SCENARIOS: readonly Scenario[] = BASE.map(item => {

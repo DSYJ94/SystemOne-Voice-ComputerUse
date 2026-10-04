@@ -44,7 +44,7 @@ await Promise.all(Array.from({ length: 4 }, async () => {
     results.push(result);
     process.stdout.write(`${result.success && !result.harmed ? 'PASS' : 'FAIL'}  ${result.name.padEnd(26)} `
       + `${String(result.steps.length).padStart(2)} steps ${String(result.ms).padStart(6)} ms  ${result.state}`
-      + `${result.harmed ? '  HARMED' : ''}\n${result.success && !result.harmed ? '' : `      ${result.steps.join(' → ')}\n`}`);
+      + `${result.harmed ? '  HARMED' : ''}\n${result.success && !result.harmed && !process.env.VERBOSE ? '' : `      ${result.steps.join(' → ')}\n`}`);
   }
 }));
 const passed = results.filter(result => result.success && !result.harmed).length;

@@ -66,9 +66,15 @@ export interface SimWorld {
   windows?(): readonly { readonly app: string; readonly title: string; readonly minimized?: boolean }[];
   focusWindow?(app: string): void;
   media?(name: string): void;
-  windowAction?(action: string): void;
+  /** `window` is the listed window's title when a specific window was chosen. */
+  windowAction?(action: string, window?: string): void;
   openFile?(name: string): boolean;
   system?(name: string): void;
+  settingsPanes?(): readonly { readonly id: string; readonly name: string }[];
+  macState?(): { darkMode: boolean; wifiOn: boolean; volume: number; muted: boolean };
+  openSettings?(id: string): boolean;
+  /** What SystemOne told the user (answers, read-outs). */
+  heard?(text: string): void;
   installed?(): readonly string[];
   /** Regular apps running now (defaults to the scenario's app list). */
   running?(): readonly string[];
@@ -122,6 +128,8 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
             elements.map(item => [item.role, item.label, item.value, item.selected])]),
           ...(screen?.scrollY !== undefined ? { scrollY: screen.scrollY } : {}),
           frontmost: true, installedApps: [...(world.installed?.() ?? scenario.apps)],
+          settingsPanes: [...(world.settingsPanes?.() ?? [])].map(pane => ({ ...pane })),
+          ...(world.macState ? { mac: world.macState() } : {}),
           windows: (windows = [...(world.windows?.() ?? [])]).map((item, index) => ({ id: `w${index}`, app: item.app,
             title: item.title, ...(item.minimized ? { minimized: true } : {}), front: index === 0 && item.app === screen?.app })),
           runningApps: (world.running?.() ?? scenario.apps).filter(name => name !== screen?.app) };
@@ -143,7 +151,13 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
       }
       case 'media': world.media ? world.media(String(request.name)) : ok = false; break;
       case 'system': world.system ? world.system(String(request.name)) : ok = false; break;
-      case 'window_action': world.windowAction ? world.windowAction(String(request.action)) : ok = false; break;
+      case 'open_settings': ok = world.openSettings?.(String(request.id)) ?? false; break;
+      case 'window_action': {
+        const listed = typeof request.window === 'string' && request.window ? windows[Number(request.window.slice(1))] : undefined;
+        if (!world.windowAction || (request.window && !listed)) { ok = false; break; }
+        world.windowAction(String(request.action), listed?.title);
+        break;
+      }
       case 'open_file': ok = world.openFile?.(String(request.name)) ?? false; break;
       case 'quit_app': if (world.quitApp && (world.running?.() ?? scenario.apps).includes(String(request.name))) {
         world.quitApp(String(request.name));
@@ -170,7 +184,8 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
   const command = input.accept(endpoint, Buffer.from(JSON.stringify({ ...structuredClone(schema.examples[0]),
     ...revision, messageId: 'm', utteranceId: 'u', source: 'voice', text: scenario.goal }))).input;
   const made = decision(scenario.goal);
-  const goal = await refineGoal(command.text, parseAgentGoal(command.text, scenario.apps), made.pickSpan?.bind(made));
+  const goal = await refineGoal(command.text, parseAgentGoal(command.text, scenario.apps), made.pickSpan?.bind(made),
+    made.asksForAnswer?.bind(made));
   const registry = new TaskAdmissionRegistry(revision, input);
   const admission = registry.admit(command, { admissionId: 'a', goal: command.text, outcomeKind: 'USER_CONFIRMATION',
     scopeRef: 'agent-session:eval', completionVerifierRef: AGENT_VERIFIER, policyRevision: AGENT_POLICY,
@@ -180,6 +195,7 @@ export async function runScenario(scenario: Scenario, decision: (goal: string) =
   let done = 0;
   const task = UniversalAgentTask.start(journal, registry, admission, client, { goal, decision: made,
     trace: event => { if (event.kind === 'step') done = Number(event.done ?? 0); },
+    say: text => world.heard?.(text),
     confirmation: { async confirm(proposal: AgentProposal) {
       steps.push(`${proposal.kind} “${proposal.label.slice(0, 60)}”${proposal.risky ? ' (risky)' : ''} [done ${done}]`);
       // Risky steps are declined unless the run allows them, like a user saying no.

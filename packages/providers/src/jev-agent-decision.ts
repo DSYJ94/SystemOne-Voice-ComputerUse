@@ -42,18 +42,25 @@ export function createJevAgentDecision(options: {
       return answer;
     } });
   const client = new CLMDecisionClient(POLICY, PROVIDER, CALIBRATION, transport, JEV_CODEC);
+  // Set once per task by asksForAnswer; then every step knows the user wants to be told something.
+  let wantsAnswer = false;
   const describeState = (view: AgentSnapshot, history: readonly string[], origin?: string) => {
     const tabs = view.elements.filter(element => element.role === 'AXTab' && element.closable);
     const where = (view.pid ? `Current app: ${view.app}${view.frontmost === false ? ' (open, but behind other windows: not in front)' : ''}, window “${view.windowTitle || 'untitled'}”${
       view.url ? `, showing ${view.url}` : ''}.` : 'No app window is in front yet.')
       + (typeof view.scrollY === 'number' ? view.scrollY <= 0 ? ' The page is scrolled to the very top.'
         : ` The page is scrolled ${view.scrollY} pixels down from the top.` : '')
+      + (view.mac ? ` The Mac: ${[view.mac.darkMode === undefined ? '' : `dark mode ${view.mac.darkMode ? 'on' : 'off'}`,
+        view.mac.wifiOn === undefined ? '' : `Wi‑Fi ${view.mac.wifiOn ? 'on' : 'off'}`,
+        view.mac.volume === undefined ? '' : `volume ${view.mac.volume}%${view.mac.muted ? ' (muted)' : ''}`].filter(Boolean).join(', ')}.` : '')
       + (tabs.length ? ` Open browser tabs: ${tabs.map(tab => `“${tab.label.slice(0, 50)}”${tab.selected ? ' (current)' : ''}`)
         .join(', ')}.` : '')
       + (view.runningApps?.length ? ` Other open apps: ${view.runningApps.slice(0, 20).join(', ')}.` : '');
     return ((options.context ? `A previous, separate request (already over; do not redo it): ${options.context} ` : '') + `Goal: ${options.goal}.${
       origin ? ` When the user asked, they were in ${origin}; “this”/“the current” in the goal means that.` : ''} ${where}`
       + (history.length ? ` Done so far: ${history.slice(-12).join(' ')}` : ' Nothing has been done yet.')
+      + (wantsAnswer ? ' The user asked to be told something: if the answer is in the text on screen, tell it to them'
+        + ' (a "Tell the user" option); only if it is not visible, go to where it is.' : '')
       + ' Prefer the most direct step; never undo a step that already did what was asked.').slice(0, 24_000);
   };
   const project = (set: BuiltCandidateSet, view: AgentSnapshot, history: readonly string[], origin?: string) =>
@@ -62,6 +69,17 @@ export function createJevAgentDecision(options: {
   const decision: AgentDecision = {
     /** Separate yes/no judgment of completion, from the same state the chooser sees. */
     async done(view, signal, history, origin) {
+      const told = history.flatMap(item => /^Told the user: “(.*)”\.$/u.exec(item)?.[1] ?? []);
+      if (wantsAnswer && told.length) {
+        // A question is done when it has been answered, not when the screen looks a certain way.
+        const answered = { projectionRevision: 'agent-answered-v1',
+          stateText: `The user asked: “${options.goal.slice(0, 600)}”. SystemOne told them: ${told.map(text => `“${text}”`).join(', ')}.`,
+          questionText: 'Has the user\'s question been fully answered?',
+          candidates: [{ candidateId: 'done', description: 'Yes. What they were told answers everything they asked.' },
+            { candidateId: 'not_done', description: 'No. Part of what they asked has not been answered yet.' }] };
+        const raw = await transport.send(encodeJevProviderView(answered), signal);
+        return decodeJevChoice(raw, answered).probabilities.done ?? 0;
+      }
       const providerView = { projectionRevision: 'agent-done-v1', stateText: describeState(view, history, origin),
         questionText: 'Has everything the user asked for already happened, so nothing else needs to be done?',
         candidates: [
@@ -101,6 +119,36 @@ export function createJevAgentDecision(options: {
       }
       const [best] = await ask(finalists);
       return !best || best[0] === 'none' ? null : Number(best[0].slice(1));
+    },
+    async findAnswer(view, texts, signal, history, origin) {
+      // Framing chosen by measurement (8/9 on a labelled probe, incl. every "not on screen" case);
+      // the full step state made Jev answer "none" even when the answer was visible.
+      const providerView = { projectionRevision: 'agent-answer-v3',
+        stateText: `The user asked: “${options.goal.slice(0, 600)}”. These texts are on screen.`,
+        questionText: 'Which text contains the information the user asked for?',
+        candidates: [...texts.map((text, index) => ({ candidateId: `t${index}`, description: `This text contains it: “${text.slice(0, 300)}”.` })),
+          { candidateId: 'none', description: 'The information is not in any of these texts.' }] };
+      const raw = await transport.send(encodeJevProviderView(providerView), signal);
+      const [best] = Object.entries(decodeJevChoice(raw, providerView).probabilities).sort((a, b) => b[1] - a[1]);
+      return best && best[0] !== 'none' && best[1] >= 0.5 ? Number(best[0].slice(1)) : null;
+    },
+    async chooseOne(question, items, signal) {
+      const providerView = { projectionRevision: 'agent-choose-v1', stateText: `The user said: “${options.goal.slice(0, 600)}”`,
+        questionText: question, candidates: [...items.slice(0, 63).map((item, index) => ({ candidateId: `i${index}`,
+          description: `“${item.slice(0, 200)}”, the one that fits.` }))] };
+      const raw = await transport.send(encodeJevProviderView(providerView), signal);
+      const [best] = Object.entries(decodeJevChoice(raw, providerView).probabilities).sort((a, b) => b[1] - a[1]);
+      return best && best[1] >= 0.2 ? Number(best[0].slice(1)) : null;
+    },
+    async asksForAnswer(request, signal) {
+      const view = { projectionRevision: 'agent-intent-v1', stateText: `The user said: “${request.slice(0, 1_200)}”`,
+        questionText: 'Does the user want to be told something (an answer, a value, or text read out), or want something done on the computer?',
+        candidates: [
+          { candidateId: 'answer', description: 'Only told something: a question to answer or something to read out; nothing on the computer needs to be opened, played, typed, sent or changed.' },
+          { candidateId: 'act', description: 'Something done on the computer (open, play, click, type, send, move, change), even if it also involves finding something first.' }] };
+      const raw = await transport.send(encodeJevProviderView(view), signal ?? AbortSignal.timeout(15_000));
+      wantsAnswer = (decodeJevChoice(raw, view).probabilities.answer ?? 0) >= 0.5;
+      return wantsAnswer;
     },
     async bestActions(set, view, signal, history, origin) {
       const proposal = await client.decide(set, project(set, view, history, origin), signal);

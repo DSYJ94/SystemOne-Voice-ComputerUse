@@ -31,6 +31,8 @@ export interface AgentGoal {
   readonly quit: boolean;
   /** The request asks to write or reply but gives no words to write. */
   readonly needsText: boolean;
+  /** The user wants to be told something (a question, "read this to me"), decided by the model. */
+  readonly wantsAnswer: boolean;
   /** The request asks for a new tab; otherwise a browser navigates the tab in front. */
   readonly newTab: boolean;
 }
@@ -109,9 +111,9 @@ export function parseAgentGoal(text: string, apps: readonly string[]): AgentGoal
     typedText = { text: value, start, end: start + Buffer.byteLength(value, 'utf8') };
   }
   const clipboard = /\b(?:copy|paste|clipboard)\b/iu.test(text);
-  return Object.freeze({ typedText, fileName: null, quoted: !!quoted, url, app, clipboard, undo: /\bundo\b/iu.test(text),
+  return Object.freeze({ typedText, fileName: null, quoted: !!quoted, wantsAnswer: false, url, app, clipboard, undo: /\bundo\b/iu.test(text),
     wantsFile: FILE_WORDS.test(text),
-    windows: /\b(?:windows?|minimi[sz]e|maximi[sz]e|full ?screen|zoom|hide|close|quit|half|move|resize|bigger|smaller|cent(?:er|re)|side)\b/iu.test(text),
+    windows: /\b(?:windows?|minimi[sz]e|maximi[sz]e|full ?screen|zoom|hide|close|quit|half|move|resize|bigger|smaller|cent(?:er|re)|side|monitor|display|screen)\b/iu.test(text),
     quit: /\b(?:quit|close|exit|shut|kill|terminate|get rid of|log ?out|sign ?out)\b/iu.test(text),
     newTab: /\bnew tab\b/iu.test(text),
     needsText: !typedText && !clipboard
@@ -146,8 +148,10 @@ export type SpanRole = 'typed' | 'file';
  * what the user said. Natural speech without "and" or commas then works, and typed
  * text is still always the user's own words. */
 export async function refineGoal(text: string, goal: AgentGoal,
-  pick: ((request: string, role: SpanRole, spans: readonly string[]) => Promise<number | null>) | undefined): Promise<AgentGoal> {
-  if (!pick) return goal;
+  pick: ((request: string, role: SpanRole, spans: readonly string[]) => Promise<number | null>) | undefined,
+  asks?: (request: string) => Promise<boolean>): Promise<AgentGoal> {
+  const answer = asks ? asks(text).catch(() => false) : Promise.resolve(false);
+  if (!pick) return Object.freeze({ ...goal, wantsAnswer: await answer });
   const spans = spanCandidates(text);
   const choose = async (role: SpanRole, fallback: Span | null) => {
     if (!spans.length) return fallback;
@@ -160,7 +164,7 @@ export async function refineGoal(text: string, goal: AgentGoal,
     goal.quoted ? Promise.resolve(goal.typedText) : choose('typed', goal.typedText),
     goal.wantsFile ? choose('file', null) : Promise.resolve(null),
   ]);
-  return Object.freeze({ ...goal, typedText, fileName,
+  return Object.freeze({ ...goal, typedText, fileName, wantsAnswer: await answer,
     needsText: !typedText && !goal.clipboard && goal.needsText });
 }
 

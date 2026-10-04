@@ -1357,8 +1357,8 @@ export class NativeManagedController {
           if (local.status !== 'failed') this.#send(request.requestId, 'local_model_preparing');
         }
       }
-      const goal = await refineGoal(route.input.text, parsed, pick);
-      trace?.({ kind: 'understanding', by: understanding, typed: goal.typedText?.text ?? null,
+      const goal = await refineGoal(route.input.text, parsed, pick, decision.asksForAnswer?.bind(decision));
+      trace?.({ kind: 'understanding', by: understanding, answer: goal.wantsAnswer, typed: goal.typedText?.text ?? null,
         file: goal.fileName?.text ?? null });
       if (active.cancelled) return;
       // "Reply in the chat" with no words: ask, rather than guess or wander.
@@ -1373,6 +1373,7 @@ export class NativeManagedController {
       const initialView = await firstView;
       const task = UniversalAgentTask.start(this.#journal, registry, admission, this.#agentAX, { goal, decision,
         ...(initialView ? { initialView } : {}),
+        say: text => { this.#chromeOutput?.({ type: 'agent_answer', requestId: request.requestId, text: text.slice(0, 3_000) }); },
         ...(trace ? { trace } : {}),
         confirmation: { confirm: (proposal, signal) => this.#awaitConfirmation(request.requestId, proposal, signal) } });
       agentTask = task;
