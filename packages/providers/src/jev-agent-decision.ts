@@ -85,6 +85,8 @@ export function createJevAgentDecision(options: {
         const raw = await transport.send(encodeJevProviderView(answered), signal);
         return decodeJevChoice(raw, answered).probabilities.done ?? 0;
       }
+      // A focused state was tried (4 Oct) and declared success too early on multi-step tasks
+      // (window moves, scrolling): 144/157 vs 148/157 with the full state, so the full state stays.
       const providerView = { projectionRevision: 'agent-done-v1', stateText: describeState(view, history, origin),
         questionText: 'Has everything the user asked for already happened, so nothing else needs to be done?',
         candidates: [

@@ -17,6 +17,8 @@ native_dev_sources=(
   "$repository_root/apps/native-dev/BrowserDOM.swift"
   "$repository_root/apps/native-dev/ActivityHighlight.swift"
   "$repository_root/apps/native-dev/TalkShortcut.swift"
+  "$repository_root/apps/native-dev/Earcons.swift"
+  "$repository_root/apps/native-dev/BarControls.swift"
   "$repository_root/packages/protocol/swift/Sources/PeerIdentity/PeerIdentity.swift"
   "$repository_root/packages/protocol/swift/Sources/ProtocolDigest/CanonicalJSON.swift"
   "$repository_root/packages/native-ax/Sources/NativeAX/Observation.swift"

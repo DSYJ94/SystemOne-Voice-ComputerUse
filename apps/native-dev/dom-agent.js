@@ -5,7 +5,10 @@
 // in Accessibility terms so the agent describes web and native apps alike.
 function systemOneDomAgent(req) {
   const MAX = 220, MAX_TEXTS = 60;
-  const clean = text => String(text || '').replace(/\s+/g, ' ').trim();
+  // Icon fonts draw glyphs from Unicode's private-use areas (e.g. \ue488); they mean nothing
+  // as words, so they are removed like control characters.
+  const clean = text => String(text || '').replace(/[\ue000-\uf8ff\u{f0000}-\u{10ffff}\u0000-\u001f\u200b-\u200f]/gu, '')
+    .replace(/\s+/g, ' ').trim();
   const isField = el => el.isContentEditable || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT'
     || (el.tagName === 'INPUT' && !['button', 'submit', 'reset', 'checkbox', 'radio', 'image', 'file', 'hidden', 'range', 'color']
       .includes((el.type || 'text').toLowerCase()))
@@ -22,7 +25,8 @@ function systemOneDomAgent(req) {
     const tag = el.tagName;
     const type = (el.type || '').toLowerCase();
     if (role === 'tab') return 'AXTab';
-    if (role === 'menuitem' || role === 'option') return 'AXMenuItem';
+    if (['treeitem', 'row', 'gridcell', 'option', 'listitem'].includes(role)) return 'AXRow';
+    if (role === 'menuitem' || role === 'menuitemcheckbox' || role === 'menuitemradio') return 'AXMenuItem';
     if (role === 'checkbox' || role === 'switch' || type === 'checkbox') return 'AXCheckBox';
     if (role === 'radio' || type === 'radio') return 'AXRadioButton';
     if (tag === 'SELECT' || role === 'combobox' || role === 'listbox') return 'AXPopUpButton';
@@ -40,8 +44,13 @@ function systemOneDomAgent(req) {
     const buttonValue = el.tagName === 'INPUT' && ['submit', 'button'].includes(el.type) ? el.value : '';
     const own = el.tagName === 'SELECT' ? '' : (el.innerText || el.textContent);
     // First source that says something: sites sometimes put "true", "null" or a bare id in aria-label.
+    // An icon-only control is often named by its tooltip, an inner icon's label, or a labelled wrapper.
+    const inner = el.querySelector('[aria-label],[title],img[alt],svg title');
+    const innerLabel = inner ? (inner.getAttribute('aria-label') || inner.getAttribute('title') || inner.getAttribute('alt')
+      || inner.textContent) : '';
     const sources = [el.getAttribute('aria-label'), byId, fieldLabel, el.getAttribute('title'),
-      el.getAttribute('placeholder'), el.getAttribute('alt'), buttonValue, (el.querySelector('img[alt]') || {}).alt, own];
+      el.getAttribute('placeholder'), el.getAttribute('alt'), buttonValue, own, innerLabel,
+      el.getAttribute('data-tooltip'), el.getAttribute('aria-description')];
     const meaningful = text => text && !/^(?:true|false|null|undefined|nan|on|off|[-_.#\s]+)$/i.test(text);
     return (sources.map(item => clean(item || '')).find(meaningful) || '').slice(0, 120);
   };
@@ -56,9 +65,13 @@ function systemOneDomAgent(req) {
   const fail = error => JSON.stringify({ ok: false, error });
 
   if (req.op === 'snapshot') {
-    const selector = 'a[href],button,input:not([type=hidden]),textarea,select,summary,[role=button],[role=link],[role=tab],'
-      + '[role=menuitem],[role=option],[role=checkbox],[role=radio],[role=switch],[role=combobox],[role=searchbox],'
-      + '[role=textbox],[contenteditable=""],[contenteditable=true],[onclick]';
+    // Every interactive ARIA role (tree items in folder lists, rows and options in message
+    // lists, grid cells…), plus anything reachable with the keyboard.
+    const selector = 'a[href],button,input:not([type=hidden]),textarea,select,summary,'
+      + ['button', 'link', 'tab', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'checkbox', 'radio', 'switch',
+        'combobox', 'searchbox', 'textbox', 'treeitem', 'row', 'gridcell', 'slider', 'spinbutton']
+        .map(role => `[role=${role}]`).join(',')
+      + ',[contenteditable=""],[contenteditable=true],[onclick],[tabindex]:not([tabindex="-1"])';
     const registry = [];
     const elements = [];
     let truncated = false;
@@ -72,7 +85,16 @@ function systemOneDomAgent(req) {
       const type = (el.type || '').toLowerCase();
       const secure = type === 'password';
       const field = isField(el) && !el.readOnly && el.tagName !== 'SELECT';
-      const entry = { id: `d${registry.length}`, role: roleOf(el), label, context: contextOf(el),
+      // Items in a list say where they are ("item 1 of 25"), so "the latest" or "the second" can be judged.
+      const item = el.closest('[role=row],[role=option],[role=treeitem],[role=listitem],li,tr,article');
+      let position = '';
+      if (item && item.parentElement) {
+        const peers = [...item.parentElement.children].filter(peer => peer.tagName === item.tagName
+          && (peer.getAttribute('role') || '') === (item.getAttribute('role') || ''));
+        if (peers.length > 2) position = `item ${peers.indexOf(item) + 1} of ${peers.length}`;
+      }
+      const context = [contextOf(el), position].filter(Boolean).join(' · ');
+      const entry = { id: `d${registry.length}`, role: roleOf(el), label, context,
         editable: field && !secure, secure, pressable: !field || el.tagName === 'SELECT' };
       if (field && !secure) entry.value = clean(el.isContentEditable ? el.innerText : el.value).slice(0, 80);
       if (el.tagName === 'SELECT' && el.selectedOptions[0]) entry.value = clean(el.selectedOptions[0].text);
@@ -105,11 +127,33 @@ function systemOneDomAgent(req) {
   if (req.op === 'scroll') { scrollBy({ top: (req.down ? 1 : -1) * innerHeight * 0.8, behavior: 'instant' }); return ok(); }
   if (!el || !el.isConnected) return fail('stale element');
   el.scrollIntoView({ block: 'center', inline: 'nearest' });
+  if (req.op === 'changed') {
+    // Whether the page reacted to the last press (DOM changes or navigation).
+    const watch = window.__systemoneWatch || {};
+    if (watch.observer) watch.observer.disconnect();
+    return ok({ mutations: watch.mutations || 0, moved: location.href !== watch.href });
+  }
   if (req.op === 'press') {
     if (el.tagName === 'SELECT') { el.focus(); return ok(); }
+    const watch = { mutations: 0, href: location.href };
+    watch.observer = new MutationObserver(records => { watch.mutations += records.length; });
+    watch.observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+    window.__systemoneWatch = watch;
     el.focus({ preventScroll: true });
+    // The whole pointer sequence: many apps (Gmail, Outlook) act on pointer/mouse down, not on click().
+    const r = el.getBoundingClientRect();
+    const at = { bubbles: true, cancelable: true, composed: true, view: window, clientX: r.left + r.width / 2,
+      clientY: r.top + r.height / 2, button: 0, buttons: 1, pointerId: 1, pointerType: 'mouse', isPrimary: true };
+    el.dispatchEvent(new PointerEvent('pointerdown', at));
+    el.dispatchEvent(new MouseEvent('mousedown', at));
+    el.dispatchEvent(new PointerEvent('pointerup', { ...at, buttons: 0 }));
+    el.dispatchEvent(new MouseEvent('mouseup', { ...at, buttons: 0 }));
     el.click();
-    return ok();
+    // Where it is on screen, for a real mouse click if the page ignores synthetic events.
+    // Page zoom scales CSS pixels; the browser's own bars sit above the page.
+    const zoom = outerWidth / innerWidth;
+    const chrome = Math.max(0, outerHeight - innerHeight * zoom);
+    return ok({ x: screenX + (r.left + r.width / 2) * zoom, y: screenY + chrome + (r.top + r.height / 2) * zoom });
   }
   if (req.op === 'copy') {
     const text = clean(isField(el) ? (el.value || el.innerText) : el.innerText || el.textContent);

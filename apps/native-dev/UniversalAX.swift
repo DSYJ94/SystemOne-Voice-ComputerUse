@@ -335,11 +335,24 @@ final class UniversalAX {
 
     // MARK: act
 
-    func press(_ id: String) throws {
+    func press(_ id: String) async throws {
         if id.hasPrefix("t"), let bundle = domBundle, let index = Int(id.dropFirst()) {
             try dom.activateTab(bundle, index); return
         }
-        if id.hasPrefix("d"), let bundle = domBundle { _ = try dom.run(bundle, ["op": "press", "id": id]); return }
+        if id.hasPrefix("d"), let bundle = domBundle {
+            let reply = try dom.run(bundle, ["op": "press", "id": id])
+            // Some pages ignore synthetic events. If nothing on the page reacted, click for real
+            // at the element's place on screen, as a person would.
+            try await Task.sleep(for: .milliseconds(300))
+            let check = (try? dom.run(bundle, ["op": "changed"]))?["value"] as? [String: Any]
+            let reacted = (check?["mutations"] as? Int ?? 1) > 0 || (check?["moved"] as? Bool ?? false)
+            if !reacted, let point = reply["value"] as? [String: Any],
+               let x = (point["x"] as? NSNumber)?.doubleValue, let y = (point["y"] as? NSNumber)?.doubleValue {
+                try activateTarget()
+                click(at: CGPoint(x: x, y: y))
+            }
+            return
+        }
         guard let element = elements[id] else { throw AXError.stale }
         if AXUIElementPerformAction(element, kAXPressAction as CFString) == .success { return }
         guard let box = frame(of: element) else { throw AXError.actionFailed }

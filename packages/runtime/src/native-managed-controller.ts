@@ -1358,6 +1358,11 @@ export class NativeManagedController {
         }
       }
       const goal = await refineGoal(route.input.text, parsed, pick, decision.asksForAnswer?.bind(decision));
+      // The bar shows who understood the request and what will be typed (Qwen on this Mac or Jev).
+      this.#chromeOutput?.({ type: 'agent_understanding', requestId: request.requestId,
+        by: understanding === 'local' ? 'local' : request.understanding === 'local'
+          ? (localUnderstanding().status === 'failed' ? 'local_failed' : 'local_installing') : 'jev',
+        typed: goal.typedText?.text ?? null, problem: localUnderstanding().problem.slice(0, 120) });
       trace?.({ kind: 'understanding', by: understanding, answer: goal.wantsAnswer, typed: goal.typedText?.text ?? null,
         file: goal.fileName?.text ?? null });
       if (active.cancelled) return;

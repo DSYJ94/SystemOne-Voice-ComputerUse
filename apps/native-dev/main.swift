@@ -135,6 +135,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
     /// 👍/👎 after a task: the label that makes its private trace useful for training.
     private var feedbackRow: NSStackView?
     private weak var runButton: NSButton?
+    private var understandingLabel: NSTextField?
     private weak var stopButton: NSButton?
     /// Outline around the window Jev is acting on, on whichever display it is.
     private let highlight = ActivityHighlight()
@@ -276,7 +277,6 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
         // the Dock. Release packaging will use the agent-app lifecycle.
         NSApp.setActivationPolicy(.regular)
         installMainMenu()
-        voice.enabled = UserDefaults.standard.object(forKey: "speakReplies") as? Bool ?? true
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "S1 Dev"
         let menu = NSMenu()
@@ -366,7 +366,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
                                      .canJoinAllSpaces, .fullScreenAuxiliary]
         window.isOpaque = false
         window.backgroundColor = .clear
-        window.hasShadow = true
+        // The glass draws its own edge; a window shadow showed as a square outline around it.
+        window.hasShadow = false
         window.isMovableByWindowBackground = true
         window.onCancel = { [weak self, weak window] in
             guard let self else { return }
@@ -379,7 +380,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
         let surface: NSView
         if #available(macOS 26.0, *) {
             let glass = NSGlassEffectView()
-            glass.cornerRadius = 26
+            glass.style = .clear
+            glass.cornerRadius = 28
             glass.contentView = content
             surface = glass
         } else {
@@ -412,38 +414,35 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
             button.toolTip = label
             return button
         }
-        let talk = NSButton()
-        talk.isBordered = false
-        talk.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Talk")?
-            .withSymbolConfiguration(.init(pointSize: 22, weight: .medium))
-        talk.contentTintColor = .controlAccentColor
-        talk.setAccessibilityLabel("Talk: click to start, click again to finish")
-        talk.toolTip = "Click to talk, click again when done (speech stays on this Mac)"
+        let talk = OrbButton(symbol: "mic.fill", label: "Talk (click to start, click again to finish)", style: .accent, diameter: 40)
         talk.target = self
         talk.action = #selector(toggleTalk)
         micButton = talk
-        let field = NSTextField()
+        // Wraps and grows as words arrive, so a long spoken request stays fully visible.
+        let field = GrowingTextField()
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
         field.font = .systemFont(ofSize: 19)
+        field.cell?.wraps = true
+        field.cell?.isScrollable = false
+        field.usesSingleLineMode = false
+        field.lineBreakMode = .byWordWrapping
         field.placeholderString = "Tell SystemOne what to do…"
         field.setAccessibilityLabel("Task request")
         field.target = self
         field.action = #selector(runTaskRequest)
         field.cell?.sendsActionOnEndEditing = false
         taskField = field
-        let more = symbolButton("gearshape", "Settings", size: 18)
+        let more = OrbButton(symbol: "slider.horizontal.3", label: "Settings", style: .glass, diameter: 30)
         more.target = self
         more.action = #selector(showSettings(_:))
-        let run = symbolButton("arrow.up.circle.fill", "Run", size: 26)
-        run.contentTintColor = .controlAccentColor
+        let run = OrbButton(symbol: "arrow.up", label: "Run", style: .accent, diameter: 32)
         run.target = self
         run.action = #selector(runTaskRequest)
         runButton = run
         // Run and Stop share a place: Stop shows only while a task runs.
-        let stopButton = symbolButton("stop.circle.fill", "Stop", size: 26)
-        stopButton.contentTintColor = .secondaryLabelColor
+        let stopButton = OrbButton(symbol: "stop.fill", label: "Stop", style: .danger, diameter: 32)
         stopButton.target = self
         stopButton.action = #selector(stop)
         stopButton.isHidden = true
@@ -457,7 +456,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
             "Hold \(talkShortcut.display) to talk, or type and press Return.")
         status.font = .systemFont(ofSize: 12)
         status.textColor = .secondaryLabelColor
-        status.maximumNumberOfLines = 2
+        status.maximumNumberOfLines = 4
+        status.preferredMaxLayoutWidth = 620
         status.setAccessibilityLabel("Task status")
         commandStatus = status
         let target = NSTextField(labelWithString: "")
@@ -522,7 +522,14 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
         reasonStack.spacing = 4
         reasonStack.isHidden = true
         reasonRow = reasonStack
-        let stack = NSStackView(views: [bar, footer, approvals, feedback, reasonStack, target])
+        let understanding = NSTextField(labelWithString: "")
+        understanding.font = .systemFont(ofSize: 11, weight: .medium)
+        understanding.textColor = .tertiaryLabelColor
+        understanding.lineBreakMode = .byTruncatingTail
+        understanding.isHidden = true
+        understanding.setAccessibilityLabel("Who understood the request")
+        understandingLabel = understanding
+        let stack = NSStackView(views: [bar, footer, approvals, feedback, reasonStack, understanding, target])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
@@ -544,6 +551,8 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
             stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 20),
             bar.widthAnchor.constraint(equalTo: stack.widthAnchor),
             footer.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),
+            understanding.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),
+            reasonStack.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),
             target.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor),
         ])
         speech.onText = { [weak self] text, isFinal in
@@ -686,7 +695,16 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
             section("Voice", [
                 row("Push to talk", "Hold to talk, let go to run. Click to change.", shortcutControls,
                     note: { [weak self] label in self?.shortcutNote = label }),
-                row("Speak replies", "Says “Done”, answers and questions out loud.", toggle(voice.enabled, #selector(toggleSpeakReplies(_:)))),
+                row("Replies", SpokenReplies.hasNaturalVoice
+                        ? "Sounds for done or not; answers and questions spoken in \(SpokenReplies.voiceDescription)."
+                        : "Sounds for done or not; answers spoken in \(SpokenReplies.voiceDescription). Get a natural voice below.",
+                    replyPicker()),
+                row("Voice", SpokenReplies.voiceDescription, {
+                    let button = NSButton(title: "Get Better Voices…", target: self, action: #selector(openVoiceSettings))
+                    button.bezelStyle = .inline
+                    button.controlSize = .small
+                    return button
+                }()),
                 row("Speech recognition", "Runs on this Mac.", status(speech.isAuthorized, "On", fix: "Turn On", #selector(enableVoice))),
             ]),
             section("Display", [
@@ -753,10 +771,32 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
         UserDefaults.standard.set(autoAllowSession, forKey: "autoAllowSteps")
     }
 
+    /// Sounds / Voice / Silent.
+    private func replyPicker() -> NSSegmentedControl {
+        let picker = NSSegmentedControl(labels: ["Sounds", "Voice", "Silent"], trackingMode: .selectOne,
+                                        target: self, action: #selector(changeReplies(_:)))
+        picker.controlSize = .small
+        picker.selectedSegment = SpokenReplies.Mode.allCases.firstIndex(of: voice.mode) ?? 0
+        return picker
+    }
+
+    @objc private func changeReplies(_ sender: NSSegmentedControl) {
+        voice.mode = SpokenReplies.Mode.allCases[max(0, sender.selectedSegment)]
+        if voice.mode == .silent { voice.stop() } else { voice.cue(.done, words: "Replies will sound like this.") }
+    }
+
+    /// Natural (Premium / Enhanced) voices are a free download in Spoken Content.
+    @objc private func openVoiceSettings() {
+        settingsPopover?.close()
+        if let url = URL(string: "x-apple.systempreferences:com.apple.Accessibility-Settings.extension?SpokenContent") {
+            NSWorkspace.shared.open(url)
+        }
+        commandStatus?.stringValue = "Click the ⓘ next to System Voice, then Manage Voices, and download one marked Premium. SystemOne uses it automatically."
+    }
+
     @objc private func toggleSpeakReplies(_ sender: NSSwitch) {
         voice.enabled = sender.state == .on
         if !voice.enabled { voice.stop() }
-        UserDefaults.standard.set(voice.enabled, forKey: "speakReplies")
     }
 
     /// Says `question`, then listens about five seconds for "yes" or "no".
@@ -1322,6 +1362,12 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
                 handleAgentRequest(object)
                 continue
             }
+            if object["type"] as? String == "agent_understanding" {
+                guard let requestID = object["requestId"] as? String, requestID == activeRequestID else { continue }
+                showUnderstanding(by: object["by"] as? String ?? "jev", typed: object["typed"] as? String,
+                                  problem: object["problem"] as? String ?? "")
+                continue
+            }
             if object["type"] as? String == "agent_answer" {
                 // An answer read from the screen: shown in full and spoken.
                 guard let requestID = object["requestId"] as? String, requestID == activeRequestID,
@@ -1526,7 +1572,9 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
             highlight.hide()
             statusField?.stringValue = "Stopped. The last step may already have happened."
         case "busy": statusField?.stringValue = "Still working on the last request."
-        case "error": statusField?.stringValue = "Something went wrong, so I stopped. Try again, or say it another way."
+        case "error":
+            voice.cue(.failed, words: "Something went wrong.")
+            statusField?.stringValue = "Something went wrong, so I stopped. Try again, or say it another way."
         case "browsing":
             statusField?.stringValue = "Jev is reading the page…"
         case "local_model_preparing":
@@ -1537,7 +1585,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
             pendingProposal = nil
             approvalRow?.isHidden = true
             statusField?.stringValue = "Done."
-            voice.say("Done.")
+            voice.cue(.done, words: "Done.")
             askFeedback(requestID)
         case "agent_needs_text":
             pendingProposal = nil
@@ -1547,7 +1595,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
         case "agent_paused":
             pendingProposal = nil
             approvalRow?.isHidden = true
-            voice.say("I couldn't finish that. Try saying it another way.")
+            voice.cue(.failed, words: "I couldn't finish that. Try saying it another way.")
             statusField?.stringValue = "I couldn't finish that. Try saying it another way."
             askFeedback(requestID)
         case "verified_browse":
@@ -1587,6 +1635,22 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
             commandStatus?.stringValue = message
         }
         updateRunState()
+    }
+
+    /// Who understood the request and what will be typed, so a test shows whether Qwen ran.
+    private func showUnderstanding(by: String, typed: String?, problem: String) {
+        let words = typed.map { "will type “\($0)”" } ?? "nothing to type"
+        let local = UserDefaults.standard.bool(forKey: "understandOnDevice")
+        let text: String
+        switch by {
+        case "local": text = "Qwen on this Mac · \(words)"
+        case "local_installing": text = "Qwen is still installing · Jev picked the words · \(words)"
+        case "local_failed": text = "Qwen unavailable\(problem.isEmpty ? "" : " (\(problem))") · Jev picked the words · \(words)"
+        default: text = local ? "Jev · \(words)" : (typed == nil ? "" : "Will type “\(typed!)”")
+        }
+        understandingLabel?.stringValue = text
+        understandingLabel?.isHidden = text.isEmpty
+        understandingLabel?.textColor = by == "local" ? .controlAccentColor : .tertiaryLabelColor
     }
 
     /// Run when idle, Stop while a task runs.
@@ -1675,9 +1739,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
     }
 
     private func updateMic() {
-        micButton?.contentTintColor = speech.isCapturing ? .systemRed : .controlAccentColor
-        micButton?.image = NSImage(systemSymbolName: speech.isCapturing ? "waveform.circle.fill" : "mic.fill",
-            accessibilityDescription: "Talk")?.withSymbolConfiguration(.init(pointSize: 22, weight: .medium))
+        (micButton as? OrbButton)?.isListening = speech.isCapturing
     }
 
     @objc private func enableVoice() {
@@ -1887,6 +1949,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
                 return
             }
             hotkeyDictation = true
+            voice.cue(.listening)
             speech.start()
         case (openPanelHotkeyID, false):
             guard hotkeyDictation, let started = hotkeyPressedAt else { return }
@@ -1896,6 +1959,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
                 speech.cancel()
                 commandStatus?.stringValue = "Hold \(talkShortcut.display) while you speak, then let go."
             } else {
+                voice.cue(.heard)
                 speech.stop()
             }
         case (stopHotkeyID, true): stop()
@@ -2254,7 +2318,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
                             ? "\(snap.app) on \(target.display)" : snap.app
                     }
                     reply(true, value, nil)
-                case "press": try self.universalAX.press(object["id"] as? String ?? ""); reply(true, nil, nil)
+                case "press": try await self.universalAX.press(object["id"] as? String ?? ""); reply(true, nil, nil)
                 case "copy": reply(true, try self.universalAX.copy(object["id"] as? String ?? ""), nil)
                 case "close": try self.universalAX.close(object["id"] as? String ?? ""); reply(true, nil, nil)
                 case "paste": try self.universalAX.paste(object["id"] as? String ?? ""); reply(true, nil, nil)

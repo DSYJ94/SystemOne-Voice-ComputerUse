@@ -70,6 +70,7 @@ class Mac implements SimWorld {
   notifications = [{ app: 'WhatsApp', text: 'Mum: Are you coming for dinner?' }, { app: 'Calendar', text: 'Standup in 10 minutes' },
     { app: 'Mail', text: 'Acme Billing: Your invoice #4412 is ready' }];
   openNotifications(): boolean { this.front = 'Notification Centre'; return true; }
+  outlookFolder = 'Inbox';
   chromeWindows = 1;
   bookmarked: string[] = [];
   notesFolders = false;
@@ -454,9 +455,21 @@ class Mac implements SimWorld {
       } else {
         const shown = this.mailQuery ? emails.filter(email => `${email.from} ${email.subject}`.toLowerCase().includes(this.mailQuery.toLowerCase()))
           : emails;
-        page.push(...shown.map(email => ({ role: 'AXRow', label: `${email.from}, ${email.subject}`, context: 'Inbox',
-          press: () => { this.openEmail = email.from; } })));
+        // As the page reader reports list items: with their position (newest first in an inbox).
+        page.push(...shown.map((email, index) => ({ role: 'AXRow', label: `${email.from}, ${email.subject}`,
+          context: `Inbox · item ${index + 1} of ${shown.length}`, press: () => { this.openEmail = email.from; } })));
       }
+    } else if (url.includes('outlook')) {
+      // Outlook as the improved page reader sees it: folders are tree items; icon-only buttons
+      // whose labels were icon-font glyphs are gone (nothing readable remained).
+      page.push(...['Inbox', 'Junk Email', 'Drafts', 'Sent Items', 'Deleted Items', 'Archive'].map((folder, index) => ({
+        role: 'AXRow', label: folder, context: `Navigation pane · item ${index + 1} of 6`, selected: this.outlookFolder === folder,
+        press: () => { this.outlookFolder = folder; } })),
+      { role: 'AXButton', label: 'New mail', context: 'Navigation pane' },
+      { role: 'AXButton', label: 'Favorite folder', context: 'Message list' },
+      ...(this.outlookFolder === 'Inbox' ? ['American Express, Your latest statement is ready', 'LinkedIn, You appeared in 9 searches']
+        : ['Prize Draw, You have won!']).map((row, index, rows) => ({ role: 'AXRow', label: row,
+        context: `Message list · item ${index + 1} of ${rows.length}` })));
     } else if (url.includes('google.com')) {
       page.push({ role: 'AXComboBox', label: 'Search', context: 'Google', editable: true },
         { role: 'AXLink', label: 'Gmail', context: 'header', press: () => this.navigate('https://mail.google.com/mail/u/0/#inbox', 'Inbox - Gmail') },
@@ -661,6 +674,11 @@ const BASE: readonly Scenario[] = [
     [{ url: 'https://www.google.com/', title: 'Google' }, WATCH, { url: 'https://en.wikipedia.org/', title: 'Wikipedia' }]),
   scenario('open-finder-no-window', 'Open Finder in this screen', mac => { mac.front = 'Finder'; mac.finderWindow = false; },
     mac => mac.front === 'Finder' && mac.finderWindow),
+  // Owner traces, 4 Oct (later): Outlook folders, "the latest email".
+  scenario('outlook-junk', 'go to junk email', () => {}, mac => mac.outlookFolder === 'Junk Email',
+    [{ url: 'https://outlook.live.com/mail/inbox', title: 'Mail - Outlook' }]),
+  scenario('gmail-latest', 'open the latest email', () => {}, mac => mac.openEmail === 'Acme Billing',
+    [{ url: 'https://mail.google.com/mail/u/0/#inbox', title: 'Inbox (3) - Gmail' }]),
   scenario('dictate-reply', 'reply to Sam saying I will be late', () => {},
     mac => mac.openEmail === 'Sam Lee' && mac.replyBody === 'I will be late',
     [{ url: 'https://mail.google.com/mail/u/0/#inbox', title: 'Inbox (3) - Gmail' }]),
@@ -705,6 +723,8 @@ const PARAPHRASES: Readonly<Record<string, readonly string[]>> = {
   'notifications-read': ['any new notifications', 'read me my notifications'],
   'close-new-tab-gmail': ['close this tab then open a new one and go to gmail'],
   'open-finder-no-window': ['open a finder window'],
+  'outlook-junk': ['open my junk folder in outlook', 'show the junk mail'],
+  'gmail-latest': ['on this current tab go to gmail and go to the latest email', 'open my most recent email'],
   'answer-amount': ['whats the amount due on this invoice', 'tell me how much I owe Acme'],
   'answer-after-navigating': ['when is lunch with sam'],
   'window-this-monitor': ['come to this monitor', 'bring this window over to this screen'],

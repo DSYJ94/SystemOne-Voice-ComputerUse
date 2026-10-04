@@ -62,6 +62,15 @@ When something goes wrong, run `npm run traces` and paste the output into
 the chat. It shows each recent request's steps, as recorded locally on your
 Mac.
 
+### Sounds and voice
+
+⚙ Settings › Voice › Replies: **Sounds** (default) plays a short chime when a
+task is done and a soft falling tone when it couldn't finish, and speaks only
+answers and questions; **Voice** also says "Done"; **Silent** plays nothing.
+Speech uses the most natural English voice installed. The built-in ones are
+basic; for a natural one, click **Get Better Voices…** and download a voice
+marked Premium (SystemOne uses it automatically).
+
 ### Push-to-talk shortcut
 
 Hold Control-Option-Space, speak, and let go. To use a different shortcut, open
@@ -111,6 +120,8 @@ faster, no network for that part). The first request after turning it on
 installs it in the background (about 700 MB, under a minute; Jev is used
 meanwhile). Jev still chooses every step either way, and only your own words
 can ever be typed.
+While it is on, the bar shows under your request who understood it ("Qwen on
+this Mac · will type …", or "Qwen is still installing · Jev picked the words").
 
 SystemOne talks back: it says "Done", asks "Should I …?" when a step needs
 your approval, and then listens about five seconds for "yes" or "no", with no
