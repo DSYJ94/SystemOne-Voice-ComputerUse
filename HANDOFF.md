@@ -117,6 +117,10 @@ Tools `swiftc`.
     beat two near-identical rows); a general list with nothing fitting is ruled out
     and the step re-decided instead of stopping. Tried and reverted: describing what
     a click did in the step history (160/178).
+  - Also tried and reverted (5 Oct): a list pick must be at least twice as likely as
+    "none fits" (stops "switch to dark mode" → Chrome › Settings…): 164/178, with Jev
+    timing out on three cases that run; not better, so the old rule stays. Worth
+    re-measuring when Jev is stable.
   - Loop prevention by three general rules: no undo of the last step, no
     repeating a step taken from a screen seen before, no retrying a step that
     changed nothing.
