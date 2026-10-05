@@ -8,7 +8,12 @@ final class OnDeviceSpeech {
     /// Fires after every listening-state change, once the state is settled.
     var onCaptureChange: ((Bool) -> Void)?
 
-    private let engine = AVAudioEngine()
+    /// A new engine per capture: an engine kept from launch holds the input format of the mic
+    /// it first saw, and installing a tap with that stale format after the input device changed
+    /// (headset, display or webcam mic, sleep and wake) raises an Objective-C exception that
+    /// aborts the app (crash of 5 Oct 2026).
+    private var engine = AVAudioEngine()
+    private var configurationObserver: NSObjectProtocol?
     private var recognizer: SFSpeechRecognizer?
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
@@ -69,9 +74,11 @@ final class OnDeviceSpeech {
             onStatus?("On-device speech recognition is unavailable for this Mac or language.")
             return
         }
+        if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
+        engine = AVAudioEngine()
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
-        guard format.sampleRate > 0 else {
+        guard format.sampleRate > 0, format.channelCount > 0 else {
             onStatus?("No usable microphone input is available.")
             return
         }
@@ -82,7 +89,16 @@ final class OnDeviceSpeech {
         let currentEpoch = epoch
         self.recognizer = recognizer
         self.request = request
+        input.removeTap(onBus: 0)
         Self.installAudioTap(input: input, format: format, request: request)
+        // The input device changing mid-capture stops the engine: keep what was heard so far.
+        configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange,
+            object: engine, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.epoch == currentEpoch, self.listening else { return }
+                self.stop()
+            }
+        }
         do {
             engine.prepare()
             try engine.start()
@@ -129,7 +145,7 @@ final class OnDeviceSpeech {
 
     func stop() {
         guard listening else { return }
-        engine.stop()
+        if engine.isRunning { engine.stop() }
         engine.inputNode.removeTap(onBus: 0)
         listening = false
         finishing = true

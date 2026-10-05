@@ -1465,7 +1465,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
             if object["type"] as? String == "chrome_port_send",
                let connectionID = object["connectionId"] as? String,
                let payload = object["payload"] as? [String: Any],
-               let data = try? JSONSerialization.data(withJSONObject: payload),
+               let data = jsonData(payload),
                data.count <= 65_536 {
                 chromeListener?.send(data, to: connectionID)
                 continue
@@ -2499,7 +2499,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
                             self.lastBrowserHint = hint
                             self.commandStatus?.stringValue = hint
                         }
-                        let size = (try? JSONSerialization.data(withJSONObject: value).count) ?? 0
+                        let size = jsonData(value)?.count ?? 0
                         if size < 56_000 { break }
                         elements.removeLast(min(20, elements.count))
                     } while !elements.isEmpty
@@ -2917,7 +2917,7 @@ final class SystemOneDev: NSObject, NSApplicationDelegate, NSWindowDelegate, NSP
             commandStatus?.stringValue = "Waiting for the active session and interruption fence."
             return false
         }
-        guard let data = try? JSONSerialization.data(withJSONObject: object),
+        guard let data = jsonData(object),
               data.count <= limit else { return false }
         do {
             try pipe.fileHandleForWriting.write(contentsOf: data + Data([10]))

@@ -516,7 +516,7 @@ final class DevNativeFieldWorker: @unchecked Sendable {
                                   result: Any, using send: @Sendable (Data) -> Void) {
         let reply: [String: Any] = ["type": "native_worker_reply",
             "requestId": requestID, "operation": operation, "result": result]
-        if let data = try? JSONSerialization.data(withJSONObject: reply),
+        if let data = jsonData(reply),
            data.count <= 16_384 { send(data) }
     }
 }

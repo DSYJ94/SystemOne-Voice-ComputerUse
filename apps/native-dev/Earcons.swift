@@ -10,7 +10,6 @@ final class Earcons {
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
-    private var started = false
 
     init() {
         engine.attach(player)
@@ -28,9 +27,13 @@ final class Earcons {
         case .question: [(784, 0, 0.12, 0.28), (987.8, 0.1, 0.2, 0.26)]           // G5 → B5, lifts like a question
         }
         guard let buffer = render(notes) else { return }
-        if !started {
-            do { try engine.start(); started = true } catch { return }
+        // macOS stops the engine when the output device changes (headphones, a display's
+        // speakers); playing on a stopped engine raises an exception that aborts the app.
+        if !engine.isRunning {
+            engine.prepare()
+            do { try engine.start() } catch { return }
         }
+        guard engine.isRunning else { return }
         player.scheduleBuffer(buffer, at: nil, options: .interrupts)
         if !player.isPlaying { player.play() }
     }

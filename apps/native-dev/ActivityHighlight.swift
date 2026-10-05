@@ -35,7 +35,7 @@ final class ActivityHighlight {
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = reduceMotion ? 0 : 0.35
             panel.animator().alphaValue = 0
-        }, completionHandler: { panel.orderOut(nil) })
+        }, completionHandler: { Task { @MainActor in panel.orderOut(nil) } })
     }
 
     private func makePanel() -> NSPanel {

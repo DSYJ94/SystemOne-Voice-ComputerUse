@@ -82,7 +82,7 @@ final class BrowserDOM {
 
     func run(_ bundleID: String, _ request: [String: Any]) throws -> [String: Any] {
         guard let source else { throw DOMError.unavailable("dom-agent.js missing from the app bundle") }
-        guard let data = try? JSONSerialization.data(withJSONObject: request),
+        guard let data = jsonData(request),
               let json = String(data: data, encoding: .utf8) else { throw DOMError.failed("bad request") }
         let javascript = "(\(source))(\(json))"
         let escaped = javascript.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")

@@ -1,5 +1,12 @@
 import AppKit
 
+/// JSON for a message, or nil. `try? JSONSerialization.data` does not protect: an invalid value
+/// (NaN, a non-JSON type) raises an Objective-C exception that aborts the app, so check first.
+func jsonData(_ object: Any) -> Data? {
+    guard JSONSerialization.isValidJSONObject(object) else { return nil }
+    return try? JSONSerialization.data(withJSONObject: object)
+}
+
 /// Local logs and problem reports, kept in ~/Library/Logs/SystemOne Dev (readable only by
 /// the user). Nothing is sent anywhere: "Report a Problem…" writes a file and shows it.
 @MainActor

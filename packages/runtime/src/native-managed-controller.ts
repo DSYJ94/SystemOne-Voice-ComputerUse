@@ -1782,6 +1782,17 @@ async function main(): Promise<void> {
       } });
     });
   write('startup', controller.startupPhase());
+  // A stray rejected promise (a background write, a model worker) must not end the controller in
+  // the middle of a task; it is logged (stderr is ~/Library/Logs/SystemOne Dev/controller.log).
+  // A thrown exception still ends it, since its state is unknown; the app restarts it.
+  process.on('unhandledRejection', reason => {
+    process.stderr.write(`${new Date().toISOString()} unhandled rejection: ${
+      reason instanceof Error ? reason.stack ?? reason.message : String(reason)}\n`);
+  });
+  process.on('uncaughtException', error => {
+    process.stderr.write(`${new Date().toISOString()} uncaught exception: ${error.stack ?? error.message}\n`);
+    process.exit(1);
+  });
   let pending = Buffer.alloc(0);
   process.stdin.on('data', chunk => {
     const incoming = Buffer.from(chunk);
